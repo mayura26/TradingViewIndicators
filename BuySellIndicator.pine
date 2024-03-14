@@ -1,0 +1,43 @@
+//@version=5
+// FEATURE: Input field for pivot, minor pivot, buy and sell levels (with connection to symbol)
+// FEATURE: Alert on cross of level
+// FEATURE: Symbol on cross of level and reject (lookback of bars?)
+
+// FEATURE: Cross of ema to trigger signal/alert
+
+// FEATURE: Track number of trades a day/ in last x period
+
+// FEATURE: Super trend
+
+// FEATURE: DRSI and cross of UVXY
+
+// FEATURE: Identify trend (look at different time periods of ema cross)
+
+// FEATURE: Orderflow oscilator
+
+indicator("Customizable MAs", overlay=true)
+
+// Define EMA/SMA periods
+periodMA1 = input(9, title="MA 1 Period")
+periodMA2 = input(21, title="MA 2 Period")
+periodMA3 = input(55, title="MA 3 Period")
+
+// Choose MA type
+maType1 = input.string("EMA", title="MA 1 Type", options=["EMA", "SMA"])
+maType2 = input.string("EMA", title="MA 2 Type", options=["EMA", "SMA"])
+maType3 = input.string("EMA", title="MA 3 Type", options=["EMA", "SMA"])
+
+// Choose colors
+color1 = input.color(color.red, title="MA 1 Color")
+color2 = input.color(color.green, title="MA 2 Color")
+color3 = input.color(color.blue, title="MA 3 Color")
+
+// Calculate MAs based on user selection
+ma1 = maType1 == "EMA" ? ta.ema(close, periodMA1) : ta.sma(close, periodMA1)
+ma2 = maType2 == "EMA" ? ta.ema(close, periodMA2) : ta.sma(close, periodMA2)
+ma3 = maType3 == "EMA" ? ta.ema(close, periodMA3) : ta.sma(close, periodMA3)
+
+// Plot MAs
+plot(ma1, color=color1, title="MA 1")
+plot(ma2, color=color2, title="MA 2")
+plot(ma3, color=color3, title="MA 3")

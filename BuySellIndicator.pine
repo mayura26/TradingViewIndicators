@@ -15,7 +15,28 @@
 
 // FEATURE: Orderflow oscilator
 
-indicator("Customizable MAs", overlay=true)
+//@version=5
+indicator("Buy/Sell Indicator", overlay=true)
+
+// Define input for pivots
+pivots = input("", title="Pivots (comma delimited)")
+// Define input for ticker
+ticker = input.symbol("", "Symbol")
+
+// Split the pivots into an array
+pivotLevels = str.split(pivots, ",")
+for labelSel in label.all
+    label.delete(labelSel)
+
+for lineSel in line.all
+    line.delete(lineSel)
+
+// Check if symbol matches the selected ticker
+if ticker.standard() == ticker
+    // Plot pivot levels if symbol matches
+    for level in pivotLevels    
+        line.new(x1=bar_index[1], y1=str.tonumber(level), x2=bar_index, y2=str.tonumber(level), color=color.orange, width=2, extend=extend.both)
+        label label_1 = label.new(bar_index + 100, str.tonumber(level), "Pivot", xloc=xloc.bar_index, style=label.style_none, textcolor=color.orange)
 
 // Define EMA/SMA periods
 periodMA1 = input(9, title="MA 1 Period")

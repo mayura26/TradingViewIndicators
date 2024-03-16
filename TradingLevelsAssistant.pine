@@ -2,11 +2,9 @@
 // FEATURE: Alert on cross of level
 // FEATURE: Symbol on cross of level and reject (lookback of bars?)
 
-// FEATURE: Cross of ema to trigger signal/alert
+// FEATURE: Cross of ema to trigger signal/alert. Cross of fast/slow and above/below confirm gives trigger to short/long
 
-// FEATURE: Track number of trades a day/ in last x period
-
-// FEATURE: Super trend
+// FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY
 
@@ -17,6 +15,8 @@
 // FEATURE: ATR
 
 // FEATURE: Expected Range
+
+// FEATURE: Dashboard SPY/SPX
 
 indicator("Trading Levels Assistant", max_labels_count = 200, max_lines_count = 200, overlay=true)
 

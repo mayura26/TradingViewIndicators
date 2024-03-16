@@ -16,6 +16,8 @@
 
 // FEATURE: ATR
 
+// FEATURE: Expected Range
+
 indicator("Trading Levels Assistant", max_labels_count = 200, max_lines_count = 200, overlay=true)
 
 draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
@@ -78,19 +80,19 @@ intraWidth = input(2, title="Intraday Width", group="Line Style")
 labelOffset = input(15, title="Label Offset", group="General")
 
 // Define EMA/SMA periods
-periodFastMA = input(13, title="Fast MA Period", group="Moving Averages")
-periodSlowMA = input(48, title="Slow MA Period", group="Moving Averages")
-periodConfirmMA = input(21, title="Confirm MA Period", group="Moving Averages")
+periodFastMA = input(8, title="Fast MA Period", group="Moving Averages")
+periodSlowMA = input(21, title="Slow MA Period", group="Moving Averages")
+periodConfirmMA = input(13, title="Confirm MA Period", group="Moving Averages")
 
 // Choose MA type
-typeFastMA = input.string("EMA", title="Fast MA Type", options=["None","EMA", "SMA"], group="Moving Averages")
-typeSlowMA = input.string("EMA", title="Slow MA Type", options=["None","EMA", "SMA"], group="Moving Averages")
-typeConfirmMA = input.string("EMA", title="Confirm MA Type", options=["None","EMA", "SMA"], group="Moving Averages")
+typeFastMA = input.string("EMA", title="Fast MA Type", options=["EMA", "SMA"], group="Moving Averages")
+typeSlowMA = input.string("EMA", title="Slow MA Type", options=["EMA", "SMA"], group="Moving Averages")
+typeConfirmMA = input.string("SMA", title="Confirm MA Type", options=["EMA", "SMA"], group="Moving Averages")
 
 // Choose colors
-colorFastMA = input.color(color.fuchsia, title="Fast MA Color", group="Moving Averages")
-colorSlowMA = input.color(color.green, title="Slow MA Color", group="Moving Averages")
-colorConfirmMA = input.color(color.red, title="Confirm MA Color", group="Moving Averages")
+colorFastMA = input.color(color.new(color.fuchsia,75), title="Fast MA Color", group="Moving Averages")
+colorSlowMA = input.color(color.new(color.green,75), title="Slow MA Color", group="Moving Averages")
+colorConfirmMA = input.color(color.new(color.red,75), title="Confirm MA Color", group="Moving Averages")
 
 // Check if symbol matches the selected ticker
 if ticker.standard() == sym1

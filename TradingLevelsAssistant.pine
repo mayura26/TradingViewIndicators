@@ -58,8 +58,8 @@ sym2IntraDayLevels  = input("", title="Ticker 2 Intraday Levels (comma delimited
 
 // Define input for level 1 color
 pivotsColor = input.color(color.purple, title="Pivot Color", group="Line Style")
-buyColor = input.color(color.rgb(4, 121, 0), title="Buy Level Color", group="Line Style")
-sellColor = input.color(color.rgb(172, 27, 27), title="Sell Level  Color", group="Line Style")
+buyColor = input.color(color.rgb(9, 122, 5), title="Buy Level Color", group="Line Style")
+sellColor = input.color(color.rgb(161, 33, 33), title="Sell Level  Color", group="Line Style")
 intraColor = input.color(color.orange, title="Intraday Color", group="Line Style")
 
 // Define input for level 1 label
@@ -115,4 +115,3 @@ confirmMA = typeConfirmMA == "EMA" ? ta.ema(close, periodConfirmMA) : ta.sma(clo
 plot(fastMA, color=colorFastMA, title="Fast MA")
 plot(slowMA, color=colorSlowMA, title="Slow MA")
 plot(confirmMA, color=colorConfirmMA, title="Confirm MA")
-

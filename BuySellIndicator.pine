@@ -1,5 +1,4 @@
 //@version=5
-// FEATURE: Input field for pivot, minor pivot, buy and sell levels (with connection to symbol)
 // FEATURE: Alert on cross of level
 // FEATURE: Symbol on cross of level and reject (lookback of bars?)
 
@@ -15,50 +14,104 @@
 
 // FEATURE: Orderflow oscilator
 
-//@version=5
-indicator("Buy/Sell Indicator", overlay=true)
+// FEATURE: ATR
 
-// Define input for pivots
-pivots = input("", title="Pivots (comma delimited)")
-// Define input for ticker
-ticker = input.symbol("", "Symbol")
+indicator("Trading Levels Assistant", max_labels_count = 200, max_lines_count = 200, overlay=true)
 
-// Split the pivots into an array
-pivotLevels = str.split(pivots, ",")
+draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
+    dline = line.new(x1=_x1, y1=_y1, x2=_x2, y2=_y2, xloc=_xloc, extend=_extend, color=_color, style=_style, width=_width)
+    line.delete(dline[1])
+
+draw_box(_left, _top, _right, _bottom, _color, _width, _style, _extend, _xloc, _bgcolor) =>
+    dbox = box.new(left=_left, top=_top, right=_right, bottom=_bottom, border_color=_color, border_width=_width, border_style=_style, extend=_extend, xloc=_xloc, bgcolor=_bgcolor)
+    box.delete(dbox[1])
+
+draw_label(_x, _y, _text, _xloc, _yloc, _color, _style, _textcolor, _size, _textalign, _tooltip) =>
+    dlabel = label.new(x=_x, y=_y, text=_text, xloc=_xloc, yloc=_yloc, color=_color, style=_style, textcolor=_textcolor, size=_size, textalign=_textalign, tooltip=_tooltip)
+    label.delete(dlabel[1])
+
+draw_levels(levels, color, width, label, labeloffset) =>
+    plotLevels = str.split(levels, ",")
+    for level in plotLevels
+        draw_line(bar_index, str.tonumber(level), bar_index + labeloffset + 15, str.tonumber(level),  xloc.bar_index, extend.left, color, line.style_solid, width)
+        draw_label(bar_index + labeloffset + 10,  str.tonumber(level), label, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_none, color, size.normal, text.align_right, '')
+
 for labelSel in label.all
     label.delete(labelSel)
 
 for lineSel in line.all
     line.delete(lineSel)
+    
+// Define input for ticker
+sym1 = input.symbol("CME_MINI:MNQ1!", "Ticker 1", group="Tickers")
+sym2 = input.symbol("AMEX:SPY", "Ticker 2", group="Tickers")
 
-// Check if symbol matches the selected ticker
-if ticker.standard() == ticker
-    // Plot pivot levels if symbol matches
-    for level in pivotLevels    
-        line.new(x1=bar_index[1], y1=str.tonumber(level), x2=bar_index, y2=str.tonumber(level), color=color.orange, width=2, extend=extend.both)
-        label label_1 = label.new(bar_index + 100, str.tonumber(level), "Pivot", xloc=xloc.bar_index, style=label.style_none, textcolor=color.orange)
+// Define input for pivots
+sym1Pivots = input("", title="Ticker 1 Pivots (comma delimited)", group="Ticker 1 Levels")
+sym1BuyLevels = input("", title="Ticker 1 Buy Levels (comma delimited)", group="Ticker 1 Levels")
+sym1SellLevels = input("", title="Ticker 1 Sell Levels (comma delimited)", group="Ticker 1 Levels")
+sym1IntraDayLevels  = input("", title="Ticker 1 Intraday Levels (comma delimited)", group="Ticker 1 Levels")
+sym2Pivots = input("", title="Ticker 2 Pivots (comma delimited)", group="Ticker 2 Levels")
+sym2BuyLevels = input("", title="Ticker 2 Buy Levels (comma delimited)", group="Ticker 2 Levels")
+sym2SellLevels = input("", title="Ticker 2 Sell Levels (comma delimited)", group="Ticker 2 Levels")
+sym2IntraDayLevels  = input("", title="Ticker 2 Intraday Levels (comma delimited)", group="Ticker 2 Levels")
+
+// Define input for level 1 color
+pivotsColor = input.color(color.purple, title="Pivot Color", group="Line Style")
+buyColor = input.color(color.rgb(3, 78, 0), title="Buy Level Color", group="Line Style")
+sellColor = input.color(color.maroon, title="Sell Level  Color", group="Line Style")
+intraColor = input.color(color.orange, title="Intraday Color", group="Line Style")
+
+// Define input for level 1 label
+pivotsLabel = input("Pivot", title="Pivots Label", group="Line Style")
+buyLabel = input("Buy", title="Buy Level Label", group="Line Style")
+sellLabel = input("Sell", title="Sell Level Label", group="Line Style")
+intraLabel = input("Intra", title="Intraday Label", group="Line Style")
+
+// Define input for level 1 width
+pivotsWidth = input(2, title="Pivots Width", group="Line Style")
+buyWidth = input(2, title="Buy Level Width", group="Line Style")
+sellWidth = input(2, title="Sell Level Width", group="Line Style")
+intraWidth = input(2, title="Intraday Width", group="Line Style")
+
+// Define label offset
+labelOffset = input(15, title="Label Offset", group="General")
 
 // Define EMA/SMA periods
-periodMA1 = input(9, title="MA 1 Period")
-periodMA2 = input(21, title="MA 2 Period")
-periodMA3 = input(55, title="MA 3 Period")
+periodFastMA = input(13, title="Fast MA Period", group="Moving Averages")
+periodSlowMA = input(48, title="Slow MA Period", group="Moving Averages")
+periodConfirmMA = input(21, title="Confirm MA Period", group="Moving Averages")
 
 // Choose MA type
-maType1 = input.string("EMA", title="MA 1 Type", options=["EMA", "SMA"])
-maType2 = input.string("EMA", title="MA 2 Type", options=["EMA", "SMA"])
-maType3 = input.string("EMA", title="MA 3 Type", options=["EMA", "SMA"])
+typeFastMA = input.string("EMA", title="Fast MA Type", options=["None","EMA", "SMA"], group="Moving Averages")
+typeSlowMA = input.string("EMA", title="Slow MA Type", options=["None","EMA", "SMA"], group="Moving Averages")
+typeConfirmMA = input.string("EMA", title="Confirm MA Type", options=["None","EMA", "SMA"], group="Moving Averages")
 
 // Choose colors
-color1 = input.color(color.red, title="MA 1 Color")
-color2 = input.color(color.green, title="MA 2 Color")
-color3 = input.color(color.blue, title="MA 3 Color")
+colorFastMA = input.color(color.fuchsia, title="Fast MA Color", group="Moving Averages")
+colorSlowMA = input.color(color.green, title="Slow MA Color", group="Moving Averages")
+colorConfirmMA = input.color(color.red, title="Confirm MA Color", group="Moving Averages")
+
+// Check if symbol matches the selected ticker
+if ticker.standard() == sym1
+    draw_levels(sym1Pivots, pivotsColor, pivotsWidth, pivotsLabel, labelOffset)
+    draw_levels(sym1BuyLevels, buyColor, buyWidth, buyLabel, labelOffset)
+    draw_levels(sym1SellLevels, sellColor, sellWidth, sellLabel, labelOffset)
+    draw_levels(sym1IntraDayLevels, intraColor, intraWidth, intraLabel, labelOffset)
+
+if ticker.standard() == sym2
+    draw_levels(sym2Pivots, pivotsColor, pivotsWidth, pivotsLabel, labelOffset)
+    draw_levels(sym2BuyLevels, buyColor, buyWidth, buyLabel, labelOffset)
+    draw_levels(sym2SellLevels, sellColor, sellWidth, sellLabel, labelOffset)
+    draw_levels(sym2IntraDayLevels, intraColor, intraWidth, intraLabel, labelOffset)
+
 
 // Calculate MAs based on user selection
-ma1 = maType1 == "EMA" ? ta.ema(close, periodMA1) : ta.sma(close, periodMA1)
-ma2 = maType2 == "EMA" ? ta.ema(close, periodMA2) : ta.sma(close, periodMA2)
-ma3 = maType3 == "EMA" ? ta.ema(close, periodMA3) : ta.sma(close, periodMA3)
+fastMA = typeFastMA == "EMA" ? ta.ema(close, periodFastMA) : ta.sma(close, periodFastMA)
+slowMA = typeSlowMA == "EMA" ? ta.ema(close, periodSlowMA) : ta.sma(close, periodSlowMA)
+confirmMA = typeConfirmMA == "EMA" ? ta.ema(close, periodConfirmMA) : ta.sma(close, periodConfirmMA)
 
 // Plot MAs
-plot(ma1, color=color1, title="MA 1")
-plot(ma2, color=color2, title="MA 2")
-plot(ma3, color=color3, title="MA 3")
+plot(fastMA, color=colorFastMA, title="Fast MA")
+plot(slowMA, color=colorSlowMA, title="Slow MA")
+plot(confirmMA, color=colorConfirmMA, title="Confirm MA")

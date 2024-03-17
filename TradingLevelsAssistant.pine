@@ -19,7 +19,7 @@
 // FEATURE: Dashboard SPY/SPX
 
 indicator("Trading Levels Assistant", max_labels_count = 200, max_lines_count = 200, overlay=true)
-
+buffer = input(0.1, title="Level Bounce Buffer", group="Level Alerts") // Define a buffer to avoid false positives due to noise
 draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
     dline = line.new(x1=_x1, y1=_y1, x2=_x2, y2=_y2, xloc=_xloc, extend=_extend, color=_color, style=_style, width=_width)
     line.delete(dline[1])
@@ -32,14 +32,17 @@ draw_label(_x, _y, _text, _xloc, _yloc, _color, _style, _textcolor, _size, _text
     dlabel = label.new(x=_x, y=_y, text=_text, xloc=_xloc, yloc=_yloc, color=_color, style=_style, textcolor=_textcolor, size=_size, textalign=_textalign, tooltip=_tooltip)
     label.delete(dlabel[1])
 
+// Function to check bounce
+checkBounce(level) =>
+    lowBounce = low <= level and high >= level - buffer
+    highBounce = high >= level and low <= level + buffer
+    lowBounce or highBounce
+
 draw_levels(levels, color, width, label, labeloffset) =>
     plotLevels = str.split(levels, ",")
     for level in plotLevels
         draw_line(bar_index, str.tonumber(level), bar_index + labeloffset + 15, str.tonumber(level),  xloc.bar_index, extend.left, color, line.style_solid, width)
         draw_label(bar_index + labeloffset + 10,  str.tonumber(level), label, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_none, color, size.normal, text.align_right, '')
-
-for labelSel in label.all
-    label.delete(labelSel)
 
 for lineSel in line.all
     line.delete(lineSel)
@@ -107,6 +110,18 @@ if ticker.standard() == sym2
     draw_levels(sym2SellLevels, sellColor, sellWidth, sellLabel, labelOffset)
     draw_levels(sym2IntraDayLevels, intraColor, intraWidth, intraLabel, labelOffset)
 
+// Check for bounce off each level in the array
+anyBounce = false
+if ticker.standard() == sym1
+    plotLevels = str.split(sym1Pivots, ",")
+    for level in plotLevels
+        if checkBounce(str.tonumber(level))
+            anyBounce := true
+            // Plot a symbol or text label at the location of the bounce
+            draw_label(bar_index, str.tonumber(level), "Bounce", xloc.bar_index, yloc.belowbar,  color.green, label.style_label_down, color.white, size.small, text.align_right, '')
+
+// Set up alert
+alertcondition(anyBounce, title="Bounce", message="Price bounced off one of the predefined levels!")
 
 // Calculate MAs based on user selection
 fastMA = typeFastMA == "EMA" ? ta.ema(close, periodFastMA) : ta.sma(close, periodFastMA)
@@ -117,3 +132,19 @@ confirmMA = typeConfirmMA == "EMA" ? ta.ema(close, periodConfirmMA) : ta.sma(clo
 plot(fastMA, color=colorFastMA, title="Fast MA")
 plot(slowMA, color=colorSlowMA, title="Slow MA")
 plot(confirmMA, color=colorConfirmMA, title="Confirm MA")
+
+// Detecting Crosses
+fastCrossSlowUp = ta.crossover(fastMA, slowMA)
+fastCrossSlowDown = ta.crossunder(fastMA, slowMA)
+
+// Detecting Price relative to Confirm MA
+priceAboveConfirm = close > confirmMA
+priceBelowConfirm = close < confirmMA
+
+// Symbol when price goes below or above confirm MA
+plotshape(series=priceAboveConfirm, style=shape.triangleup, location=location.belowbar, color= priceAboveConfirm and fastCrossSlowUp  ? color.green : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.triangledown, location=location.abovebar, color=priceBelowConfirm and fastCrossSlowDown ? color.red : na, size=size.small)
+
+// Alert Conditions
+alertcondition(fastCrossSlowUp or fastCrossSlowDown, title="MA Cross Alert", message="Fast and Slow MAs have crossed!")
+alertcondition(priceAboveConfirm or priceBelowConfirm, title="Price Confirm Alert", message="Price has crossed the Confirm MA!")

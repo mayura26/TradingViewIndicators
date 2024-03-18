@@ -57,18 +57,25 @@ sellWidth = input(2, title="    └ Sell Level Width", group="Level Sett
 intraColor = input.color(color.orange, title="Intraday Color", group="Level Settings", inline = "intra")
 intraLabel = input("Intra", title="Intraday Label", group="Level Settings", inline = "intra")
 intraWidth = input(2, title="    └ Intraday Width", group="Level Settings", inline = "iwidth")
+
+// TODO: Add min and max values
 labelOffset = input(15, title="Label Offset", group="General")
-buffer = input(5, title="Level Bounce Buffer [H-L] (%)", group="General") // Define a buffer to avoid false positives due to noise
+buffer = input(15.0, title="Level Bounce Buffer [H-L] (%)", group="General") // Define a buffer to avoid false positives due to noise
+buySellBuffer = input(0.05, title="Buy/Sell Buffer (%)", group="General") 
+lowerTF = input.int(1, title="Buy/Sell Buffer (%)", group="General",minval=0, maxval=10) 
 
 showPivotsBounce = input(true, title=" Show Pivot Level Bounce Symbol", group="Level Bounce (Pivot)")
 includeTrigPivots = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Pivot)", inline="pivot")
 includeRevPivots = input(true, title="Trigger Reversal", group="Level Bounce (Pivot)", inline="pivot")
+
 showBuyBounce = input(true, title=" Show Buy Level Bounce Symbol", group="Level Bounce (Buy)")
 includeTrigBuy = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Buy)", inline="Buy")
 includeRevBuy = input(true, title="Trigger Reversal", group="Level Bounce (Buy)", inline="Buy")
+
 showSellBounce = input(true, title=" Show Sell Level Bounce Symbol", group="Level Bounce (Sell)")
 includeTrigSell = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Sell)", inline="Sell")
 includeRevSell = input(true, title="Trigger Reversal", group="Level Bounce (Sell)", inline="Sell")
+
 showIntraBounce = input(true, title=" Show Intra Level Bounce Symbol", group="Level Bounce (Intra)")
 includeTrigIntra = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Intra)", inline="Intra")
 includeRevIntra = input(true, title="Trigger Reversal", group="Level Bounce (Intra)", inline="Intra")
@@ -95,10 +102,10 @@ draw_label(_x, _y, _text, _xloc, _yloc, _color, _style, _textcolor, _size, _text
     dlabel = label.new(x=_x, y=_y, text=_text, xloc=_xloc, yloc=_yloc, color=_color, style=_style, textcolor=_textcolor, size=_size, textalign=_textalign, tooltip=_tooltip)
     
 check_bounce_high(level) =>
-    highBounce = high >= level and close < level - (high - low) * (buffer/100) and open <= level
+    highBounce = high >= level and close < level - (high - low) * (buffer/100) and (open <= level + (high - low) * (buffer/100))
 
 check_bounce_low(level) =>
-    lowBounce = low <= level and close > level + (high - low) * (buffer/100) and open >= level
+    lowBounce = low <= level and close > level + (high - low) * (buffer/100) and (open >= level - (high - low) * (buffer/100))
 
 // TODO: Pull out bounce type as high or low
 check_levels_low(levels, bounceType, symbolEnabled) =>    
@@ -133,6 +140,7 @@ draw_levels(levels, color, width, label, labeloffset) =>
             label.set_textcolor(plot_label, color)
             label.delete(plot_label[1])
     
+
 // Check if symbol matches the selected ticker
 if ticker.standard() == sym1
     draw_levels(sym1Pivots, pivotsColor, pivotsWidth, pivotsLabel, labelOffset)
@@ -187,7 +195,7 @@ if ticker.standard() == sym2
     anyIntraSym2BounceUp := check_levels_low(sym2IntraDayLevels, intraLabel, showIntraBounce)
     anyIntraSym2BounceDown := check_levels_high(sym2IntraDayLevels, intraLabel, showIntraBounce)
 
-
+// TODO: Add check if the bounce type is enabled
 anyPivotSym1Bounce = anyPivotSym1BounceUp or anyPivotSym1BounceDown
 anyBuySym1Bounce = anyBuySym1BounceUp or anyBuySym1BounceDown
 anySellSym1Bounce = anySellSym1BounceUp or anySellSym1BounceDown
@@ -205,17 +213,13 @@ anySym2BounceUp = anyPivotSym2BounceUp or anyBuySym2BounceUp or anySellSym2Bounc
 anySym2BounceDown = anyPivotSym2BounceDown or anyBuySym2BounceDown or anySellSym2BounceDown or anyIntraSym2BounceDown
 
 // Set up alert
-alertcondition(anyPivotSym1Bounce, title="Bounce Sym1 (Pivots)", message="Bounce off pivot level ({{ticker}} - {{close}})")
-alertcondition(anyBuySym1Bounce, title="Bounce Sym1 (Buy)", message="Bounce off buy level ({{ticker}} - {{close}})")
-alertcondition(anySellSym1Bounce, title="Bounce Sym1 (Sell)", message="Bounce off sell level ({{ticker}} - {{close}})")
-alertcondition(anyIntraSym1Bounce, title="Bounce Sym1 (Intra)", message="Bounce off intra level ({{ticker}} - {{close}})")
-
-alertcondition(anyPivotSym2Bounce, title="Bounce Sym2 (Pivots)", message="Bounce off pivot level ({{ticker}} - {{close}})")
-alertcondition(anyBuySym2Bounce, title="Bounce Sym2 (Buy)", message="Bounce off buy level ({{ticker}} - {{close}})")
-alertcondition(anySellSym2Bounce, title="Bounce Sym2 (Sell)", message="Bounce off sell level ({{ticker}} - {{close}})")
-alertcondition(anyIntraSym2Bounce, title="Bounce Sym2 (Intra)", message="Bounce off intra level ({{ticker}} - {{close}})")
+alertcondition(anyPivotSym1Bounce or anyPivotSym2Bounce, title="Bounce (Pivots)", message="Bounce off pivot level ({{ticker}} - {{close}})")
+alertcondition(anyBuySym1Bounce or anyBuySym2Bounce, title="Bounce (Buy)", message="Bounce off buy level ({{ticker}} - {{close}})")
+alertcondition(anySellSym1Bounce or anySellSym2Bounce, title="Bounce (Sell)", message="Bounce off sell level ({{ticker}} - {{close}})")
+alertcondition(anyIntraSym1Bounce or anyIntraSym2Bounce, title="Bounce (Intra)", message="Bounce off intra level ({{ticker}} - {{close}})")
 
 // Calculate MAs based on user selection
+// TODO: Change this to be LTF
 fastMA = typeFastMA == "EMA" ? ta.ema(close, periodFastMA) : ta.sma(close, periodFastMA)
 slowMA = typeSlowMA == "EMA" ? ta.ema(close, periodSlowMA) : ta.sma(close, periodSlowMA)
 confirmMA = typeConfirmMA == "EMA" ? ta.ema(close, periodConfirmMA) : ta.sma(close, periodConfirmMA)
@@ -232,26 +236,53 @@ fastCrossSlowDown = ta.crossunder(fastMA, slowMA)
 // Detecting Price relative to Confirm MA
 priceAboveConfirm = close > confirmMA
 priceBelowConfirm = close < confirmMA
+priceOptimalEntry = (close - confirmMA) < (close * buySellBuffer/100) and (confirmMA - close) < (close * buySellBuffer/100) 
+priceCandleBufferEntry = (high - low) * buffer/100
+priceOptimalBufferEntry = (close) * buySellBuffer/100
+
+// Calculate the 14-period EMA on the lower timeframe
+lowerTimeframe = "3"
+emaLowerTimeframe = request.security(syminfo.tickerid, lowerTimeframe, ta.ema(close, periodFastMA))
+emaLowerTimeframe2 = request.security(syminfo.tickerid, lowerTimeframe, ta.ema(close, periodSlowMA))
+
+// Plot the EMA
+plot(emaLowerTimeframe, color=color.blue, title="EMA Lower TF")
+plot(emaLowerTimeframe2, color=color.red, title="EMA Lower TF")
 
 // TOOD: Break down buy/sell to be based on type of bounce plus direction is working
 buySignal = false
+buyReversalSignal = false
 sellSignal = false
+sellReversalSignal = false
 
 if ticker.standard() == sym1
     buySignal := priceAboveConfirm and fastMA > slowMA and anySym1BounceUp
     sellSignal := priceBelowConfirm and fastMA < slowMA and anySym1BounceDown
+    buyReversalSignal := priceBelowConfirm and anySym1BounceUp
+    sellReversalSignal := priceAboveConfirm and anySym1BounceDown
 
-if ticker.standard() == sym2
-    buySignal := priceAboveConfirm and fastMA > slowMA and anySym2BounceUp
-    sellSignal := priceBelowConfirm and fastMA < slowMA and anySym2BounceDown
+if fastCrossSlowDown
+    for i = 0 to 2
+        if anySym1BounceDown[i] and priceBelowConfirm and priceOptimalEntry
+            sellSignal := true
+
+if fastCrossSlowUp
+    for i = 0 to 2
+        if anySym1BounceUp[i] and priceAboveConfirm and priceOptimalEntry
+            sellSignal := true
 
 // Symbol when price goes below or above confirm MA
 plotshape(series=priceAboveConfirm, style=shape.labelup, location=location.bottom, color= buySignal  ? color.green : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.labelup, location=location.bottom, color= buyReversalSignal  ? color.red : na, size=size.small)
 plotshape(series=priceBelowConfirm, style=shape.labeldown, location=location.top, color= sellSignal ? color.red : na, size=size.small)
+plotshape(series=priceAboveConfirm, style=shape.labeldown, location=location.top, color= sellReversalSignal ? color.green : na, size=size.small)
 
 // Alert Conditions
-alertcondition(buySignal, title="MA Buy Alert", message="Buy Triggered")
-alertcondition(sellSignal, title="MA Sell Alert", message="Sell Triggered")
+// TODO: Add alert based on tick box for bounce and Buy/Sell
+alertcondition(buySignal, title="Directional Buy Alert", message="Buy Triggered")
+alertcondition(sellSignal, title="Directional Sell Alert", message="Sell Triggered")
+alertcondition(buyReversalSignal, title="Reversal Buy Alert", message="Buy Triggered")
+alertcondition(sellReversalSignal, title="Reversal Sell Alert", message="Sell Triggered")
 
 // Dashboard inputs
 show_table      = input.bool(true,"Show Dashboard", group="Dashboard", inline="Table")
@@ -264,7 +295,7 @@ table_fontcolor       = input.color(color.white, title="  |  Font Color"
 ticker1_price  = request.security(sym1, timeframe.period, math.round_to_mintick(close))
 ticker2_price  = request.security(sym2, timeframe.period, math.round_to_mintick(close))
 
-var displayTable = table.new(tablePosition, 2, 4, border_width=1, bgcolor = table_bgcolor)
+var displayTable = table.new(tablePosition, 2, 6, border_width=1, bgcolor = table_bgcolor)
 
 f_fillCell(_row, _column,series string _cellText) =>
     switch table_font_size
@@ -281,7 +312,6 @@ extractSymbolName(simple string sym) =>
     pos = str.pos(sym, ":")  // Get position of ":" character
     tkr= str.substring(sym, pos+1)
 
-
 if barstate.islast and show_table
     f_fillCell(0, 0, "Confirm")
     f_fillCell(1, 0, "Trend")
@@ -292,4 +322,6 @@ if barstate.islast and show_table
     f_fillCellColor(1,1,priceAboveConfirm and fastMA > slowMA ? color.green : (priceBelowConfirm  and fastMA < slowMA ? color.red : color.gray))
     f_fillCell(2, 1, str.tostring(ticker1_price))
     f_fillCell(3, 1, str.tostring(ticker2_price))
+    f_fillCell(4, 1, str.tostring(priceCandleBufferEntry))
+    f_fillCell(5, 1, str.tostring(priceOptimalBufferEntry))
     //TODO: Add symbol to show trend of both tickers

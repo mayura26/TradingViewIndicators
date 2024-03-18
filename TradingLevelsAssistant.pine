@@ -18,85 +18,121 @@
 
 // FEATURE: Dashboard SPY/SPX
 
-indicator("Trading Levels Assistant", max_labels_count = 200, max_lines_count = 200, overlay=true)
-buffer = input(0.1, title="Level Bounce Buffer", group="Level Alerts") // Define a buffer to avoid false positives due to noise
-draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
-    dline = line.new(x1=_x1, y1=_y1, x2=_x2, y2=_y2, xloc=_xloc, extend=_extend, color=_color, style=_style, width=_width)
-    line.delete(dline[1])
+indicator("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 500, overlay=true)
 
-draw_box(_left, _top, _right, _bottom, _color, _width, _style, _extend, _xloc, _bgcolor) =>
-    dbox = box.new(left=_left, top=_top, right=_right, bottom=_bottom, border_color=_color, border_width=_width, border_style=_style, extend=_extend, xloc=_xloc, bgcolor=_bgcolor)
-    box.delete(dbox[1])
+reset_labels = false
+if reset_labels
+    for labelSel in label.all
+        label.delete(labelSel)
 
-draw_label(_x, _y, _text, _xloc, _yloc, _color, _style, _textcolor, _size, _textalign, _tooltip) =>
-    dlabel = label.new(x=_x, y=_y, text=_text, xloc=_xloc, yloc=_yloc, color=_color, style=_style, textcolor=_textcolor, size=_size, textalign=_textalign, tooltip=_tooltip)
-    label.delete(dlabel[1])
+// INPUTS
 
-// Function to check bounce
-checkBounce(level) =>
-    lowBounce = low <= level and high >= level - buffer
-    highBounce = high >= level and low <= level + buffer
-    lowBounce or highBounce
-
-draw_levels(levels, color, width, label, labeloffset) =>
-    plotLevels = str.split(levels, ",")
-    for level in plotLevels
-        draw_line(bar_index, str.tonumber(level), bar_index + labeloffset + 15, str.tonumber(level),  xloc.bar_index, extend.left, color, line.style_solid, width)
-        draw_label(bar_index + labeloffset + 10,  str.tonumber(level), label, xloc.bar_index, yloc.price, color.new(color.white, 100), label.style_none, color, size.normal, text.align_right, '')
-
-for lineSel in line.all
-    line.delete(lineSel)
-    
 // Define input for ticker
 sym1 = input.symbol("CME_MINI:MNQ1!", "Ticker 1", group="Tickers")
 sym2 = input.symbol("AMEX:SPY", "Ticker 2", group="Tickers")
 
 // Define input for pivots
-sym1Pivots = input("", title="Ticker 1 Pivots (comma delimited)", group="Ticker 1 Levels")
-sym1BuyLevels = input("", title="Ticker 1 Buy Levels (comma delimited)", group="Ticker 1 Levels")
-sym1SellLevels = input("", title="Ticker 1 Sell Levels (comma delimited)", group="Ticker 1 Levels")
-sym1IntraDayLevels  = input("", title="Ticker 1 Intraday Levels (comma delimited)", group="Ticker 1 Levels")
-sym2Pivots = input("", title="Ticker 2 Pivots (comma delimited)", group="Ticker 2 Levels")
-sym2BuyLevels = input("", title="Ticker 2 Buy Levels (comma delimited)", group="Ticker 2 Levels")
-sym2SellLevels = input("", title="Ticker 2 Sell Levels (comma delimited)", group="Ticker 2 Levels")
-sym2IntraDayLevels  = input("", title="Ticker 2 Intraday Levels (comma delimited)", group="Ticker 2 Levels")
+sym1Pivots = input("", title="Pivot", group="Ticker 1 Levels (comma delimited)", inline="line1")
+sym1BuyLevels = input("", title="  |  Buy", group="Ticker 1 Levels (comma delimited)", inline="line1")
+sym1SellLevels = input("", title="Sell ", group="Ticker 1 Levels (comma delimited)", inline="line2")
+sym1IntraDayLevels  = input("", title="  |  Intraday", group="Ticker 1 Levels (comma delimited)", inline="line2")
+sym2Pivots = input("", title="Pivot", group="Ticker 2 Levels (comma delimited)", inline="line1")
+sym2BuyLevels = input("", title="  |  Buy", group="Ticker 2 Levels (comma delimited)", inline="line1")
+sym2SellLevels = input("", title="Sell ", group="Ticker 2 Levels (comma delimited)", inline="line2")
+sym2IntraDayLevels  = input("", title="  |  Intraday", group="Ticker 2 Levels (comma delimited)", inline="line2")
 
-// Define input for level 1 color
-pivotsColor = input.color(color.purple, title="Pivot Color", group="Line Style")
-buyColor = input.color(color.rgb(9, 122, 5), title="Buy Level Color", group="Line Style")
-sellColor = input.color(color.rgb(161, 33, 33), title="Sell Level  Color", group="Line Style")
-intraColor = input.color(color.orange, title="Intraday Color", group="Line Style")
+// Define input for line settings
+pivotsColor = input.color(color.purple, title="Pivot Color", group="Level Settings", inline = "pivots")
+pivotsLabel = input("Pivot", title="Pivots Label", group="Level Settings", inline = "pivots")
+pivotsWidth = input(2, title="    └ Pivots Width", group="Level Settings", inline = "pwidth")
 
-// Define input for level 1 label
-pivotsLabel = input("Pivot", title="Pivots Label", group="Line Style")
-buyLabel = input("Buy", title="Buy Level Label", group="Line Style")
-sellLabel = input("Sell", title="Sell Level Label", group="Line Style")
-intraLabel = input("Intra", title="Intraday Label", group="Line Style")
+buyColor = input.color(color.rgb(9, 122, 5), title="Buy Level Color", group="Level Settings", inline = "buy")
+buyLabel = input("Buy", title="Buy Level Label", group="Level Settings", inline = "buy")
+buyWidth = input(2, title="    └ Buy Level Width", group="Level Settings", inline = "bwidth")
 
-// Define input for level 1 width
-pivotsWidth = input(2, title="Pivots Width", group="Line Style")
-buyWidth = input(2, title="Buy Level Width", group="Line Style")
-sellWidth = input(2, title="Sell Level Width", group="Line Style")
-intraWidth = input(2, title="Intraday Width", group="Line Style")
+sellColor = input.color(color.rgb(161, 33, 33), title="Sell Level  Color", group="Level Settings", inline = "sell")
+sellLabel = input("Sell", title="Sell Level Label", group="Level Settings", inline = "sell")
+sellWidth = input(2, title="    └ Sell Level Width", group="Level Settings", inline = "swidth")
 
-// Define label offset
+intraColor = input.color(color.orange, title="Intraday Color", group="Level Settings", inline = "intra")
+intraLabel = input("Intra", title="Intraday Label", group="Level Settings", inline = "intra")
+intraWidth = input(2, title="    └ Intraday Width", group="Level Settings", inline = "iwidth")
 labelOffset = input(15, title="Label Offset", group="General")
+buffer = input(5, title="Level Bounce Buffer [H-L] (%)", group="General") // Define a buffer to avoid false positives due to noise
 
-// Define EMA/SMA periods
-periodFastMA = input(8, title="Fast MA Period", group="Moving Averages")
-periodSlowMA = input(21, title="Slow MA Period", group="Moving Averages")
-periodConfirmMA = input(13, title="Confirm MA Period", group="Moving Averages")
+showPivotsBounce = input(true, title=" Show Pivot Level Bounce Symbol", group="Level Bounce (Pivot)")
+includeTrigPivots = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Pivot)", inline="pivot")
+includeRevPivots = input(true, title="Trigger Reversal", group="Level Bounce (Pivot)", inline="pivot")
+showBuyBounce = input(true, title=" Show Buy Level Bounce Symbol", group="Level Bounce (Buy)")
+includeTrigBuy = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Buy)", inline="Buy")
+includeRevBuy = input(true, title="Trigger Reversal", group="Level Bounce (Buy)", inline="Buy")
+showSellBounce = input(true, title=" Show Sell Level Bounce Symbol", group="Level Bounce (Sell)")
+includeTrigSell = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Sell)", inline="Sell")
+includeRevSell = input(true, title="Trigger Reversal", group="Level Bounce (Sell)", inline="Sell")
+showIntraBounce = input(true, title=" Show Intra Level Bounce Symbol", group="Level Bounce (Intra)")
+includeTrigIntra = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Intra)", inline="Intra")
+includeRevIntra = input(true, title="Trigger Reversal", group="Level Bounce (Intra)", inline="Intra")
 
-// Choose MA type
-typeFastMA = input.string("EMA", title="Fast MA Type", options=["EMA", "SMA"], group="Moving Averages")
-typeSlowMA = input.string("EMA", title="Slow MA Type", options=["EMA", "SMA"], group="Moving Averages")
-typeConfirmMA = input.string("SMA", title="Confirm MA Type", options=["EMA", "SMA"], group="Moving Averages")
+// Define EMA/SMA settings
+periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
+colorFastMA = input.color(color.new(color.fuchsia,75), title="Fast MA Color", group="Moving Averages", inline="fast")
+typeFastMA = input.string("EMA", title="    └ Fast MA Type", options=["EMA", "SMA"], group="Moving Averages", inline="tfast")
 
-// Choose colors
-colorFastMA = input.color(color.new(color.fuchsia,75), title="Fast MA Color", group="Moving Averages")
-colorSlowMA = input.color(color.new(color.green,75), title="Slow MA Color", group="Moving Averages")
-colorConfirmMA = input.color(color.new(color.red,75), title="Confirm MA Color", group="Moving Averages")
+periodSlowMA = input(21, title="Slow MA Period", group="Moving Averages", inline="slow")
+colorSlowMA = input.color(color.new(color.green,75), title="Slow MA Color", group="Moving Averages", inline="slow")
+typeSlowMA = input.string("EMA", title="    └ Slow MA Type", options=["EMA", "SMA"], group="Moving Averages", inline="tslow")
 
+periodConfirmMA = input(13, title="Confirm MA Period", group="Moving Averages", inline="confirm")
+colorConfirmMA = input.color(color.new(color.red,75), title="Confirm MA Color", group="Moving Averages", inline="confirm")
+typeConfirmMA = input.string("SMA", title="    └ Confirm MA Type", options=["EMA", "SMA"], group="Moving Averages", inline="tconfirm")
+
+//FUNCTIONS
+draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
+    dline = line.new(x1=_x1, y1=_y1, x2=_x2, y2=_y2, xloc=_xloc, extend=_extend, color=_color, style=_style, width=_width)
+    line.delete(dline[1])
+
+draw_label(_x, _y, _text, _xloc, _yloc, _color, _style, _textcolor, _size, _textalign, _tooltip) =>
+    dlabel = label.new(x=_x, y=_y, text=_text, xloc=_xloc, yloc=_yloc, color=_color, style=_style, textcolor=_textcolor, size=_size, textalign=_textalign, tooltip=_tooltip)
+    
+check_bounce_high(level) =>
+    highBounce = high >= level and close < level - (high - low) * (buffer/100) and open <= level
+
+check_bounce_low(level) =>
+    lowBounce = low <= level and close > level + (high - low) * (buffer/100) and open >= level
+
+// TODO: Pull out bounce type as high or low
+check_levels_low(levels, bounceType, symbolEnabled) =>    
+    plotLevels = str.split(levels, ",")
+    anyBounce = false
+    for level in plotLevels
+        if check_bounce_low(str.tonumber(level))
+            anyBounce := true
+            if symbolEnabled
+                draw_label(bar_index, str.tonumber(level), bounceType, xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
+    result = anyBounce
+
+check_levels_high(levels, bounceType, symbolEnabled) =>    
+    plotLevels = str.split(levels, ",")
+    anyBounce = false
+    for level in plotLevels
+        if check_bounce_high(str.tonumber(level))
+            anyBounce := true
+            if symbolEnabled
+                draw_label(bar_index, str.tonumber(level), bounceType, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
+    result = anyBounce
+
+
+draw_levels(levels, color, width, label, labeloffset) =>
+    plotLevels = str.split(levels, ",")
+    for level in plotLevels
+        draw_line(bar_index, str.tonumber(level), bar_index + labeloffset + 15, str.tonumber(level),  xloc.bar_index, extend.left, color, line.style_solid, width)
+        if barstate.islast
+            plot_label = label.new(bar_index + labeloffset + 10, str.tonumber(level))
+            label.set_text(plot_label, label)
+            label.set_style(plot_label, label.style_none)
+            label.set_textcolor(plot_label, color)
+            label.delete(plot_label[1])
+    
 // Check if symbol matches the selected ticker
 if ticker.standard() == sym1
     draw_levels(sym1Pivots, pivotsColor, pivotsWidth, pivotsLabel, labelOffset)
@@ -111,17 +147,73 @@ if ticker.standard() == sym2
     draw_levels(sym2IntraDayLevels, intraColor, intraWidth, intraLabel, labelOffset)
 
 // Check for bounce off each level in the array
-anyBounce = false
+anyPivotSym1BounceUp = false
+anyBuySym1BounceUp = false
+anySellSym1BounceUp = false
+anyIntraSym1BounceUp = false
+
+anyPivotSym1BounceDown = false
+anyBuySym1BounceDown = false
+anySellSym1BounceDown = false
+anyIntraSym1BounceDown = false
+
+anyPivotSym2BounceUp = false
+anyBuySym2BounceUp = false
+anySellSym2BounceUp = false
+anyIntraSym2BounceUp = false
+
+anyPivotSym2BounceDown = false
+anyBuySym2BounceDown = false
+anySellSym2BounceDown = false
+anyIntraSym2BounceDown = false
+
 if ticker.standard() == sym1
-    plotLevels = str.split(sym1Pivots, ",")
-    for level in plotLevels
-        if checkBounce(str.tonumber(level))
-            anyBounce := true
-            // Plot a symbol or text label at the location of the bounce
-            draw_label(bar_index, str.tonumber(level), "Bounce", xloc.bar_index, yloc.belowbar,  color.green, label.style_label_down, color.white, size.small, text.align_right, '')
+    anyPivotSym1BounceUp := check_levels_low(sym1Pivots, pivotsLabel, showPivotsBounce)
+    anyPivotSym1BounceDown := check_levels_high(sym1Pivots, pivotsLabel, showPivotsBounce)
+    anyBuySym1BounceUp := check_levels_low(sym1BuyLevels, buyLabel, showBuyBounce)
+    anyBuySym1BounceDown := check_levels_high(sym1BuyLevels, buyLabel, showBuyBounce)
+    anySellSym1BounceUp := check_levels_low(sym1SellLevels, sellLabel, showSellBounce)
+    anySellSym1BounceDown := check_levels_high(sym1SellLevels, sellLabel, showSellBounce)
+    anyIntraSym1BounceUp := check_levels_low(sym1IntraDayLevels, intraLabel, showIntraBounce)
+    anyIntraSym1BounceDown := check_levels_high(sym1IntraDayLevels, intraLabel, showIntraBounce)
+
+if ticker.standard() == sym2
+    anyPivotSym2BounceUp := check_levels_low(sym2Pivots, pivotsLabel, showPivotsBounce)
+    anyPivotSym2BounceDown := check_levels_high(sym2Pivots, pivotsLabel, showPivotsBounce)
+    anyBuySym2BounceUp := check_levels_low(sym2BuyLevels, buyLabel, showBuyBounce)
+    anyBuySym2BounceDown := check_levels_high(sym2BuyLevels, buyLabel, showBuyBounce)
+    anySellSym2BounceUp := check_levels_low(sym2SellLevels, sellLabel, showSellBounce)
+    anySellSym2BounceDown := check_levels_high(sym2SellLevels, sellLabel, showSellBounce)
+    anyIntraSym2BounceUp := check_levels_low(sym2IntraDayLevels, intraLabel, showIntraBounce)
+    anyIntraSym2BounceDown := check_levels_high(sym2IntraDayLevels, intraLabel, showIntraBounce)
+
+
+anyPivotSym1Bounce = anyPivotSym1BounceUp or anyPivotSym1BounceDown
+anyBuySym1Bounce = anyBuySym1BounceUp or anyBuySym1BounceDown
+anySellSym1Bounce = anySellSym1BounceUp or anySellSym1BounceDown
+anyIntraSym1Bounce = anyIntraSym1BounceUp or anyIntraSym1BounceDown
+
+anyPivotSym2Bounce = anyPivotSym2BounceUp or anyPivotSym2BounceDown
+anyBuySym2Bounce = anyBuySym2BounceUp or anyBuySym2BounceDown
+anySellSym2Bounce = anySellSym2BounceUp or anySellSym2BounceDown
+anyIntraSym2Bounce = anyIntraSym2BounceUp or anyIntraSym2BounceDown
+
+anySym1BounceUp = anyPivotSym1BounceUp or anyBuySym1BounceUp or anySellSym1BounceUp or anyIntraSym1BounceUp
+anySym1BounceDown = anyPivotSym1BounceDown or anyBuySym1BounceDown or anySellSym1BounceDown or anyIntraSym1BounceDown
+
+anySym2BounceUp = anyPivotSym2BounceUp or anyBuySym2BounceUp or anySellSym2BounceUp or anyIntraSym2BounceUp
+anySym2BounceDown = anyPivotSym2BounceDown or anyBuySym2BounceDown or anySellSym2BounceDown or anyIntraSym2BounceDown
 
 // Set up alert
-alertcondition(anyBounce, title="Bounce", message="Price bounced off one of the predefined levels!")
+alertcondition(anyPivotSym1Bounce, title="Bounce Sym1 (Pivots)", message="Bounce off pivot level ({{ticker}} - {{close}})")
+alertcondition(anyBuySym1Bounce, title="Bounce Sym1 (Buy)", message="Bounce off buy level ({{ticker}} - {{close}})")
+alertcondition(anySellSym1Bounce, title="Bounce Sym1 (Sell)", message="Bounce off sell level ({{ticker}} - {{close}})")
+alertcondition(anyIntraSym1Bounce, title="Bounce Sym1 (Intra)", message="Bounce off intra level ({{ticker}} - {{close}})")
+
+alertcondition(anyPivotSym2Bounce, title="Bounce Sym2 (Pivots)", message="Bounce off pivot level ({{ticker}} - {{close}})")
+alertcondition(anyBuySym2Bounce, title="Bounce Sym2 (Buy)", message="Bounce off buy level ({{ticker}} - {{close}})")
+alertcondition(anySellSym2Bounce, title="Bounce Sym2 (Sell)", message="Bounce off sell level ({{ticker}} - {{close}})")
+alertcondition(anyIntraSym2Bounce, title="Bounce Sym2 (Intra)", message="Bounce off intra level ({{ticker}} - {{close}})")
 
 // Calculate MAs based on user selection
 fastMA = typeFastMA == "EMA" ? ta.ema(close, periodFastMA) : ta.sma(close, periodFastMA)
@@ -141,10 +233,63 @@ fastCrossSlowDown = ta.crossunder(fastMA, slowMA)
 priceAboveConfirm = close > confirmMA
 priceBelowConfirm = close < confirmMA
 
+// TOOD: Break down buy/sell to be based on type of bounce plus direction is working
+buySignal = false
+sellSignal = false
+
+if ticker.standard() == sym1
+    buySignal := priceAboveConfirm and fastMA > slowMA and anySym1BounceUp
+    sellSignal := priceBelowConfirm and fastMA < slowMA and anySym1BounceDown
+
+if ticker.standard() == sym2
+    buySignal := priceAboveConfirm and fastMA > slowMA and anySym2BounceUp
+    sellSignal := priceBelowConfirm and fastMA < slowMA and anySym2BounceDown
+
 // Symbol when price goes below or above confirm MA
-plotshape(series=priceAboveConfirm, style=shape.triangleup, location=location.belowbar, color= priceAboveConfirm and fastCrossSlowUp  ? color.green : na, size=size.small)
-plotshape(series=priceBelowConfirm, style=shape.triangledown, location=location.abovebar, color=priceBelowConfirm and fastCrossSlowDown ? color.red : na, size=size.small)
+plotshape(series=priceAboveConfirm, style=shape.labelup, location=location.bottom, color= buySignal  ? color.green : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.labeldown, location=location.top, color= sellSignal ? color.red : na, size=size.small)
 
 // Alert Conditions
-alertcondition(fastCrossSlowUp or fastCrossSlowDown, title="MA Cross Alert", message="Fast and Slow MAs have crossed!")
-alertcondition(priceAboveConfirm or priceBelowConfirm, title="Price Confirm Alert", message="Price has crossed the Confirm MA!")
+alertcondition(buySignal, title="MA Buy Alert", message="Buy Triggered")
+alertcondition(sellSignal, title="MA Sell Alert", message="Sell Triggered")
+
+// Dashboard inputs
+show_table      = input.bool(true,"Show Dashboard", group="Dashboard", inline="Table")
+tableLocation   = input.string(defval='Bottom right', options=['Top left', 'Top center', 'Top right', 'Bottom left', 'Bottom center', 'Bottom right'], title='| Location', group="Dashboard", inline="Table")
+tablePosition   = tableLocation == 'Top left' ? position.top_left : tableLocation == 'Top center' ? position.top_center : tableLocation == 'Top right' ? position.top_right : tableLocation == 'Bottom left' ? position.bottom_left : tableLocation == 'Bottom center' ? position.bottom_center : position.bottom_right
+table_font_size       = input.string('Normal', "    └ Font Size", options = ['Auto', 'Tiny', 'Small', 'Normal', 'Large'], group="Dashboard", inline = 'line2')
+table_bgcolor       = input.color(color.gray, title="Background Color", group="Dashboard", inline="line3")
+table_fontcolor       = input.color(color.white, title="  |  Font Color", group="Dashboard", inline="line3")
+
+ticker1_price  = request.security(sym1, timeframe.period, math.round_to_mintick(close))
+ticker2_price  = request.security(sym2, timeframe.period, math.round_to_mintick(close))
+
+var displayTable = table.new(tablePosition, 2, 4, border_width=1, bgcolor = table_bgcolor)
+
+f_fillCell(_row, _column,series string _cellText) =>
+    switch table_font_size
+        "Auto" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.auto)
+        "Tiny" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.tiny)
+        "Small" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.small)
+        "Normal" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.normal)
+        "Large" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.large)
+
+f_fillCellColor(_row,_column, color) =>
+    table.cell(displayTable,_column,_row, bgcolor=color)
+
+extractSymbolName(simple string sym) =>
+    pos = str.pos(sym, ":")  // Get position of ":" character
+    tkr= str.substring(sym, pos+1)
+
+
+if barstate.islast and show_table
+    f_fillCell(0, 0, "Confirm")
+    f_fillCell(1, 0, "Trend")
+    f_fillCell(2, 0, extractSymbolName(sym1))
+    f_fillCell(3, 0, extractSymbolName(sym2))
+
+    f_fillCellColor(0,1,priceAboveConfirm ? color.green : color.red)
+    f_fillCellColor(1,1,priceAboveConfirm and fastMA > slowMA ? color.green : (priceBelowConfirm  and fastMA < slowMA ? color.red : color.gray))
+    f_fillCell(2, 1, str.tostring(ticker1_price))
+    f_fillCell(3, 1, str.tostring(ticker2_price))
+    //TODO: Add symbol to show trend of both tickers

@@ -105,10 +105,10 @@ draw_label(_x, _y, _text, _xloc, _yloc, _color, _style, _textcolor, _size, _text
     dlabel = label.new(x=_x, y=_y, text=_text, xloc=_xloc, yloc=_yloc, color=_color, style=_style, textcolor=_textcolor, size=_size, textalign=_textalign, tooltip=_tooltip)
     
 check_bounce_high(level) =>
-    highBounce = high >= level and close < level - (high - low) * (buffer/100) and (open <= level + (high - low) * (buffer/100)) and barstate.isconfirmed
+    highBounce = high >= level and close < level - (high - low) * (buffer/100) and (open <= level + (high - low) * (buffer/100))
 
 check_bounce_low(level) =>
-    lowBounce = low <= level and close > level + (high - low) * (buffer/100) and (open >= level - (high - low) * (buffer/100)) and barstate.isconfirmed
+    lowBounce = low <= level and close > level + (high - low) * (buffer/100) and (open >= level - (high - low) * (buffer/100))
 
 check_levels_low(levels, bounceType, symbolEnabled) =>    
     plotLevels = str.split(levels, ",")
@@ -130,6 +130,16 @@ check_levels_high(levels, bounceType, symbolEnabled) =>
                 draw_label(bar_index, str.tonumber(level), bounceType, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
     result = anyBounce
 
+check_optimal_level(levels, symbolEnabled) =>    
+    plotLevels = str.split(levels, ",")
+    optLevel = false
+    if symbolEnabled
+        for level in plotLevels
+            if math.abs(str.tonumber(level) - close) < (close * buySellBuffer/100)
+                optLevel := true
+                if false
+                    draw_label(bar_index, str.tonumber(level), 'Optimal', xloc.bar_index, yloc.abovebar,  color.red, label.style_cross, color.white, size.small, text.align_center, '')
+    result = optLevel
 
 draw_levels(levels, color, width, label, labeloffset) =>
     plotLevels = str.split(levels, ",")
@@ -216,22 +226,22 @@ anySym2BounceDown = anyPivotSym2BounceDown or anyBuySym2BounceDown or anySellSym
 
 // Set up alert
 if (anyPivotSym1Bounce or anyPivotSym2Bounce) and alertPivotsBounce
-    alert("Pivot Bounce", "Bounce off pivot level at" + close, alert.freq_once_per_bar_close)
+    alert("Bounce off pivot level at" + str.tostring(close), alert.freq_once_per_bar_close)
 
 if (anyBuySym1Bounce or anyBuySym2Bounce) and alertBuyBounce
-    alert("Buy Bounce", "Bounce off buy level at" + close, alert.freq_once_per_bar_close)
+    alert("Bounce off buy level at" + str.tostring(close), alert.freq_once_per_bar_close)
 
 if (anySellSym1Bounce or anySellSym2Bounce) and alertSellBounce
-    alert("Sell Bounce", "Bounce off sell level at" + close, alert.freq_once_per_bar_close)
+    alert("Bounce off sell level at" + str.tostring(close), alert.freq_once_per_bar_close)
 
 if (anyIntraSym1Bounce or anyIntraSym2Bounce) and alertIntraBounce
-    alert("Intra Bounce", "Bounce off intra level at" + close, alert.freq_once_per_bar_close)
+    alert("Bounce off intra level at"  + str.tostring(close), alert.freq_once_per_bar_close)
 
 // Calculate MAs based on user selection
 // TODO: Change this to be LTF
-fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, lowerTimeframe, ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, lowerTimeframe, ta.sma(close, periodFastMA))
-slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, lowerTimeframe, ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, lowerTimeframe, ta.sma(close, periodSlowMA))
-confirmMA = typeConfirmMA == "EMA" ? request.security(syminfo.tickerid, lowerTimeframe, ta.ema(close, periodConfirmMA)) : request.security(syminfo.tickerid, lowerTimeframe, ta.sma(close, periodFastMA))
+fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodFastMA))
+slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodSlowMA))
+confirmMA = typeConfirmMA == "EMA" ? ta.ema(close, periodConfirmMA) : ta.sma(close, periodFastMA)
 
 // Plot MAs
 plot(fastMA, color=colorFastMA, title="Fast MA")
@@ -245,9 +255,16 @@ fastCrossSlowDown = ta.crossunder(fastMA, slowMA)
 // Detecting Price relative to Confirm MA
 priceAboveConfirm = close > confirmMA
 priceBelowConfirm = close < confirmMA
-priceOptimalEntry = (close - confirmMA) < (close * buySellBuffer/100) and (confirmMA - close) < (close * buySellBuffer/100) 
+priceOptimalEntryConfirm = math.abs(close - confirmMA) < (close * buySellBuffer/100)
 priceCandleBufferEntry = (high - low) * buffer/100
 priceOptimalBufferEntry = (close) * buySellBuffer/100
+priceOptimalEntryLevel = false
+priceOptimalEntryLevelReversal = false
+if ticker.standard() == sym1
+    priceOptimalEntryLevel := check_optimal_level(sym1Pivots, includeTrigPivots) or priceOptimalEntryLevel
+    priceOptimalEntryLevel := check_optimal_level(sym1BuyLevels, includeTrigBuy) or priceOptimalEntryLevel
+    priceOptimalEntryLevel := check_optimal_level(sym1SellLevels, includeTrigSell) or priceOptimalEntryLevel
+    priceOptimalEntryLevel := check_optimal_level(sym1IntraDayLevels, includeTrigIntra) or priceOptimalEntryLevel
 
 buySignal = false
 buyReversalSignal = false
@@ -255,20 +272,20 @@ sellSignal = false
 sellReversalSignal = false
 
 if ticker.standard() == sym1
-    buySignal := priceAboveConfirm and fastMA > slowMA and anySym1BounceUp and priceOptimalEntry
-    sellSignal := priceBelowConfirm and fastMA < slowMA and anySym1BounceDown and priceOptimalEntry
-    buyReversalSignal := priceBelowConfirm and anySym1BounceUp and priceOptimalBufferEntry
-    sellReversalSignal := priceAboveConfirm and anySym1BounceDown and priceOptimalBufferEntry
+    buySignal := priceAboveConfirm and fastMA > slowMA and anySym1BounceUp
+    sellSignal := priceBelowConfirm and fastMA < slowMA and anySym1BounceDown 
+    buyReversalSignal := priceBelowConfirm and anySym1BounceUp and priceOptimalEntryLevel
+    sellReversalSignal := priceAboveConfirm and anySym1BounceDown and priceOptimalEntryLevel
 
 if fastCrossSlowDown
     for i = 0 to 2
-        if anySym1BounceDown[i] and priceBelowConfirm and priceOptimalEntry
+        if anySym1BounceDown[i] and priceBelowConfirm and priceOptimalEntryLevel
             sellSignal := true
 
 if fastCrossSlowUp
     for i = 0 to 2
-        if anySym1BounceUp[i] and priceAboveConfirm and priceOptimalEntry
-            sellSignal := true
+        if anySym1BounceUp[i] and priceAboveConfirm and priceOptimalEntryLevel
+            buySignal := true
 
 // Symbol when price goes below or above confirm MA
 plotshape(series=priceAboveConfirm, style=shape.labelup, location=location.bottom, color= buySignal  ? color.green : na, size=size.small)
@@ -308,12 +325,12 @@ f_fillCellColor(_row,_column, color) =>
     table.cell(displayTable,_column,_row, bgcolor=color)
 
 f_fillCellColorText(_row, _column, series string _cellText, color) =>
-switch table_font_size
-    "Auto" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.auto)
-    "Tiny" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.tiny)
-    "Small" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.small)
-    "Normal" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.normal)
-    "Large" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.large)
+    switch table_font_size
+        "Auto" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.auto)
+        "Tiny" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.tiny)
+        "Small" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.small)
+        "Normal" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.normal)
+        "Large" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.large)
 
 extractSymbolName(simple string sym) =>
     pos = str.pos(sym, ":")  // Get position of ":" character
@@ -330,5 +347,5 @@ if barstate.islast and show_table
     f_fillCellColor(1,1,priceAboveConfirm and fastMA > slowMA ? color.green : (priceBelowConfirm  and fastMA < slowMA ? color.red : color.gray))
     f_fillCell(2, 1, str.tostring(ticker1_price))
     f_fillCell(3, 1, str.tostring(ticker2_price))
-    f_fillCellColorText(4, 1, str.tostring(priceCandleBufferEntry), priceOptimalEntry ? color.green : color.gray)
+    f_fillCellColorText(4, 1, str.tostring(priceOptimalBufferEntry), priceOptimalEntryConfirm ? color.green : color.gray)
     //TODO: Add symbol to show trend of both tickers

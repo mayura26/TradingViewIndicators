@@ -60,8 +60,9 @@ intraWidth = input(2, title="    └ Intraday Width", group="Level Setti
 
 labelOffset = input(15, title="Label Offset", group="General")
 buffer = input.float(15.0, title="Level Bounce Buffer [H-L] (%)", group="General", minval=0, maxval=100) // Define a buffer to avoid false positives due to noise
-buySellBuffer = input.float(0.05, title="Buy/Sell Buffer (%)", group="General",minval=0, maxval=10) 
+buySellBuffer = input.float(2, title="Buy/Sell Buffer (0.01x)%", group="General",minval=0, maxval=1000) 
 lowerTF = input.int(1, title="MA Timeframe", group="General",minval=0, maxval=10) 
+showAllConditions = input(false, title="Show Conditions for entry (Debug)", group = "General")
 
 showPivotsBounce = input(true, title=" Show Pivot Level Bounce Symbol   |   ", group="Level Bounce (Pivot)", inline="alert")
 alertPivotsBounce = input(true, title="Alert on Pivot Bounce", group="Level Bounce (Pivot)",inline="alert")
@@ -95,6 +96,10 @@ typeSlowMA = input.string("EMA", title="    └ Slow MA Type", options=[
 periodConfirmMA = input(13, title="Confirm MA Period", group="Moving Averages", inline="confirm")
 colorConfirmMA = input.color(color.new(color.red,75), title="Confirm MA Color", group="Moving Averages", inline="confirm")
 typeConfirmMA = input.string("SMA", title="    └ Confirm MA Type", options=["EMA", "SMA"], group="Moving Averages", inline="tconfirm")
+
+alertDirectionalBuySell = input(true, title="Buy/Sell", group="Alerts", inline="main")
+alertReversalBuySell = input(true, title="Buy/Sell (Reversal)", group="Alerts", inline="main")
+alertCrossBuySell = input(true, title="Buy/Sell (Cross)", group="Alerts", inline="main")
 
 //FUNCTIONS
 draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
@@ -135,10 +140,9 @@ check_optimal_level(levels, symbolEnabled) =>
     optLevel = false
     if symbolEnabled
         for level in plotLevels
-            if math.abs(str.tonumber(level) - close) < (close * buySellBuffer/100)
+            if math.abs(str.tonumber(level) - close) < (close * buySellBuffer/10000)
                 optLevel := true
-                if false
-                    draw_label(bar_index, str.tonumber(level), 'Optimal', xloc.bar_index, yloc.abovebar,  color.red, label.style_cross, color.white, size.small, text.align_center, '')
+                
     result = optLevel
 
 draw_levels(levels, color, width, label, labeloffset) =>
@@ -218,11 +222,17 @@ anyBuySym2Bounce = anyBuySym2BounceUp or anyBuySym2BounceDown
 anySellSym2Bounce = anySellSym2BounceUp or anySellSym2BounceDown
 anyIntraSym2Bounce = anyIntraSym2BounceUp or anyIntraSym2BounceDown
 
-anySym1BounceUp = anyPivotSym1BounceUp or anyBuySym1BounceUp or anySellSym1BounceUp or anyIntraSym1BounceUp
-anySym1BounceDown = anyPivotSym1BounceDown or anyBuySym1BounceDown or anySellSym1BounceDown or anyIntraSym1BounceDown
+anySym1BounceUp = (anyPivotSym1BounceUp and includeTrigPivots) or (anyBuySym1BounceUp and includeTrigBuy) or (anySellSym1BounceUp and includeTrigSell) or (anyIntraSym1BounceUp and includeTrigIntra)
+anySym1BounceDown = (anyPivotSym1BounceDown and includeTrigPivots) or (anyBuySym1BounceDown and includeTrigBuy) or (anySellSym1BounceDown and includeTrigSell) or (anyIntraSym1BounceDown and includeTrigIntra)
 
-anySym2BounceUp = anyPivotSym2BounceUp or anyBuySym2BounceUp or anySellSym2BounceUp or anyIntraSym2BounceUp
-anySym2BounceDown = anyPivotSym2BounceDown or anyBuySym2BounceDown or anySellSym2BounceDown or anyIntraSym2BounceDown
+anySym2BounceUp = (anyPivotSym2BounceUp and includeTrigPivots) or (anyBuySym2BounceUp and includeTrigBuy) or (anySellSym2BounceUp and includeTrigSell) or (anyIntraSym2BounceUp and includeTrigIntra)
+anySym2BounceDown = (anyPivotSym2BounceDown and includeTrigPivots) or (anyBuySym2BounceDown and includeTrigBuy) or (anySellSym2BounceDown and includeTrigSell) or (anyIntraSym2BounceDown and includeTrigIntra)
+
+anySym1BounceUpRev = (anyPivotSym1BounceUp and includeRevPivots) or (anyBuySym1BounceUp and includeRevBuy) or (anySellSym1BounceUp and includeRevSell) or (anyIntraSym1BounceUp and includeRevIntra)
+anySym1BounceDownRev = (anyPivotSym1BounceDown and includeRevPivots) or (anyBuySym1BounceDown and includeRevBuy) or (anySellSym1BounceDown and includeRevSell) or (anyIntraSym1BounceDown and includeRevIntra)
+
+anySym2BounceUpRev = (anyPivotSym2BounceUp and includeRevPivots) or (anyBuySym2BounceUp and includeRevBuy) or (anySellSym2BounceUp and includeRevSell) or (anyIntraSym2BounceUp and includeRevIntra)
+anySym2BounceDownRev = (anyPivotSym2BounceDown and includeRevPivots) or (anyBuySym2BounceDown and includeRevBuy) or (anySellSym2BounceDown and includeRevSell) or (anyIntraSym2BounceDown and includeRevIntra)
 
 // Set up alert
 if (anyPivotSym1Bounce or anyPivotSym2Bounce) and alertPivotsBounce
@@ -238,7 +248,6 @@ if (anyIntraSym1Bounce or anyIntraSym2Bounce) and alertIntraBounce
     alert("Bounce off intra level at"  + str.tostring(close), alert.freq_once_per_bar_close)
 
 // Calculate MAs based on user selection
-// TODO: Change this to be LTF
 fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodFastMA))
 slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodSlowMA))
 confirmMA = typeConfirmMA == "EMA" ? ta.ema(close, periodConfirmMA) : ta.sma(close, periodFastMA)
@@ -255,9 +264,9 @@ fastCrossSlowDown = ta.crossunder(fastMA, slowMA)
 // Detecting Price relative to Confirm MA
 priceAboveConfirm = close > confirmMA
 priceBelowConfirm = close < confirmMA
-priceOptimalEntryConfirm = math.abs(close - confirmMA) < (close * buySellBuffer/100)
+priceOptimalEntryConfirm = math.abs(close - confirmMA) < (close * buySellBuffer/10000)
 priceCandleBufferEntry = (high - low) * buffer/100
-priceOptimalBufferEntry = (close) * buySellBuffer/100
+priceOptimalBufferEntry = (close) * buySellBuffer/10000
 priceOptimalEntryLevel = false
 priceOptimalEntryLevelReversal = false
 if ticker.standard() == sym1
@@ -270,35 +279,64 @@ buySignal = false
 buyReversalSignal = false
 sellSignal = false
 sellReversalSignal = false
+buyCrossSignal = false
+sellCrossSignal = false
 
 if ticker.standard() == sym1
     buySignal := priceAboveConfirm and fastMA > slowMA and anySym1BounceUp
     sellSignal := priceBelowConfirm and fastMA < slowMA and anySym1BounceDown 
-    buyReversalSignal := priceBelowConfirm and anySym1BounceUp and priceOptimalEntryLevel
-    sellReversalSignal := priceAboveConfirm and anySym1BounceDown and priceOptimalEntryLevel
+    buyReversalSignal := priceBelowConfirm and anySym1BounceUpRev
+    sellReversalSignal := priceAboveConfirm and anySym1BounceDownRev
 
+lookback = 2
 if fastCrossSlowDown
-    for i = 0 to 2
-        if anySym1BounceDown[i] and priceBelowConfirm and priceOptimalEntryLevel
-            sellSignal := true
+    for i = 0 to lookback
+        if anySym1BounceDownRev[i] and priceBelowConfirm
+            sellCrossSignal := true
 
 if fastCrossSlowUp
-    for i = 0 to 2
-        if anySym1BounceUp[i] and priceAboveConfirm and priceOptimalEntryLevel
-            buySignal := true
+    for i = 0 to lookback
+        if anySym1BounceUpRev[i] and priceAboveConfirm
+            buyCrossSignal := true
+
+// Debug symbols
+if showAllConditions
+    if priceOptimalEntryLevel
+        draw_label(bar_index, close, 'Optimal Level', xloc.bar_index, yloc.abovebar,  color.aqua, label.style_cross, color.white, size.small, text.align_center, '')
+    if fastCrossSlowDown 
+        draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.blue, label.style_cross, color.white, size.small, text.align_center, '')
+    if fastCrossSlowUp 
+        draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.blue, label.style_cross, color.white, size.small, text.align_center, '')
+
+buyCondition = priceOptimalEntryConfirm or priceOptimalEntryLevel
+sellCondition = priceOptimalEntryConfirm or priceOptimalEntryLevel
+buyRevCondition =  priceOptimalEntryLevel
+sellRevCondition = priceOptimalEntryLevel
+buyCrossCondition =  priceOptimalEntryLevel
+sellCrossCondition = priceOptimalEntryLevel
 
 // Symbol when price goes below or above confirm MA
-plotshape(series=priceAboveConfirm, style=shape.labelup, location=location.bottom, color= buySignal  ? color.green : na, size=size.small)
-plotshape(series=priceBelowConfirm, style=shape.labelup, location=location.bottom, color= buyReversalSignal  ? color.red : na, size=size.small)
-plotshape(series=priceBelowConfirm, style=shape.labeldown, location=location.top, color= sellSignal ? color.red : na, size=size.small)
-plotshape(series=priceAboveConfirm, style=shape.labeldown, location=location.top, color= sellReversalSignal ? color.green : na, size=size.small)
+plotshape(series=priceAboveConfirm, style=shape.labelup, location=location.bottom, color= buySignal and (showAllConditions or (not showAllConditions and buyCondition))  ? color.green : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.labelup, location=location.bottom, color= buyReversalSignal and (showAllConditions or (not showAllConditions and buyRevCondition))   ? color.red : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.labelup, location=location.bottom, color= buyCrossSignal and (showAllConditions or (not showAllConditions and buyCrossCondition))   ? color.blue : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.labeldown, location=location.top, color= sellSignal and (showAllConditions or (not showAllConditions and sellCondition))  ? color.red : na, size=size.small)
+plotshape(series=priceAboveConfirm, style=shape.labeldown, location=location.top, color= sellReversalSignal and (showAllConditions or (not showAllConditions and sellRevCondition))  ? color.green : na, size=size.small)
+plotshape(series=priceAboveConfirm, style=shape.labeldown, location=location.top, color= sellCrossSignal and (showAllConditions or (not showAllConditions and sellCrossCondition))  ? color.blue : na, size=size.small)
 
 // Alert Conditions
 // TODO: Add alert based on tick box for bounce and Buy/Sell
-alertcondition(buySignal, title="Directional Buy Alert", message="Buy Triggered")
-alertcondition(sellSignal, title="Directional Sell Alert", message="Sell Triggered")
-alertcondition(buyReversalSignal, title="Reversal Buy Alert", message="Buy Triggered")
-alertcondition(sellReversalSignal, title="Reversal Sell Alert", message="Sell Triggered")
+if buySignal and buyCondition and alertDirectionalBuySell
+    alert("Directional Buy Alert", alert.freq_once_per_bar)
+if sellSignal and sellCondition and alertDirectionalBuySell
+    alert("Directional Sell Alert", alert.freq_once_per_bar)
+if buyReversalSignal and buyRevCondition and alertReversalBuySell
+    alert("Reversal Buy Alert", alert.freq_once_per_bar)
+if sellReversalSignal and sellRevCondition and alertReversalBuySell
+    alert("Reversal Sell Alert", alert.freq_once_per_bar)
+if buyCrossSignal and buyCrossCondition and alertCrossBuySell
+    alert("Cross Buy Alert", alert.freq_once_per_bar)
+if sellCrossSignal and sellCrossCondition and alertCrossBuySell
+    alert("Cross Sell Alert", alert.freq_once_per_bar)
 
 // Dashboard inputs
 show_table      = input.bool(true,"Show Dashboard", group="Dashboard", inline="Table")

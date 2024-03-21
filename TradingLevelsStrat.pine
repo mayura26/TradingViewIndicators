@@ -19,7 +19,7 @@
 // FEATURE: Dashboard SPY/SPX
 
 // ********** BASE SETUP **********
-indicator("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 500, overlay=true)
+strategy("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 500, overlay=true)
 
 // ********** INPUTS **********
 
@@ -109,7 +109,6 @@ table_fontcolor       = input.color(color.white, title="  |  Font Color"
 var int trendDirection = 0
 var displayTable = table.new(tablePosition, 2, 6, border_width=1, bgcolor = table_bgcolor)
 var float bounceLevel = na
-var int systemState = 0
 
 // ********** FUNCTIONS **********
 draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
@@ -147,11 +146,11 @@ check_levels_high(levels, bounceType, symbolEnabled) =>
 
 check_optimal_level(levels, symbolEnabled) =>    
     plotLevels = str.split(levels, ",")
-    optLevel = 0.0
+    optLevel = false
     if symbolEnabled
         for level in plotLevels
             if math.abs(str.tonumber(level) - close) < (close * buySellBuffer/10000)
-                optLevel := str.tonumber(level)
+                optLevel := true
                 
     result = optLevel
 
@@ -188,27 +187,6 @@ f_fillCellColorText(_row, _column, series string _cellText, color) =>
 extractSymbolName(simple string sym) =>
     pos = str.pos(sym, ":")  // Get position of ":" character
     tkr= str.substring(sym, pos+1)
-
-
-// Function to convert timeframe to minutes
-timeframeToMinutes() =>
-    var int minutes = na
-    // Minute timeframes
-    if (str.contains(timeframe.period, "m") or str.contains(timeframe.period, "M"))
-        minutes := int(str.tonumber(str.replace(timeframe.period, "m", "")) * 1)
-    else if (str.contains(timeframe.period, "h") or str.contains(timeframe.period, "H"))
-        minutes := int(str.tonumber(str.replace(timeframe.period, "h", "")) * 60)
-    else if (str.contains(timeframe.period, "d") or str.contains(timeframe.period, "D"))
-        minutes := int(str.tonumber(str.replace(timeframe.period, "d", "")) * 1440)
-    else if (str.contains(timeframe.period, "w") or str.contains(timeframe.period, "W"))
-        minutes := int(str.tonumber(str.replace(timeframe.period, "w", "")) * 10080)
-    else if (str.contains(timeframe.period, "M"))
-        minutes := int(str.tonumber(str.replace(timeframe.period, "M", "")) * 43200) // Approximation
-    else if (str.contains(timeframe.period, "y") or str.contains(timeframe.period, "Y"))
-        minutes := int(str.tonumber(str.replace(timeframe.period, "y", "")) * 525600) // Approximation
-    else
-        minutes := na
-    minutes
 
 // ********** LEVEL RENDERING **********
 // Check if symbol matches the selected ticker
@@ -290,7 +268,7 @@ anySym2BounceDownRev = (anyPivotSym2BounceDown and includeRevPivots) or (anyBuyS
 // ********** EMA RENDERING **********
 fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodFastMA))
 slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodSlowMA))
-confirmMA = typeConfirmMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodConfirmMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodConfirmMA))
+confirmMA = typeConfirmMA == "EMA" ? ta.ema(close, periodConfirmMA) : ta.sma(close, periodConfirmMA)
 
 // Plot MAs
 plot(fastMA, color=colorFastMA, title="Fast MA")
@@ -310,25 +288,18 @@ else if (fastMA < slowMA)
 else
     trendDirection := 0
 
-// **********ENTRY CONDITIONS **********
-if ticker.standard() == sym1
-    priceOptimalEntryLevel1 = check_optimal_level(sym1Pivots, includeTrigPivots)
-    priceOptimalEntryLevel2 = check_optimal_level(sym1BuyLevels, includeTrigBuy)
-    priceOptimalEntryLevel3 = check_optimal_level(sym1SellLevels, includeTrigSell)
-    priceOptimalEntryLevel4 = check_optimal_level(sym1IntraDayLevels, includeTrigIntra)
-    if priceOptimalEntryLevel1 > 0
-        bounceLevel := priceOptimalEntryLevel1
-    if priceOptimalEntryLevel2 > 0
-        bounceLevel := priceOptimalEntryLevel2
-    if priceOptimalEntryLevel3 > 0
-        bounceLevel := priceOptimalEntryLevel3
-    if priceOptimalEntryLevel4 > 0
-        bounceLevel := priceOptimalEntryLevel4
 
+// **********ENTRY CONDITIONS **********
 priceOptimalEntryConfirm = math.abs(close - confirmMA) < (close * buySellBuffer/10000)
 priceCandleBufferEntry = (high - low) * buffer/100
 priceOptimalBufferEntry = (close) * buySellBuffer/10000
-priceOptimalEntryLevel = math.abs(close- bounceLevel) < (close * buySellBuffer/10000)
+priceOptimalEntryLevel = false
+
+if ticker.standard() == sym1
+    priceOptimalEntryLevel := check_optimal_level(sym1Pivots, includeTrigPivots) or priceOptimalEntryLevel
+    priceOptimalEntryLevel := check_optimal_level(sym1BuyLevels, includeTrigBuy) or priceOptimalEntryLevel
+    priceOptimalEntryLevel := check_optimal_level(sym1SellLevels, includeTrigSell) or priceOptimalEntryLevel
+    priceOptimalEntryLevel := check_optimal_level(sym1IntraDayLevels, includeTrigIntra) or priceOptimalEntryLevel
 
 buyCondition = priceOptimalEntryConfirm or priceOptimalEntryLevel
 sellCondition = priceOptimalEntryConfirm or priceOptimalEntryLevel
@@ -344,9 +315,6 @@ sellSignal = false
 sellReversalSignal = false
 buyCrossSignal = false
 sellCrossSignal = false
-lookbackTime = 8 // minutes to lookback
-lookback = math.floor(lookbackTime / timeframeToMinutes())
-lookback := 3
 
 // If trend is up and we get a bounce up we have a buy directional else its reversal
 if ticker.standard() == sym1
@@ -356,7 +324,7 @@ if ticker.standard() == sym1
     sellReversalSignal := trendDirection >= 1 and anySym1BounceDownRev
 
 // Look back over the last 2 bars to see if we had a trigger once we get a cross
-
+lookback = 2
 if fastCrossSlowDown
     for i = 0 to lookback
         if anySym1BounceDown[i]
@@ -371,20 +339,18 @@ if fastCrossSlowUp
 if showAllConditions
     if priceOptimalEntryLevel
         draw_label(bar_index, close, 'Optimal Level', xloc.bar_index, yloc.abovebar,  color.yellow, label.style_cross, color.white, size.small, text.align_center, '')
-    if priceOptimalEntryConfirm and false
-        draw_label(bar_index, close, 'Confirm Level', xloc.bar_index, yloc.abovebar,  color.maroon, label.style_cross, color.white, size.small, text.align_center, '')
     if fastCrossSlowDown 
         draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.fuchsia, label.style_cross, color.white, size.small, text.align_center, '')
     if fastCrossSlowUp 
         draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.aqua, label.style_cross, color.white, size.small, text.align_center, '')
 
 // Symbol when price goes below or above confirm MA
-plotshape(series=close, style=shape.labelup, location=location.bottom, color= buySignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyCondition))  ? color.green : na, size=size.small)
-plotshape(series=close, style=shape.triangleup, location=location.bottom, color= buyReversalSignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyRevCondition))   ? color.green : na, size=size.small)
-plotshape(series=close, style=shape.cross, location=location.bottom, color= buyCrossSignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyCrossCondition))   ? color.green : na, size=size.small)
-plotshape(series=close, style=shape.labeldown, location=location.top, color= sellSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellCondition))  ? color.red : na, size=size.small)
-plotshape(series=close, style=shape.triangledown, location=location.top, color= sellReversalSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellRevCondition))  ? color.red : na, size=size.small)
-plotshape(series=close, style=shape.cross, location=location.top, color= sellCrossSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellCrossCondition))  ? color.red : na, size=size.small)
+plotshape(series=priceAboveConfirm, style=shape.labelup, location=location.bottom, color= buySignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyCondition))  ? color.green : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.triangleup, location=location.bottom, color= buyReversalSignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyRevCondition))   ? color.green : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.cross, location=location.bottom, color= buyCrossSignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyCrossCondition))   ? color.green : na, size=size.small)
+plotshape(series=priceBelowConfirm, style=shape.labeldown, location=location.top, color= sellSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellCondition))  ? color.red : na, size=size.small)
+plotshape(series=priceAboveConfirm, style=shape.triangledown, location=location.top, color= sellReversalSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellRevCondition))  ? color.red : na, size=size.small)
+plotshape(series=priceAboveConfirm, style=shape.cross, location=location.top, color= sellCrossSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellCrossCondition))  ? color.red : na, size=size.small)
 
 // ********** ALERTS **********
 if buySignal and buyCondition and alertDirectionalBuySell
@@ -430,14 +396,16 @@ if barstate.islast and show_table
     f_fillCellColorText(4, 1, str.tostring(priceOptimalBufferEntry), priceOptimalEntryConfirm ? color.green : color.gray)
     //TODO: Add symbol to show trend of both tickers
 
-// ****** STRATEGY ********
+// ********** STRATEGY **********
+// Time frame for triggers
 var int startOfLastPeriod = timestamp(year(timenow), month(timenow), dayofmonth(timenow) - 1, 00, 00) // Adjust the hour and minute as needed
 var int endOfLastPeriod = timenow // Current time represents the end of the period
-inPeriod = time >= startOfLastPeriod and time <= endOfLastPeriod
+inPeriod = time >= startOfLastWeek and time <= endOfLastWeek
 blockedDays = (dayofweek(time) == 1 or dayofweek(time) == 7)
 allowedTimes() => time(timeframe = timeframe.period, session = "0930-1600", timezone = "America/New_York")
 
 // Set the stop-loss and take-profit levels
+
 var float stopLoss = na
 var float takeProfit1 = na
 var float takeProfit2 = na
@@ -446,24 +414,41 @@ var float stopLossShort = na
 var float takeProfit1Short = na
 var float takeProfit2Short = na
 var float takeProfit3Short = na
-var float limitLevel = na
 SL = 15
 TP1 = 15
 TP2 = 30
 TP3 = 45
 
-for i = 0 to lookback
-    if buySignal[i]
-        systemState := 2
-        limitLevel := math.floor(bounceLevel * (1 + buySellBuffer/10000))
-    else if sellSignal[i]
-        systemState := 12
-        limitLevel := math.floor(bounceLevel * (1 - buySellBuffer/10000))
-    else
-        systemState := 0
+if buySignal and alertDirectionalBuySell and inLastWeek and not blockedDays and allowedTimes()
+    if strategy.position_size == 0
+        stopLoss   := close - SL
+        takeProfit1 := close + TP1
+        takeProfit2 := close + TP2
+        takeProfit3 := close + TP3
+        strategy.order("Buy", strategy.long, qty=5, limit = close)
+        strategy.exit("Exit Sell1", "Buy", limit = takeProfit1, stop = stopLoss, qty_percent = 40)
+        strategy.exit("Exit Sell2", "Buy", limit = takeProfit2, stop = stopLoss, qty_percent = 40)
+        strategy.exit("Exit Sell3", "Buy", limit = takeProfit3, stop = stopLoss, qty_percent = 20)
 
-if systemState == 2
-    draw_label(bar_index, close, "Buy at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.teal, label.style_text_outline, color.white, size.small, text.align_center, '')
+if sellSignal and alertDirectionalBuySell and inLastWeek and not blockedDays and allowedTimes()
+    if strategy.position_size == 0
+        stopLossShort   := close + SL
+        takeProfit1Short := close - TP1
+        takeProfit2Short := close - TP2
+        takeProfit3Short := close - TP3
+        strategy.order("Sell", strategy.short, qty=5, limit = close)
+        strategy.exit("Exit Sell1", "Sell", limit = takeProfit1Short, stop = stopLossShort, qty_percent = 40)
+        strategy.exit("Exit Sell2", "Sell", limit = takeProfit2Short, stop = stopLossShort, qty_percent = 40)
+        strategy.exit("Exit Sell3", "Sell", limit = takeProfit3Short, stop = stopLossShort, qty_percent = 20)
+        
 
-if systemState == 12
-    draw_label(bar_index, close, "Sell at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.rgb(129, 21, 21), label.style_text_outline, color.white, size.small, text.align_center, '')
+// Exit for the first 2 contracts
+plot(stopLossShort, "SL", strategy.position_size < 0 ? color.red : na, style = plot.style_circles)
+plot(takeProfit1Short, "TP1", strategy.position_size < 0 ? color.green : na, style = plot.style_circles)
+plot(takeProfit2Short, "TP2", strategy.position_size < 0 ? color.green:na, style = plot.style_circles)
+plot(takeProfit3Short, "TP3", strategy.position_size < 0 ? color.green:na, style = plot.style_circles)
+
+plot(stopLoss, "SL", strategy.position_size > 0 ? color.red : na, style = plot.style_circles)
+plot(takeProfit1, "TP1", strategy.position_size > 0 ? color.green : na, style = plot.style_circles)
+plot(takeProfit2, "TP2", strategy.position_size > 0 ? color.green:na, style = plot.style_circles)
+plot(takeProfit3, "TP3", strategy.position_size > 0 ? color.green:na, style = plot.style_circles)

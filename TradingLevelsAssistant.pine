@@ -59,8 +59,8 @@ buffer = input.float(15.0, title="Level Bounce Buffer [H-L] (%)", group="General
 buySellBuffer = input.float(2, title="Buy/Sell Buffer (0.01x)%", group="General",minval=0, maxval=1000) 
 lowerTF = input.int(1, title="MA Timeframe [min]", group="General",minval=0, maxval=10) 
 lookbackTime = input.int(12, title="Lookback Timeframe [min]", group="General",minval=3, maxval=30) 
-showAllConditions = input(false, title="Show Conditions for entry (Debug)", group = "General")
-showPastBuySellConditions = input(true, title="Show buy/sell (Replay)", group = "General")
+showAllConditions = input(false, title="Show Conditions for Entry (Debug)", group = "General")
+showBuySellLevels = input(true, title="Show Buy/Sell (Replay)", group = "General")
 
 showPivotsBounce = input(true, title=" Show Pivot Level Bounce Symbol   |   ", group="Level Bounce (Pivot)", inline="alert")
 alertPivotsBounce = input(true, title="Alert on Pivot Bounce", group="Level Bounce (Pivot)",inline="alert")
@@ -364,38 +364,6 @@ if fastCrossSlowUp
         if anySym1BounceUp[i]
             buyCrossSignal := true
 
-// ********** RENDERING SYMBOLS **********
-if showAllConditions
-    if priceOptimalEntryLevel and false
-        draw_label(bar_index, close, 'Optimal Level', xloc.bar_index, yloc.abovebar,  color.yellow, label.style_cross, color.white, size.small, text.align_center, '')
-    if priceOptimalEntryConfirm and false
-        draw_label(bar_index, close, 'Confirm Level', xloc.bar_index, yloc.abovebar,  color.maroon, label.style_cross, color.white, size.small, text.align_center, '')
-    if fastCrossSlowDown 
-        draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.fuchsia, label.style_cross, color.white, size.small, text.align_center, '')
-    if fastCrossSlowUp 
-        draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.aqua, label.style_cross, color.white, size.small, text.align_center, '')
-
-// Symbol when price goes below or above confirm MA
-plotshape(series=close, style=shape.labelup, location=location.bottom, color= buySignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyCondition))  ? color.green : na, size=size.small)
-plotshape(series=close, style=shape.triangleup, location=location.bottom, color= buyReversalSignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyRevCondition))   ? color.green : na, size=size.small)
-plotshape(series=close, style=shape.cross, location=location.bottom, color= buyCrossSignal and (showPastBuySellConditions or (not showPastBuySellConditions and buyCrossCondition))   ? color.green : na, size=size.small)
-plotshape(series=close, style=shape.labeldown, location=location.top, color= sellSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellCondition))  ? color.red : na, size=size.small)
-plotshape(series=close, style=shape.triangledown, location=location.top, color= sellReversalSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellRevCondition))  ? color.red : na, size=size.small)
-plotshape(series=close, style=shape.cross, location=location.top, color= sellCrossSignal and (showPastBuySellConditions or (not showPastBuySellConditions and sellCrossCondition))  ? color.red : na, size=size.small)
-
-// ********** ALERTS **********
-if (anyPivotSym1Bounce or anyPivotSym2Bounce) and alertPivotsBounce
-    alert("Bounce off pivot level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
-
-if (anyBuySym1Bounce or anyBuySym2Bounce) and alertBuyBounce
-    alert("Bounce off buy level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
-
-if (anySellSym1Bounce or anySellSym2Bounce) and alertSellBounce
-    alert("Bounce off sell level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
-
-if (anyIntraSym1Bounce or anyIntraSym2Bounce) and alertIntraBounce
-    alert("Bounce off intra level at"  + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
-
 // ********** DASHBOARD **********
 ticker1_price  = request.security(sym1, timeframe.period, math.round_to_mintick(close))
 ticker2_price  = request.security(sym2, timeframe.period, math.round_to_mintick(close))
@@ -445,7 +413,6 @@ for i = 0 to bufferBuySellLookback
     if sellSignal[i]
         buyTriggeredInLookback := true
 
-
 for i = 0 to bufferBuySellLookback
     if buySignal[i]
         systemState := 2
@@ -460,27 +427,63 @@ for i = 0 to bufferBuySellLookback
         systemState := 13
         limitLevel := math.floor(confirmMA * (1 - buySellBuffer/10000))
 
+// ********** RENDERING SYMBOLS **********
+if showAllConditions
+    if priceOptimalEntryLevel and false
+        draw_label(bar_index, close, 'Optimal Level', xloc.bar_index, yloc.abovebar,  color.yellow, label.style_cross, color.white, size.small, text.align_center, '')
+    if priceOptimalEntryConfirm and false
+        draw_label(bar_index, close, 'Confirm Level', xloc.bar_index, yloc.abovebar,  color.maroon, label.style_cross, color.white, size.small, text.align_center, '')
+    if fastCrossSlowDown 
+        draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.fuchsia, label.style_cross, color.white, size.small, text.align_center, '')
+    if fastCrossSlowUp 
+        draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.aqua, label.style_cross, color.white, size.small, text.align_center, '')
 
 if systemState == 2 and validTriggerPeriod
-    draw_label(bar_index, limitLevel, "Buy (Directional) at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.teal, label.style_text_outline, color.white, size.small, text.align_center, '')
-    draw_label(bar_index, limitLevel, "", xloc.bar_index, yloc.price,  color.teal, label.style_cross, color.white, size.tiny, text.align_center, '')
+    if showBuySellLevels
+        draw_label(bar_index, limitLevel, "Buy (Directional) at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.teal, label.style_text_outline, color.white, size.small, text.align_center, '')
+        draw_label(bar_index, limitLevel, "", xloc.bar_index, yloc.price,  color.teal, label.style_cross, color.white, size.tiny, text.align_center, '')
     if alertDirectionalBuySell
         alert("Directional Buy Alert", alert.freq_once_per_bar)
 
 if systemState == 3 and validTriggerPeriod
-    draw_label(bar_index, close, "Buy (Cross) at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.rgb(17, 141, 129), label.style_text_outline, color.white, size.small, text.align_center, '')
-    draw_label(bar_index, limitLevel, "", xloc.bar_index, yloc.price,  color.rgb(17, 141, 129), label.style_cross, color.white, size.tiny, text.align_center, '')
+    if showBuySellLevels
+        draw_label(bar_index, close, "Buy (Cross) at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.rgb(17, 141, 129), label.style_text_outline, color.white, size.small, text.align_center, '')
+        draw_label(bar_index, limitLevel, "", xloc.bar_index, yloc.price,  color.rgb(17, 141, 129), label.style_cross, color.white, size.tiny, text.align_center, '')
     if alertCrossBuySell
         alert("Cross Buy Alert", alert.freq_once_per_bar)
 
 if systemState == 12 and validTriggerPeriod
-    draw_label(bar_index, close, "Sell (Directional) at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.rgb(129, 21, 21), label.style_text_outline, color.white, size.small, text.align_center, '')
-    draw_label(bar_index, limitLevel, "", xloc.bar_index, yloc.price,  color.rgb(129, 21, 21), label.style_cross, color.white, size.tiny, text.align_center, '')
+    if showBuySellLevels
+        draw_label(bar_index, close, "Sell (Directional) at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.rgb(129, 21, 21), label.style_text_outline, color.white, size.small, text.align_center, '')
+        draw_label(bar_index, limitLevel, "", xloc.bar_index, yloc.price,  color.rgb(129, 21, 21), label.style_cross, color.white, size.tiny, text.align_center, '')
     if alertDirectionalBuySell
         alert("Directional Sell Alert", alert.freq_once_per_bar)
 
 if systemState == 13 and validTriggerPeriod
-    draw_label(bar_index, close, "Sell (Cross) at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.rgb(173, 30, 30), label.style_text_outline, color.white, size.small, text.align_center, '')
-    draw_label(bar_index, limitLevel, "", xloc.bar_index, yloc.price,  color.rgb(173, 30, 30), label.style_cross, color.white, size.tiny, text.align_center, '')
+    if showBuySellLevels
+        draw_label(bar_index, close, "Sell (Cross) at " + str.tostring(limitLevel), xloc.bar_index, yloc.abovebar,  color.rgb(173, 30, 30), label.style_text_outline, color.white, size.small, text.align_center, '')
+        draw_label(bar_index, limitLevel, "", xloc.bar_index, yloc.price,  color.rgb(173, 30, 30), label.style_cross, color.white, size.tiny, text.align_center, '')
     if alertCrossBuySell
         alert("Cross Sell Alert", alert.freq_once_per_bar)
+
+
+// ***** PLOT SHAPES *****
+plotshape(series=close, style=shape.labelup, location=location.bottom, color= systemState == 2 and validTriggerPeriod  ? color.green : na, size=size.small)
+plotshape(series=close, style=shape.flag, location=location.bottom, color= buyReversalSignal ? color.green : na, size=size.small)
+plotshape(series=close, style=shape.triangleup, location=location.bottom, color= systemState == 3 and validTriggerPeriod  ? color.green : na, size=size.small)
+plotshape(series=close, style=shape.labeldown, location=location.top, color= systemState == 12 and validTriggerPeriod  ? color.red : na, size=size.small)
+plotshape(series=close, style=shape.flag, location=location.top, color= sellReversalSignal ? color.red : na, size=size.small)
+plotshape(series=close, style=shape.triangledown, location=location.top, color= systemState == 13 and validTriggerPeriod  ? color.red : na, size=size.small)
+
+// ********** ALERTS **********
+if (anyPivotSym1Bounce or anyPivotSym2Bounce) and alertPivotsBounce
+    alert("Bounce off pivot level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+
+if (anyBuySym1Bounce or anyBuySym2Bounce) and alertBuyBounce
+    alert("Bounce off buy level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+
+if (anySellSym1Bounce or anySellSym2Bounce) and alertSellBounce
+    alert("Bounce off sell level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+
+if (anyIntraSym1Bounce or anyIntraSym2Bounce) and alertIntraBounce
+    alert("Bounce off intra level at"  + str.tostring(bounceLevel), alert.freq_once_per_bar_close)

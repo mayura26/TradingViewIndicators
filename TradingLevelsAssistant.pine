@@ -1,22 +1,21 @@
 //@version=5
-// FEATURE: Alert on cross of level
-// FEATURE: Symbol on cross of level and reject (lookback of bars?)
+// TODO: Bring in ATR trigger as condition
 
-// FEATURE: Cross of ema to trigger signal/alert. Cross of fast/slow and above/below confirm gives trigger to short/long
+// TODO: Optimise confirm line
+
+// TODO: LOook at differential of EMA (and add a third one) to figure out ending trend etc.
+
+// TODO: Create dynamic pivots based on ER/pivots
+
 
 // FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY
 
-// FEATURE: Identify trend (look at different time periods of ema cross)
-
 // FEATURE: Orderflow oscilator
 
 // FEATURE: ATR
 
-// FEATURE: Expected Range
-
-// FEATURE: Dashboard SPY/SPX
 
 // ********** BASE SETUP **********
 indicator("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 500, overlay=true)

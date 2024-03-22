@@ -1,4 +1,8 @@
 //@version=5
+// BUG: Check if level less greater than close and if so the get fill lower
+
+// FEATURE: Chop detection by looking at lower MA and crossing
+
 // TODO: Bring in ATR trigger as condition
 
 // TODO: Optimise confirm line

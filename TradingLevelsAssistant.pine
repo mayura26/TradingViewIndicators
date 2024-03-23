@@ -125,7 +125,8 @@ draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
 
 draw_label(_x, _y, _text, _xloc, _yloc, _color, _style, _textcolor, _size, _textalign, _tooltip) =>
     dlabel = label.new(x=_x, y=_y, text=_text, xloc=_xloc, yloc=_yloc, color=_color, style=_style, textcolor=_textcolor, size=_size, textalign=_textalign, tooltip=_tooltip)
-    
+
+// TODO: improve detection   
 check_bounce_high(level) =>
     highBounce = high >= level and close < level - (high - low) * (buffer/100) and (open <= level + (high - low) * (buffer/100)) and barstate.isconfirmed
 
@@ -296,16 +297,15 @@ fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(l
 slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodSlowMA))
 confirmMA = typeConfirmMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodConfirmMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodConfirmMA))
 
-// Plot MAs
-plot(fastMA, color=colorFastMA, title="Fast MA")
-plot(slowMA, color=colorSlowMA, title="Slow MA")
-plot(confirmMA, color=colorConfirmMA, title="Confirm MA")
-
 // ********** EMA ANALYSIS **********
 fastCrossSlowUp = ta.crossover(fastMA, slowMA)
 fastCrossSlowDown = ta.crossunder(fastMA, slowMA)
 priceAboveConfirm = close > confirmMA
 priceBelowConfirm = close < confirmMA
+differentialMA = fastMA - slowMA
+deltaMA = differentialMA - differentialMA[1]
+
+
 
 if (fastMA > slowMA)
     trendDirection := 1
@@ -314,6 +314,16 @@ else if (fastMA < slowMA)
 else
     trendDirection := 0
 
+if deltaMA > deltaMA [1]
+    draw_label(bar_index, close, '(+ve)Delta:' + str.tostring(deltaMA), xloc.bar_index, yloc.abovebar,  deltaMA > 1 ? color.aqua : color.gray, label.style_label_lower_left, color.white, size.small, text.align_center, '')
+else if deltaMA < deltaMA [1]
+    draw_label(bar_index, close, '(-ve)Delta' + str.tostring(deltaMA), xloc.bar_index, yloc.belowbar,  deltaMA < -1 ?  color.fuchsia : color.gray, label.style_label_lower_left, color.white, size.small, text.align_center, '')
+
+// Plot MAs
+confirmMAPlotColor = deltaMA > 1 ? color.green : deltaMA < -1 ? color.red : color.gray
+plot(fastMA, color=colorFastMA, title="Fast MA")
+plot(slowMA, color=colorSlowMA, title="Slow MA")
+plot(confirmMA, color=confirmMAPlotColor, title="Confirm MA", linewidth = 2)
 // **********ENTRY CONDITIONS **********
 if ticker.standard() == sym1
     priceOptimalEntryLevel1 = check_optimal_level(sym1Pivots, includeTrigPivots)
@@ -358,7 +368,10 @@ if ticker.standard() == sym1
     buyReversalSignal := trendDirection <= -1 and anySym1BounceUpRev
     sellReversalSignal := trendDirection >= 1 and anySym1BounceDownRev
 
+// TODO: Add symbol 2
+
 // Look back over the last 2 bars to see if we had a trigger once we get a cross
+// BUG: Upcross and downcross need to be reworked to be smoother on picking it up
 if fastCrossSlowDown
     lastCrossDir := false
     for i = 0 to crossSignalLookback
@@ -390,11 +403,8 @@ if barstate.islast and show_table
     //TODO: Add symbol to show trend of both tickers
 
 // ****** STRATEGY ********
-var int startOfLastPeriod = timestamp(year(timenow), month(timenow), dayofmonth(timenow), 00, 00) // Adjust the hour and minute as needed
-var int endOfLastPeriod = timenow // Current time represents the end of the period
-inPeriod = time >= startOfLastPeriod and time <= endOfLastPeriod
-allowedTimes() => time(timeframe = timeframe.period, session = "0930-1600", timezone = "America/New_York")
-bool validTriggerPeriod = allowedTimes() and inPeriod
+allowedTimes() => time(timeframe = timeframe.period, session = "1030-1600", timezone = "America/New_York")
+bool validTriggerPeriod = allowedTimes()
 // Set the stop-loss and take-profit levels
 var float stopLoss = na
 var float takeProfit1 = na
@@ -474,9 +484,9 @@ if showAllConditions
     if priceOptimalEntryConfirm and false
         draw_label(bar_index, close, 'Confirm Level', xloc.bar_index, yloc.abovebar,  color.maroon, label.style_cross, color.white, size.small, text.align_center, '')
     if fastCrossSlowDown 
-        draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.fuchsia, label.style_cross, color.white, size.small, text.align_center, '')
+        draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.fuchsia, label.style_arrowdown, color.white, size.small, text.align_center, '')
     if fastCrossSlowUp 
-        draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.aqua, label.style_cross, color.white, size.small, text.align_center, '')
+        draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.aqua, label.style_arrowup, color.white, size.small, text.align_center, '')
 
 
 if systemState != systemState[1] and systemState[1] > 0 and systemState > 0 and ((systemState < 10 and systemState[1] > 10) or (systemState > 10 and systemState[1] < 10)) and validTriggerPeriod 

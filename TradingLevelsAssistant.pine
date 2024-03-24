@@ -126,7 +126,6 @@ draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
 draw_label(_x, _y, _text, _xloc, _yloc, _color, _style, _textcolor, _size, _textalign, _tooltip) =>
     dlabel = label.new(x=_x, y=_y, text=_text, xloc=_xloc, yloc=_yloc, color=_color, style=_style, textcolor=_textcolor, size=_size, textalign=_textalign, tooltip=_tooltip)
 
-// TODO: improve detection   
 check_bounce_high(level) =>
     highBounce = high >= level and close < level - (high - low) * (buffer/100) and (open <= level + (high - low) * (buffer/100)) and barstate.isconfirmed
 
@@ -409,7 +408,6 @@ if ticker.standard() == sym1
     buyReversalSignal := trendDirection <= -1 and anySym1BounceUpRev
     sellReversalSignal := trendDirection >= 1 and anySym1BounceDownRev
 
-// TODO: Add symbol 2
 if ticker.standard() == sym2
     buySignal := trendDirection >= 1 and anySym2BounceUp
     sellSignal := trendDirection <= -1 and anySym2BounceDown 
@@ -417,7 +415,6 @@ if ticker.standard() == sym2
     sellReversalSignal := trendDirection >= 1 and anySym2BounceDownRev
 
 // Look back over the last 2 bars to see if we had a trigger once we get a cross
-
 if fastCrossSlowDown
     lastCrossDir := false
     for i = 0 to crossSignalLookback

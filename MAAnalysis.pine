@@ -1,0 +1,51 @@
+//@version=5
+indicator("Trend Analysis", overlay=false)
+
+// Inputs
+shortPeriod = input(8, "Short MA Period")
+longPeriod = input(13, "Long MA Period")
+price = close
+
+// Define a function to calculate EMAs on the 3m timeframe
+ema3m(symbol, period) =>
+    request.security(symbol, "3", ta.ema(close, period))
+
+// Calculate the EMAs using the defined function
+shortMA = ema3m(syminfo.tickerid, shortPeriod)
+longMA = ema3m(syminfo.tickerid, longPeriod)
+maDifference = shortMA - longMA
+
+// Delta of MA difference
+delta = maDifference - maDifference[1]
+
+// Delta of the Delta (Acceleration)
+acceleration = delta - delta[1]
+
+// Direction based on MA difference
+direction = math.sign(maDifference)
+
+// Magnitude of Trend and Momentum
+trendMagnitude = math.abs(maDifference)
+momentumMagnitude = math.abs(delta)
+
+// Plotting
+plot(maDifference, title="MA Difference", color=color.blue)
+plot(delta, title="Delta", color=color.red)
+plot(acceleration, title="Acceleration", color=color.purple)
+
+hline(0, "Baseline", color=color.black, linestyle = hline.style_solid, linewidth = 2)
+
+// Optional: Combine metrics for a comprehensive trend score (example)
+// Trend score could combine direction, magnitude, and acceleration
+trendScore = direction * (trendMagnitude + momentumMagnitude + math.abs(acceleration))
+trendColor = color.gray
+// Set color based on trendScore
+if trendScore > 2.5
+    trendColor := color.green
+else if trendScore > 1.5
+    trendColor := color.rgb(0, 102, 22)
+else if trendScore < -2.5
+    trendColor := color.red
+else if trendScore < -1.5
+    trendColor := color.rgb(110, 3, 3)
+plot(trendScore, title="Trend Score", color=trendColor, linewidth = 2)

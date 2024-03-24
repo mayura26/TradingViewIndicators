@@ -116,7 +116,6 @@ var int trendDirection = 0
 var displayTable = table.new(tablePosition, 2, 6, border_width=1, bgcolor = table_bgcolor)
 var float bounceLevel = na
 var int systemState = 0
-var bool lastCrossDir = na
 
 // ********** FUNCTIONS **********
 draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
@@ -197,7 +196,6 @@ extractSymbolName(simple string sym) =>
     pos = str.pos(sym, ":")  // Get position of ":" character
     tkr= str.substring(sym, pos+1)
 
-
 // Function to convert timeframe to minutes
 getTimeframeInMinutes() =>
     // Initialize variable for minutes
@@ -214,6 +212,10 @@ getTimeframeInMinutes() =>
         minutes := str.tonumber(timeframe.period)
     // Return calculated minutes
     minutes
+
+// Function to calculate the limit level
+getLimitLevel(priceTarget, close, buyDir) =>
+    limitLevel = buyDir ? min(priceTarget, close) : max(priceTarget, close)
 
 // ********** LEVEL RENDERING **********
 // Check if symbol matches the selected ticker
@@ -302,28 +304,36 @@ fastCrossSlowUp = ta.crossover(fastMA, slowMA)
 fastCrossSlowDown = ta.crossunder(fastMA, slowMA)
 priceAboveConfirm = close > confirmMA
 priceBelowConfirm = close < confirmMA
-differentialMA = fastMA - slowMA
-deltaMA = differentialMA - differentialMA[1]
 
+// Calculate differentials/deltas
+maDifference = shortMA - longMA
+delta = maDifference - maDifference[1]
+acceleration = delta - delta[1]
 
+direction = math.sign(maDifference)
 
-if (fastMA > slowMA)
-    trendDirection := 1
-else if (fastMA < slowMA)
-    trendDirection := -1
-else
-    trendDirection := 0
+// Magnitude of Trend and Momentum
+trendMagnitude = math.abs(maDifference)
+momentumMagnitude = math.abs(delta)
 
-if deltaMA > deltaMA [1]
-    draw_label(bar_index, close, '(+ve)Delta:' + str.tostring(deltaMA), xloc.bar_index, yloc.abovebar,  deltaMA > 1 ? color.aqua : color.gray, label.style_label_lower_left, color.white, size.small, text.align_center, '')
-else if deltaMA < deltaMA [1]
-    draw_label(bar_index, close, '(-ve)Delta' + str.tostring(deltaMA), xloc.bar_index, yloc.belowbar,  deltaMA < -1 ?  color.fuchsia : color.gray, label.style_label_lower_left, color.white, size.small, text.align_center, '')
+// Trend calculation
+trendDirection = direction * (trendMagnitude + momentumMagnitude + math.abs(acceleration))
+trendColor = color.gray
+// Set color based on trendScore
+if trendDirection > 2.5
+    trendColor := color.green
+else if trendDirection > 1.5
+    trendColor := color.rgb(0, 102, 22)
+else if trendDirection < -2.5
+    trendColor := color.red
+else if trendDirection < -1.5
+    trendColor := color.rgb(110, 3, 3)
 
 // Plot MAs
-confirmMAPlotColor = deltaMA > 1 ? color.green : deltaMA < -1 ? color.red : color.gray
 plot(fastMA, color=colorFastMA, title="Fast MA")
 plot(slowMA, color=colorSlowMA, title="Slow MA")
-plot(confirmMA, color=confirmMAPlotColor, title="Confirm MA", linewidth = 2)
+plot(confirmMA, color=trendColor, title="Confirm MA", linewidth = 2)
+
 // **********ENTRY CONDITIONS **********
 if ticker.standard() == sym1
     priceOptimalEntryLevel1 = check_optimal_level(sym1Pivots, includeTrigPivots)
@@ -344,13 +354,6 @@ priceOptimalBufferEntry = (close) * buySellBuffer/10000
 priceOptimalEntryConfirm = math.abs(close - confirmMA) < (close * buySellBuffer/10000)
 priceOptimalEntryLevel = math.abs(close- bounceLevel) < (close * buySellBuffer/10000)
 
-buyCondition = priceOptimalEntryLevel
-sellCondition = priceOptimalEntryLevel
-buyRevCondition =  priceOptimalEntryLevel
-sellRevCondition = priceOptimalEntryLevel
-buyCrossCondition =  priceOptimalEntryLevel or priceOptimalEntryConfirm
-sellCrossCondition = priceOptimalEntryLevel or priceOptimalEntryConfirm
-
 // ********** SIGNALS **********
 buySignal = false
 buyReversalSignal = false
@@ -369,17 +372,20 @@ if ticker.standard() == sym1
     sellReversalSignal := trendDirection >= 1 and anySym1BounceDownRev
 
 // TODO: Add symbol 2
+if ticker.standard() == sym2
+    buySignal := trendDirection >= 1 and anySym2BounceUp
+    sellSignal := trendDirection <= -1 and anySym2BounceDown 
+    buyReversalSignal := trendDirection <= -1 and anySym2BounceUpRev
+    sellReversalSignal := trendDirection >= 1 and anySym2BounceDownRev
 
 // Look back over the last 2 bars to see if we had a trigger once we get a cross
 // BUG: Upcross and downcross need to be reworked to be smoother on picking it up
 if fastCrossSlowDown
-    lastCrossDir := false
     for i = 0 to crossSignalLookback
         if anySym1BounceDown[i]
             sellCrossSignal := true
 
 if fastCrossSlowUp
-    lastCrossDir := true
     for i = 0 to crossSignalLookback
         if anySym1BounceUp[i] 
             buyCrossSignal := true
@@ -396,7 +402,7 @@ if barstate.islast and show_table
     f_fillCell(4, 0, "Entry")
 
     f_fillCellColor(0,1,priceAboveConfirm ? color.green : color.red)
-    f_fillCellColor(1,1,trendDirection >= 1 ? color.green : (trendDirection <= -1 ? color.red : color.gray))
+    f_fillCellColor(1,1,trendColor)
     f_fillCell(2, 1, str.tostring(ticker1_price))
     f_fillCell(3, 1, str.tostring(ticker2_price))
     f_fillCellColorText(4, 1, str.tostring(priceOptimalBufferEntry), priceOptimalEntryConfirm ? color.green : color.gray)
@@ -406,19 +412,7 @@ if barstate.islast and show_table
 allowedTimes() => time(timeframe = timeframe.period, session = "1030-1600", timezone = "America/New_York")
 bool validTriggerPeriod = allowedTimes()
 // Set the stop-loss and take-profit levels
-var float stopLoss = na
-var float takeProfit1 = na
-var float takeProfit2 = na
-var float takeProfit3 = na
-var float stopLossShort = na
-var float takeProfit1Short = na
-var float takeProfit2Short = na
-var float takeProfit3Short = na
 var float limitLevel = na
-SL = 15
-TP1 = 15
-TP2 = 30
-TP3 = 45
 
 buyTriggeredInLookback = false
 sellTriggeredInLookback = false
@@ -439,26 +433,33 @@ for i = 0 to bufferBuySellLookback
         sellTriggeredInLookback := true
         sellReversalCount += 1
 
-// BUG: Check current price before setting limit order with func
-for i = 0 to bufferBuySellLookback
-    if buySignal[i] and not sellTriggeredInLookback
-        systemState := 2
-        limitLevel := math.floor(bounceLevel * (1 + buySellBuffer/10000))
-    else if sellSignal[i] and not buyTriggeredInLookback
-        systemState := 12
-        limitLevel := math.floor(bounceLevel * (1 - buySellBuffer/10000))
-    else if buyCrossSignal[i] and lastCrossDir
+// Check for cross buy/sell signals
+for i = bufferBuySellLookback to 0 by -1
+    if buyCrossSignal[i]
         systemState := 3
-        limitLevel := math.floor(confirmMA * (1 + buySellBuffer/10000))
-    else if sellCrossSignal[i] and not lastCrossDir
+        limitLevel := getLimitLevel(math.floor(confirmMA * (1 + buySellBuffer/10000)), close, true)
+    else if sellCrossSignal[i]
         systemState := 13
-        limitLevel := math.floor(confirmMA * (1 - buySellBuffer/10000))
-    else if buyReversalSignal[i] and not sellTriggeredInLookback
-        systemState := 4
-        limitLevel := math.floor(bounceLevel * (1 + reversalOffset/10000))
-    else if sellReversalSignal[i] and not buyTriggeredInLookback
-        systemState := 14
-        limitLevel := math.floor(bounceLevel * (1 - reversalOffset/10000))
+        limitLevel := getLimitLevel(math.floor(confirmMA * (1 - buySellBuffer/10000)), close, false)
+
+// Check for buy/sell signals
+if systemState == 0
+    for i = bufferBuySellLookback to 0 by -1
+        if buySignal[i] and not sellTriggeredInLookback
+            systemState := 2
+            limitLevel := getLimitLevel(math.floor(bounceLevel * (1 + buySellBuffer/10000)), close, true)
+        else if sellSignal[i] and not buyTriggeredInLookback
+            systemState := 12
+            limitLevel := getLimitLevel(math.floor(bounceLevel * (1 - buySellBuffer/10000)), close, false)
+    
+if systemState == 0
+    for i = bufferBuySellLookback to 0 by -1
+        if buyReversalSignal[i] and not sellTriggeredInLookback
+            systemState := 4
+            limitLevel := getLimitLevel(math.floor(bounceLevel * (1 + reversalOffset/10000)), close, true)
+        else if sellReversalSignal[i] and not buyTriggeredInLookback
+            systemState := 14
+            limitLevel := getLimitLevel(math.floor(bounceLevel * (1 - reversalOffset/10000)), close, false)
 
 buyLong = systemState == 2
 sellShort = systemState == 12
@@ -466,16 +467,6 @@ buyCross = systemState == 3
 sellCross = systemState == 13
 buyReversal = systemState == 4
 sellReversal = systemState == 14
-
-stopLoss := limitLevel - SL
-takeProfit1 := limitLevel + TP1 
-takeProfit2 := limitLevel + TP2
-takeProfit3 := limitLevel + TP3
-
-stopLossShort := limitLevel + SL
-takeProfit1Short := limitLevel - TP1
-takeProfit2Short := limitLevel - TP2
-takeProfit3Short := limitLevel - TP3
 
 // ********** RENDERING SYMBOLS **********
 if showAllConditions

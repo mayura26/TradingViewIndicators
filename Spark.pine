@@ -1,0 +1,934 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © sequence_code
+
+//@version=5
+indicator('Karma Algo - Spark', shorttitle='Karma Algo - Spark', overlay=true, max_bars_back=5000, max_labels_count=500, max_lines_count=500)
+
+t1 = syminfo.ticker  //input(title="Ticker 1", defval='SPY', type=input.symbol, group="Tickers")
+t2 = input.symbol(title='Ticker 2', defval='AAPL', group='Tickers')
+t3 = input.symbol(title='Ticker 3', defval='AMZN', group='Tickers')
+t4 = input.symbol(title='Ticker 4', defval='MSFT', group='Tickers')
+t5 = input.symbol(title='Ticker 5', defval='TSLA', group='Tickers')
+
+calculationMode = input.bool(true, 'Attempt to Pinpoint Mode?', tooltip='If checked, attempts to calculate based on the strategy criteria - ST maintains color, MO flips and then flips back. When this is checked, you\'ll also see transparent dots. These dots indicate that an arrow may be showing soon as the momo has flipped and just needs to flip back.', group='General')
+showArrows = input.bool(true, 'Show Signal Arrows? (Current Ticker)', group='General', tooltip='Show Signal Arrows?')
+showDots = input.bool(true, 'Show Potential Signal Dots?', group='General', tooltip='Show Potential Signal/Lead up Dots?')
+
+//PaintBars = input(false, "Paint Bars on each Potential Arrow? (Current Ticker)", tooltip="Does not account for 'Attempt to Pinpoint Mode' setting. Colors bars that match ST + Momo criteria.", group="General")
+drawLineOnClose = input.bool(false, 'Draw Line on Close of Potential Signal Bar? (Current ticker only)', group='General')
+//stTransparency = input(75, "ST Transparency (Current Ticker)", group="General", tooltip='ST Transparency')
+dotTransparency = input.int(95, 'Dot Transparency (Current Ticker)', tooltip='If \'Attempt to Pinpoint Mode\' is checked, dots indicate potential arrow upcoming. This setting affects their transparency. Dots are not shown if \'Attempt to Pinpoint Mode\' is unchecked.', group='General')
+arrowTransparency = input.int(20, 'Arrow Transparency (Current Ticker)', tooltip='This setting affects Arrow transparency.', group='General')
+
+longDotColor = input.color(color.blue, 'Long Color', group='Color')
+shortDotColor = input.color(color.orange, 'Short Color', group='Color')
+longBarColor = input.color(color.blue, 'Long Bar Color', group='Color')
+shortBarColor = input.color(color.orange, 'Short Bar Color', group='Color')
+
+showTable = input.bool(true, 'Show \'Bars Back\' Table?', group='Table', tooltip='Table shows the last 10 bars and the ST/Momo color for each.')
+choice = input.string(title='Table Location', defval='position.bottom_right', options=['position.top_right', 'position.top_center', 'position.top_left', 'position.middle_left', 'position.middle_center', 'position.middle_right', 'position.bottom_left', 'position.bottom_center', 'position.bottom_right'], group='Table')
+
+tableTextSizeInput = input.string(title='Bars Back Table Text Size', defval='small', options=['tiny', 'small', 'normal', 'large', 'huge'], group='General', tooltip='Modifies the Snapshot text size.')
+tableTextSize = tableTextSizeInput == 'tiny' ? size.tiny : tableTextSizeInput == 'small' ? size.small : tableTextSizeInput == 'normal' ? size.normal : tableTextSizeInput == 'large' ? size.large : tableTextSizeInput == 'huge' ? size.huge : size.normal
+
+showT1 = input.bool(true, 'Show Current Ticker in \'Bars Back\' Table?', group='Table')
+showT2 = input.bool(true, 'Show Ticker 2 in \'Bars Back\' Table?', group='Table')
+showT3 = input.bool(true, 'Show Ticker 3 in \'Bars Back\' Table?', group='Table')
+showT4 = input.bool(true, 'Show Ticker 4 in \'Bars Back\' Table?', group='Table')
+showT5 = input.bool(true, 'Show Ticker 5 in \'Bars Back\' Table?', group='Table')
+
+useAlerts = input.bool(true, 'Allow Alerts?', group='Alerts')
+
+timeframeResolution = ''
+tmoTimeframeResolution = ''
+calculationSource = close
+calculateTimeframe = ''
+
+useST = true
+AtrMult = 1.0
+nATR = 4
+
+length = 8
+calcLength = 5
+smoothLength = 3
+lengthType = 'EMA'
+calcLengthType = 'EMA'
+smoothLengthType = 'EMA'
+
+getRightChars(stringToClip, charToUse) =>
+    string[] characters = str.split(stringToClip, '')
+    int charArrayLength = array.size(characters)
+    int charToUsePosition = array.indexof(characters, charToUse)
+    string[] newString = array.new_string(0)
+    if charToUsePosition >= 0 and charToUsePosition < charArrayLength - 1
+        newString := array.slice(characters, charToUsePosition + 1, charArrayLength)
+        newString
+    string retValue = array.join(newString, '')
+    retValue
+
+i_alert_mode = input.string(defval=alert.freq_once_per_bar, title='Alerts Mode', options=[alert.freq_all, alert.freq_once_per_bar, alert.freq_once_per_bar_close], group='Alert')
+
+var position = choice == 'position.top_right' ? position.top_right : choice == 'position.bottom_right' ? position.bottom_right : choice == 'position.bottom_left' ? position.bottom_left : choice == 'position.top_left' ? position.top_left : choice == 'position.bottom_center' ? position.bottom_center : choice == 'position.middle_center' ? position.middle_center : choice == 'position.middle_right' ? position.middle_right : choice == 'position.middle_left' ? position.middle_left : choice == 'position.top_center' ? position.top_center : na
+
+var dataTable = table.new(position, 15, 40, bgcolor=color.rgb(0, 0, 0, 100), frame_color=color.rgb(0, 0, 0, 0), frame_width=1, border_color=color.rgb(0, 0, 0, 0), border_width=1)
+
+if showTable
+    table.cell(dataTable, 1, 0, 'Bars Back:', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 0, '10', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 0, '9', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 0, '8', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 0, '7', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 0, '6', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 0, '5', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 0, '4', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 0, '3', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 0, '2', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 0, '1', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 0, '0', bgcolor=color.rgb(0, 0, 0, 0), text_color=color.white, text_size=tableTextSize)
+
+
+// ticker1
+
+// ST Section
+
+[atrTF, hl2TF, closeTF] = request.security(syminfo.tickerid, timeframeResolution, [ta.hma(ta.tr, nATR), hl2, close])
+
+var ATR = 0.0
+ATR := atrTF
+
+var UP = 0.0
+UP := hl2TF + AtrMult * ATR
+
+var DN = 0.0
+DN := hl2TF + -AtrMult * ATR
+
+var ST = 0.0
+
+if closeTF < ST[1]
+    ST := UP
+    ST
+else
+    ST := DN
+    ST
+
+//plot(ST, color=color.new(closeTF < ST ? color.red : color.lime, stTransparency), linewidth=3)
+
+//barcolor(PaintBars and closeTF < ST ? color.red : PaintBars and close > ST ? color.green : na)
+
+// TMO Section
+
+//TMO calculates momentum using the delta of price. Giving a much better picture of trend, tend reversals and divergence than momentum oscillators using price.
+
+[tmoOpen, tmoClose] = request.security(syminfo.tickerid, tmoTimeframeResolution, [open, close])
+
+f_ma(type, src, len) =>
+    float result = 0
+    if type == 'EMA'
+        result := ta.ema(src, len)
+        result
+    if type == 'SMA'
+        result := ta.sma(src, len)
+        result
+    if type == 'RMA'
+        result := ta.rma(src, len)
+        result
+    result
+
+o = tmoOpen
+c = tmoClose
+s = 0
+for i = 0 to length by 1
+    s += (c > o[i] ? 1 : c < o[i] ? -1 : 0)
+    s
+data = s
+
+MA = f_ma(lengthType, data, calcLength)
+Main = f_ma(calcLengthType, MA, smoothLength)
+Signal = f_ma(smoothLengthType, Main, smoothLength)
+
+// BarsShapesEtc
+
+var potLongPrice = 0.0
+var potShortPrice = 0.0
+var longExists = false
+var shortExists = false
+
+var winningTrades = 0
+var losingTrades = 0
+
+var longAtPrice = 0.0
+var exitLongPrice = 0.0
+var shortAtPrice = 0.0
+var exitShortPrice = 0.0
+var totalProfit = 0.0
+
+calculationSourceClose = request.security(syminfo.tickerid, calculateTimeframe, calculationSource)
+
+var potentialLong = false
+var potentialShort = false
+
+if calculationMode
+    potentialLong := calculationSourceClose > ST and (calculationSourceClose > ST)[1] and (calculationSourceClose > ST)[2] and (calculationSourceClose > ST)[3] and Main > Signal and not (Main > Signal)[1]
+    potentialShort := calculationSourceClose < ST and (calculationSourceClose < ST)[1] and (calculationSourceClose < ST)[2] and (calculationSourceClose < ST)[3] and Main < Signal and not (Main < Signal)[1]
+    potentialShort
+else
+
+    potentialLong := calculationSourceClose > ST and Main > Signal ? true : false
+    potentialShort := calculationSourceClose < ST and Main < Signal ? true : false
+    potentialShort
+
+showPotentialLongDot = calculationMode ? calculationSourceClose > ST and (calculationSourceClose > ST)[1] and (calculationSourceClose > ST)[2] and (calculationSourceClose > ST)[3] and Main < Signal : false
+showPotentialShortDot = calculationMode ? calculationSourceClose < ST and (calculationSourceClose < ST)[1] and (calculationSourceClose < ST)[2] and (calculationSourceClose < ST)[3] and Main > Signal : false
+
+plotshape(showArrows ? potentialLong and not potentialLong[1] : na, style=shape.triangleup, color=color.new(longDotColor, arrowTransparency), location=location.belowbar, size=size.small)
+plotshape(showArrows ? potentialShort and not potentialShort[1] : na, style=shape.triangledown, color=color.new(shortDotColor, arrowTransparency), location=location.abovebar, size=size.small)
+
+plotshape(showDots ? showPotentialLongDot : na, style=shape.circle, color=color.new(longDotColor, dotTransparency), location=location.belowbar, size=size.small)
+plotshape(showDots ? showPotentialShortDot : na, style=shape.circle, color=color.new(shortDotColor, dotTransparency), location=location.abovebar, size=size.small)
+
+
+var line lineOnClose = na
+var label labelOnClose = na
+var float positionPrice = 0.00
+
+if potentialLong and not potentialLong[1] or potentialShort and not potentialShort[1]
+    positionPrice := close
+    positionPrice
+
+if drawLineOnClose and (potentialLong and not potentialLong[1] or potentialShort and not potentialShort[1])
+    lineOnClose := line.new(bar_index, positionPrice, bar_index + (potentialLong and not potentialLong[1] or potentialShort and not potentialShort[1] ? 2 : 1), positionPrice, color=color.new(potentialLong and not potentialLong[1] or potentialShort and not potentialShort[1] ? color.yellow : potentialLong and potentialLong[1] ? color.green : potentialShort and potentialShort[1] ? color.red : color.white, 0))  // calculationSourceClose gives you selected timeframe's closes
+    lineOnClose
+
+//barcolor(PaintBars ? calculationSourceClose > ST and Main > Signal ? longBarColor : calculationSourceClose < ST and Main < Signal ? shortBarColor :  color.black : na)
+
+var longBarsBack = 0
+var shortBarsBack = 0
+
+longBarsBack := ta.barssince(potentialLong and not potentialLong[1])
+shortBarsBack := ta.barssince(potentialShort and not potentialShort[1])
+
+aboveST = closeTF > ST
+belowST = closeTF < ST
+aboveST1Percent = aboveST ? (closeTF - ST) / closeTF * 100 : 0.0
+belowST1Percent = belowST ? (ST - closeTF) / ST * 100 : 0.0
+
+tenColor = potentialLong[10] and not potentialLong[11] ? longDotColor : potentialShort[10] and not potentialShort[11] ? shortDotColor : closeTF[10] > ST[10] ? color.green : color.red
+nineColor = potentialLong[9] and not potentialLong[10] ? longDotColor : potentialShort[9] and not potentialShort[10] ? shortDotColor : closeTF[9] > ST[9] ? color.green : color.red
+eightColor = potentialLong[8] and not potentialLong[9] ? longDotColor : potentialShort[8] and not potentialShort[9] ? shortDotColor : closeTF[8] > ST[8] ? color.green : color.red
+sevenColor = potentialLong[7] and not potentialLong[8] ? longDotColor : potentialShort[7] and not potentialShort[8] ? shortDotColor : closeTF[7] > ST[7] ? color.green : color.red
+sixColor = potentialLong[6] and not potentialLong[7] ? longDotColor : potentialShort[6] and not potentialShort[7] ? shortDotColor : closeTF[6] > ST[6] ? color.green : color.red
+fiveColor = potentialLong[5] and not potentialLong[6] ? longDotColor : potentialShort[5] and not potentialShort[6] ? shortDotColor : closeTF[5] > ST[5] ? color.green : color.red
+fourColor = potentialLong[4] and not potentialLong[5] ? longDotColor : potentialShort[4] and not potentialShort[5] ? shortDotColor : closeTF[4] > ST[4] ? color.green : color.red
+threeColor = potentialLong[3] and not potentialLong[4] ? longDotColor : potentialShort[3] and not potentialShort[4] ? shortDotColor : closeTF[3] > ST[3] ? color.green : color.red
+twoColor = potentialLong[2] and not potentialLong[3] ? longDotColor : potentialShort[2] and not potentialShort[3] ? shortDotColor : closeTF[2] > ST[2] ? color.green : color.red
+oneColor = potentialLong[1] and not potentialLong[2] ? longDotColor : potentialShort[1] and not potentialShort[2] ? shortDotColor : closeTF[1] > ST[1] ? color.green : color.red
+zeroColor = potentialLong and not potentialLong[1] ? longDotColor : potentialShort and not potentialShort[1] ? shortDotColor : closeTF > ST ? color.green : color.red
+
+tenMOColor = potentialShort[10] and not potentialShort[11] ? shortDotColor : potentialLong[10] and not potentialLong[11] ? longDotColor : Main[10] > Signal[10] ? color.green : color.red
+nineMOColor = potentialShort[9] and not potentialShort[10] ? shortDotColor : potentialLong[9] and not potentialLong[10] ? longDotColor : Main[9] > Signal[9] ? color.green : color.red
+eightMOColor = potentialShort[8] and not potentialShort[9] ? shortDotColor : potentialLong[8] and not potentialLong[9] ? longDotColor : Main[8] > Signal[8] ? color.green : color.red
+sevenMOColor = potentialShort[7] and not potentialShort[8] ? shortDotColor : potentialLong[7] and not potentialLong[8] ? longDotColor : Main[7] > Signal[7] ? color.green : color.red
+sixMOColor = potentialShort[6] and not potentialShort[7] ? shortDotColor : potentialLong[6] and not potentialLong[7] ? longDotColor : Main[6] > Signal[6] ? color.green : color.red
+fiveMOColor = potentialShort[5] and not potentialShort[6] ? shortDotColor : potentialLong[5] and not potentialLong[6] ? longDotColor : Main[5] > Signal[5] ? color.green : color.red
+fourMOColor = potentialShort[4] and not potentialShort[5] ? shortDotColor : potentialLong[4] and not potentialLong[5] ? longDotColor : Main[4] > Signal[4] ? color.green : color.red
+threeMOColor = potentialShort[3] and not potentialShort[4] ? shortDotColor : potentialLong[3] and not potentialLong[4] ? longDotColor : Main[3] > Signal[3] ? color.green : color.red
+twoMOColor = potentialShort[2] and not potentialShort[3] ? shortDotColor : potentialLong[2] and not potentialLong[3] ? longDotColor : Main[2] > Signal[2] ? color.green : color.red
+oneMOColor = potentialShort[1] and not potentialShort[2] ? shortDotColor : potentialLong[1] and not potentialLong[2] ? longDotColor : Main[1] > Signal[1] ? color.green : color.red
+zeroMOColor = potentialShort and not potentialShort[1] ? shortDotColor : potentialLong and not potentialLong[1] ? longDotColor : Main > Signal ? color.green : color.red
+
+if showTable and showT1
+    table.cell(dataTable, 1, 1, str.tostring(syminfo.ticker) + ' ST', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 1, '', bgcolor=color.new(tenColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 1, '', bgcolor=color.new(nineColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 1, '', bgcolor=color.new(eightColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 1, '', bgcolor=color.new(sevenColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 1, '', bgcolor=color.new(sixColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 1, '', bgcolor=color.new(fiveColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 1, '', bgcolor=color.new(fourColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 1, '', bgcolor=color.new(threeColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 1, '', bgcolor=color.new(twoColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 1, '', bgcolor=color.new(oneColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 1, '', bgcolor=color.new(zeroColor, 0), text_color=color.white, text_size=tableTextSize)
+
+    table.cell(dataTable, 1, 2, str.tostring(syminfo.ticker) + ' MO', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 2, '', bgcolor=color.new(tenMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 2, '', bgcolor=color.new(nineMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 2, '', bgcolor=color.new(eightMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 2, '', bgcolor=color.new(sevenMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 2, '', bgcolor=color.new(sixMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 2, '', bgcolor=color.new(fiveMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 2, '', bgcolor=color.new(fourMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 2, '', bgcolor=color.new(threeMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 2, '', bgcolor=color.new(twoMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 2, '', bgcolor=color.new(oneMOColor, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 2, '', bgcolor=color.new(zeroMOColor, 0), text_color=color.white, text_size=tableTextSize)
+
+    // Divider
+
+    table.cell(dataTable, 1, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 2, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 3, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 4, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 5, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 6, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 7, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 8, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 9, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 10, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 11, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 12, 3, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+
+// Alerts
+
+if useAlerts
+    if potentialLong and not potentialLong[1]
+        alert('Potential Long on: ' + str.tostring(syminfo.ticker), i_alert_mode)
+    else if potentialShort and not potentialShort[1]
+        alert('Potential Short on: ' + str.tostring(syminfo.ticker), i_alert_mode)
+
+
+// ticker2
+
+var ATR_ticker2 = 0.0
+var UP_ticker2 = 0.0
+var DN_ticker2 = 0.0
+var ST_ticker2 = 0.0
+
+[atrTF_ticker2, hl2TF_ticker2, closeTF_ticker2, openTF_ticker2] = request.security(t2, timeframe.period, [ta.hma(ta.tr, nATR), hl2, close, open])
+// ST Section
+
+ATR_ticker2 := atrTF_ticker2
+UP_ticker2 := hl2TF_ticker2 + AtrMult * ATR_ticker2
+DN_ticker2 := hl2TF_ticker2 + -AtrMult * ATR_ticker2
+
+if closeTF_ticker2 < ST_ticker2[1]
+    ST_ticker2 := UP_ticker2
+    ST_ticker2
+else
+    ST_ticker2 := DN_ticker2
+    ST_ticker2
+
+//plot(ST_ticker2, color=color.new(closeTF_ticker2 < ST_ticker2 ? color.red : color.lime, stTransparency), linewidth=3)
+
+// TMO Section
+
+//TMO calculates momentum using the delta of price. Giving a much better picture of trend, tend reversals and divergence than momentum oscillators using price.
+
+o_ticker2 = openTF_ticker2
+c_ticker2 = closeTF_ticker2
+s_ticker2 = 0
+for i = 0 to length by 1
+    s_ticker2 += (c_ticker2 > o_ticker2[i] ? 1 : c_ticker2 < o_ticker2[i] ? -1 : 0)
+    s_ticker2
+data_ticker2 = s_ticker2
+
+MA_ticker2 = ta.ema(data_ticker2, calcLength)
+Main_ticker2 = ta.ema(MA_ticker2, smoothLength)
+Signal_ticker2 = ta.ema(Main_ticker2, smoothLength)
+
+// BarsShapesEtc
+
+calculationSourceClose_ticker2 = request.security(t2, calculateTimeframe, calculationSource)
+
+var potentialLong_ticker2 = false
+var potentialShort_ticker2 = false
+
+if calculationMode
+    potentialLong_ticker2 := calculationSourceClose_ticker2 > ST_ticker2 and (calculationSourceClose_ticker2 > ST_ticker2)[1] and (calculationSourceClose_ticker2 > ST_ticker2)[2] and (calculationSourceClose_ticker2 > ST_ticker2)[3] and Main_ticker2 > Signal_ticker2 and not (Main_ticker2 > Signal_ticker2)[1]
+    potentialShort_ticker2 := calculationSourceClose_ticker2 < ST_ticker2 and (calculationSourceClose_ticker2 < ST_ticker2)[1] and (calculationSourceClose_ticker2 < ST_ticker2)[2] and (calculationSourceClose_ticker2 < ST_ticker2)[3] and Main_ticker2 < Signal_ticker2 and not (Main_ticker2 < Signal_ticker2)[1]
+    potentialShort_ticker2
+else
+
+    potentialLong_ticker2 := calculationSourceClose_ticker2 > ST_ticker2 and Main_ticker2 > Signal_ticker2 ? true : false
+    potentialShort_ticker2 := calculationSourceClose_ticker2 < ST_ticker2 and Main_ticker2 < Signal_ticker2 ? true : false
+    potentialShort_ticker2
+
+showPotentialLongDot_ticker2 = calculationMode ? calculationSourceClose_ticker2 > ST_ticker2 and (calculationSourceClose_ticker2 > ST_ticker2)[1] and (calculationSourceClose_ticker2 > ST_ticker2)[2] and (calculationSourceClose_ticker2 > ST_ticker2)[3] and Main_ticker2 < Signal_ticker2 : false
+showPotentialShortDot_ticker2 = calculationMode ? calculationSourceClose_ticker2 < ST_ticker2 and (calculationSourceClose_ticker2 < ST_ticker2)[1] and (calculationSourceClose_ticker2 < ST_ticker2)[2] and (calculationSourceClose_ticker2 < ST_ticker2)[3] and Main_ticker2 > Signal_ticker2 : false
+
+//plotshape(showArrows ? potentialLong_ticker2 and not potentialLong_ticker2[1] : na, style=shape.triangleup, color=color.new(color.blue, 0), location=location.belowbar, size=size.small)
+//plotshape(showArrows ? potentialShort_ticker2 and not potentialShort_ticker2[1] : na, style=shape.triangledown, color=color.new(color.orange, 0), location=location.abovebar, size=size.small)
+
+//plotshape(showArrows ? showPotentialLongDot_ticker2 : na, style=shape.circle, color=color.new(longDotColor, dotTransparency), location=location.belowbar, size=size.small)
+//plotshape(showArrows ? showPotentialShortDot_ticker2 : na, style=shape.circle, color=color.new(shortDotColor, dotTransparency), location=location.abovebar, size=size.small)
+
+var line lineOnClose_ticker2 = na
+var label labelOnClose_ticker2 = na
+var float positionPrice_ticker2 = 0.00
+
+if potentialLong_ticker2 or potentialShort_ticker2
+    positionPrice_ticker2 := close
+    positionPrice_ticker2
+
+if drawLineOnClose and (potentialLong_ticker2 or potentialShort_ticker2)
+    lineOnClose_ticker2 := line.new(bar_index, positionPrice_ticker2, bar_index + (potentialLong_ticker2 and not potentialLong_ticker2[1] or potentialShort_ticker2 and not potentialShort_ticker2[1] ? 2 : 1), positionPrice_ticker2, color=color.new(potentialLong_ticker2 and not potentialLong_ticker2[1] or potentialShort_ticker2 and not potentialShort_ticker2[1] ? color.yellow : potentialLong_ticker2 and potentialLong_ticker2[1] ? color.green : potentialShort_ticker2 and potentialShort_ticker2[1] ? color.red : color.white, 0))  // calculationSourceClose gives you selected timeframe's closes
+    lineOnClose_ticker2
+
+//barcolor(PaintBars ? calculationSourceClose_ticker2 > ST_ticker2 and Main_ticker2 > Signal_ticker2 ? longBarColor : calculationSourceClose_ticker2 < ST_ticker2 and Main_ticker2 < Signal_ticker2 ? shortBarColor :  color.black : na)
+
+var longBarsBack_ticker2 = 0
+var shortBarsBack_ticker2 = 0
+
+longBarsBack_ticker2 := ta.barssince(potentialLong_ticker2 and not potentialLong_ticker2[1])
+shortBarsBack_ticker2 := ta.barssince(potentialShort_ticker2 and not potentialShort_ticker2[1])
+
+aboveST_ticker2 = closeTF_ticker2 > ST_ticker2
+belowST_ticker2 = closeTF_ticker2 < ST_ticker2
+aboveST1Percent_ticker2 = aboveST_ticker2 ? (closeTF_ticker2 - ST_ticker2) / closeTF_ticker2 * 100 : 0.0
+belowST1Percent_ticker2 = belowST_ticker2 ? (ST_ticker2 - closeTF_ticker2) / ST_ticker2 * 100 : 0.0
+
+tenColor_ticker2 = potentialLong_ticker2[10] and not potentialLong_ticker2[11] ? longDotColor : potentialShort_ticker2[10] and not potentialShort_ticker2[11] ? shortDotColor : closeTF_ticker2[10] > ST_ticker2[10] ? color.green : color.red
+nineColor_ticker2 = potentialLong_ticker2[9] and not potentialLong_ticker2[10] ? longDotColor : potentialShort_ticker2[9] and not potentialShort_ticker2[10] ? shortDotColor : closeTF_ticker2[9] > ST_ticker2[9] ? color.green : color.red
+eightColor_ticker2 = potentialLong_ticker2[8] and not potentialLong_ticker2[9] ? longDotColor : potentialShort_ticker2[8] and not potentialShort_ticker2[9] ? shortDotColor : closeTF_ticker2[8] > ST_ticker2[8] ? color.green : color.red
+sevenColor_ticker2 = potentialLong_ticker2[7] and not potentialLong_ticker2[8] ? longDotColor : potentialShort_ticker2[7] and not potentialShort_ticker2[8] ? shortDotColor : closeTF_ticker2[7] > ST_ticker2[7] ? color.green : color.red
+sixColor_ticker2 = potentialLong_ticker2[6] and not potentialLong_ticker2[7] ? longDotColor : potentialShort_ticker2[6] and not potentialShort_ticker2[7] ? shortDotColor : closeTF_ticker2[6] > ST_ticker2[6] ? color.green : color.red
+fiveColor_ticker2 = potentialLong_ticker2[5] and not potentialLong_ticker2[6] ? longDotColor : potentialShort_ticker2[5] and not potentialShort_ticker2[6] ? shortDotColor : closeTF_ticker2[5] > ST_ticker2[5] ? color.green : color.red
+fourColor_ticker2 = potentialLong_ticker2[4] and not potentialLong_ticker2[5] ? longDotColor : potentialShort_ticker2[4] and not potentialShort_ticker2[5] ? shortDotColor : closeTF_ticker2[4] > ST_ticker2[4] ? color.green : color.red
+threeColor_ticker2 = potentialLong_ticker2[3] and not potentialLong_ticker2[4] ? longDotColor : potentialShort_ticker2[3] and not potentialShort_ticker2[4] ? shortDotColor : closeTF_ticker2[3] > ST_ticker2[3] ? color.green : color.red
+twoColor_ticker2 = potentialLong_ticker2[2] and not potentialLong_ticker2[3] ? longDotColor : potentialShort_ticker2[2] and not potentialShort_ticker2[3] ? shortDotColor : closeTF_ticker2[2] > ST_ticker2[2] ? color.green : color.red
+oneColor_ticker2 = potentialLong_ticker2[1] and not potentialLong_ticker2[2] ? longDotColor : potentialShort_ticker2[1] and not potentialShort_ticker2[2] ? shortDotColor : closeTF_ticker2[1] > ST_ticker2[1] ? color.green : color.red
+zeroColor_ticker2 = potentialLong_ticker2 and not potentialLong_ticker2[1] ? longDotColor : potentialShort_ticker2 and not potentialShort_ticker2[1] ? shortDotColor : closeTF_ticker2 > ST_ticker2 ? color.green : color.red
+
+tenMOColor_ticker2 = potentialShort_ticker2[10] and not potentialShort_ticker2[11] ? shortDotColor : potentialLong_ticker2[10] and not potentialLong_ticker2[11] ? longDotColor : Main_ticker2[10] > Signal_ticker2[10] ? color.green : color.red
+nineMOColor_ticker2 = potentialShort_ticker2[9] and not potentialShort_ticker2[10] ? shortDotColor : potentialLong_ticker2[9] and not potentialLong_ticker2[10] ? longDotColor : Main_ticker2[9] > Signal_ticker2[9] ? color.green : color.red
+eightMOColor_ticker2 = potentialShort_ticker2[8] and not potentialShort_ticker2[9] ? shortDotColor : potentialLong_ticker2[8] and not potentialLong_ticker2[9] ? longDotColor : Main_ticker2[8] > Signal_ticker2[8] ? color.green : color.red
+sevenMOColor_ticker2 = potentialShort_ticker2[7] and not potentialShort_ticker2[8] ? shortDotColor : potentialLong_ticker2[7] and not potentialLong_ticker2[8] ? longDotColor : Main_ticker2[7] > Signal_ticker2[7] ? color.green : color.red
+sixMOColor_ticker2 = potentialShort_ticker2[6] and not potentialShort_ticker2[7] ? shortDotColor : potentialLong_ticker2[6] and not potentialLong_ticker2[7] ? longDotColor : Main_ticker2[6] > Signal_ticker2[6] ? color.green : color.red
+fiveMOColor_ticker2 = potentialShort_ticker2[5] and not potentialShort_ticker2[6] ? shortDotColor : potentialLong_ticker2[5] and not potentialLong_ticker2[6] ? longDotColor : Main_ticker2[5] > Signal_ticker2[5] ? color.green : color.red
+fourMOColor_ticker2 = potentialShort_ticker2[4] and not potentialShort_ticker2[5] ? shortDotColor : potentialLong_ticker2[4] and not potentialLong_ticker2[5] ? longDotColor : Main_ticker2[4] > Signal_ticker2[4] ? color.green : color.red
+threeMOColor_ticker2 = potentialShort_ticker2[3] and not potentialShort_ticker2[4] ? shortDotColor : potentialLong_ticker2[3] and not potentialLong_ticker2[4] ? longDotColor : Main_ticker2[3] > Signal_ticker2[3] ? color.green : color.red
+twoMOColor_ticker2 = potentialShort_ticker2[2] and not potentialShort_ticker2[3] ? shortDotColor : potentialLong_ticker2[2] and not potentialLong_ticker2[3] ? longDotColor : Main_ticker2[2] > Signal_ticker2[2] ? color.green : color.red
+oneMOColor_ticker2 = potentialShort_ticker2[1] and not potentialShort_ticker2[2] ? shortDotColor : potentialLong_ticker2[1] and not potentialLong_ticker2[2] ? longDotColor : Main_ticker2[1] > Signal_ticker2[1] ? color.green : color.red
+zeroMOColor_ticker2 = potentialShort_ticker2 and not potentialShort_ticker2[1] ? shortDotColor : potentialLong_ticker2 and not potentialLong_ticker2[1] ? longDotColor : Main_ticker2 > Signal_ticker2 ? color.green : color.red
+
+if showTable and showT2
+    table.cell(dataTable, 1, 4, str.tostring(getRightChars(t2, ':')) + ' ST', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 4, '', bgcolor=color.new(tenColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 4, '', bgcolor=color.new(nineColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 4, '', bgcolor=color.new(eightColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 4, '', bgcolor=color.new(sevenColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 4, '', bgcolor=color.new(sixColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 4, '', bgcolor=color.new(fiveColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 4, '', bgcolor=color.new(fourColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 4, '', bgcolor=color.new(threeColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 4, '', bgcolor=color.new(twoColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 4, '', bgcolor=color.new(oneColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 4, '', bgcolor=color.new(zeroColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+
+    table.cell(dataTable, 1, 5, str.tostring(getRightChars(t2, ':')) + ' MO', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 5, '', bgcolor=color.new(tenMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 5, '', bgcolor=color.new(nineMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 5, '', bgcolor=color.new(eightMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 5, '', bgcolor=color.new(sevenMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 5, '', bgcolor=color.new(sixMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 5, '', bgcolor=color.new(fiveMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 5, '', bgcolor=color.new(fourMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 5, '', bgcolor=color.new(threeMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 5, '', bgcolor=color.new(twoMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 5, '', bgcolor=color.new(oneMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 5, '', bgcolor=color.new(zeroMOColor_ticker2, 0), text_color=color.white, text_size=tableTextSize)
+
+    // Divider
+
+    table.cell(dataTable, 1, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 2, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 3, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 4, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 5, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 6, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 7, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 8, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 9, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 10, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 11, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 12, 6, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+
+
+// Alerts
+
+if useAlerts
+    if potentialLong_ticker2 and not potentialLong_ticker2[1]
+        alert('Potential Long on: ' + str.tostring(t2), i_alert_mode)
+    else if potentialShort_ticker2 and not potentialShort_ticker2[1]
+        alert('Potential Short on: ' + str.tostring(t2), i_alert_mode)
+
+
+// ticker3
+
+var ATR_ticker3 = 0.0
+var UP_ticker3 = 0.0
+var DN_ticker3 = 0.0
+var ST_ticker3 = 0.0
+
+[atrTF_ticker3, hl2TF_ticker3, closeTF_ticker3, openTF_ticker3] = request.security(t3, timeframe.period, [ta.hma(ta.tr, nATR), hl2, close, open])
+// ST Section
+
+ATR_ticker3 := atrTF_ticker3
+UP_ticker3 := hl2TF_ticker3 + AtrMult * ATR_ticker3
+DN_ticker3 := hl2TF_ticker3 + -AtrMult * ATR_ticker3
+
+if closeTF_ticker3 < ST_ticker3[1]
+    ST_ticker3 := UP_ticker3
+    ST_ticker3
+else
+    ST_ticker3 := DN_ticker3
+    ST_ticker3
+
+//plot(ST_ticker3, color=color.new(closeTF_ticker3 < ST_ticker3 ? color.red : color.lime, stTransparency), linewidth=3)
+
+// TMO Section
+
+//TMO calculates momentum using the delta of price. Giving a much better picture of trend, tend reversals and divergence than momentum oscillators using price.
+
+o_ticker3 = openTF_ticker3
+c_ticker3 = closeTF_ticker3
+s_ticker3 = 0
+for i = 0 to length by 1
+    s_ticker3 += (c_ticker3 > o_ticker3[i] ? 1 : c_ticker3 < o_ticker3[i] ? -1 : 0)
+    s_ticker3
+data_ticker3 = s_ticker3
+
+MA_ticker3 = ta.ema(data_ticker3, calcLength)
+Main_ticker3 = ta.ema(MA_ticker3, smoothLength)
+Signal_ticker3 = ta.ema(Main_ticker3, smoothLength)
+
+// BarsShapesEtc
+
+calculationSourceClose_ticker3 = request.security(t3, calculateTimeframe, calculationSource)
+
+var potentialLong_ticker3 = false
+var potentialShort_ticker3 = false
+
+if calculationMode
+    potentialLong_ticker3 := calculationSourceClose_ticker3 > ST_ticker3 and (calculationSourceClose_ticker3 > ST_ticker3)[1] and (calculationSourceClose_ticker3 > ST_ticker3)[2] and (calculationSourceClose_ticker3 > ST_ticker3)[3] and Main_ticker3 > Signal_ticker3 and not (Main_ticker3 > Signal_ticker3)[1]
+    potentialShort_ticker3 := calculationSourceClose_ticker3 < ST_ticker3 and (calculationSourceClose_ticker3 < ST_ticker3)[1] and (calculationSourceClose_ticker3 < ST_ticker3)[2] and (calculationSourceClose_ticker3 < ST_ticker3)[3] and Main_ticker3 < Signal_ticker3 and not (Main_ticker3 < Signal_ticker3)[1]
+    potentialShort_ticker3
+else
+
+    potentialLong_ticker3 := calculationSourceClose_ticker3 > ST_ticker3 and Main_ticker3 > Signal_ticker3 ? true : false
+    potentialShort_ticker3 := calculationSourceClose_ticker3 < ST_ticker3 and Main_ticker3 < Signal_ticker3 ? true : false
+    potentialShort_ticker3
+
+showPotentialLongDot_ticker3 = calculationMode ? calculationSourceClose_ticker3 > ST_ticker3 and (calculationSourceClose_ticker3 > ST_ticker3)[1] and (calculationSourceClose_ticker3 > ST_ticker3)[2] and (calculationSourceClose_ticker3 > ST_ticker3)[3] and Main_ticker3 < Signal_ticker3 : false
+showPotentialShortDot_ticker3 = calculationMode ? calculationSourceClose_ticker3 < ST_ticker3 and (calculationSourceClose_ticker3 < ST_ticker3)[1] and (calculationSourceClose_ticker3 < ST_ticker3)[2] and (calculationSourceClose_ticker3 < ST_ticker3)[3] and Main_ticker3 > Signal_ticker3 : false
+
+//plotshape(showArrows ? potentialLong_ticker3 and not potentialLong_ticker3[1] : na, style=shape.triangleup, color=color.new(color.blue, 0), location=location.belowbar, size=size.small)
+//plotshape(showArrows ? potentialShort_ticker3 and not potentialShort_ticker3[1] : na, style=shape.triangledown, color=color.new(color.orange, 0), location=location.abovebar, size=size.small)
+
+//plotshape(showArrows ? showPotentialLongDot_ticker3 : na, style=shape.circle, color=color.new(longDotColor, dotTransparency), location=location.belowbar, size=size.small)
+//plotshape(showArrows ? showPotentialShortDot_ticker3 : na, style=shape.circle, color=color.new(shortDotColor, dotTransparency), location=location.abovebar, size=size.small)
+
+var line lineOnClose_ticker3 = na
+var label labelOnClose_ticker3 = na
+var float positionPrice_ticker3 = 0.00
+
+if potentialLong_ticker3 or potentialShort_ticker3
+    positionPrice_ticker3 := close
+    positionPrice_ticker3
+
+if drawLineOnClose and (potentialLong_ticker3 or potentialShort_ticker3)
+    lineOnClose_ticker3 := line.new(bar_index, positionPrice_ticker3, bar_index + (potentialLong_ticker3 and not potentialLong_ticker3[1] or potentialShort_ticker3 and not potentialShort_ticker3[1] ? 2 : 1), positionPrice_ticker3, color=color.new(potentialLong_ticker3 and not potentialLong_ticker3[1] or potentialShort_ticker3 and not potentialShort_ticker3[1] ? color.yellow : potentialLong_ticker3 and potentialLong_ticker3[1] ? color.green : potentialShort_ticker3 and potentialShort_ticker3[1] ? color.red : color.white, 0))  // calculationSourceClose gives you selected timeframe's closes
+    lineOnClose_ticker3
+
+//barcolor(PaintBars ? calculationSourceClose_ticker3 > ST_ticker3 and Main_ticker3 > Signal_ticker3 ? longBarColor : calculationSourceClose_ticker3 < ST_ticker3 and Main_ticker3 < Signal_ticker3 ? shortBarColor :  color.black : na)
+
+var longBarsBack_ticker3 = 0
+var shortBarsBack_ticker3 = 0
+
+longBarsBack_ticker3 := ta.barssince(potentialLong_ticker3 and not potentialLong_ticker3[1])
+shortBarsBack_ticker3 := ta.barssince(potentialShort_ticker3 and not potentialShort_ticker3[1])
+
+aboveST_ticker3 = closeTF_ticker3 > ST_ticker3
+belowST_ticker3 = closeTF_ticker3 < ST_ticker3
+aboveST1Percent_ticker3 = aboveST_ticker3 ? (closeTF_ticker3 - ST_ticker3) / closeTF_ticker3 * 100 : 0.0
+belowST1Percent_ticker3 = belowST_ticker3 ? (ST_ticker3 - closeTF_ticker3) / ST_ticker3 * 100 : 0.0
+
+tenColor_ticker3 = potentialLong_ticker3[10] and not potentialLong_ticker3[11] ? longDotColor : potentialShort_ticker3[10] and not potentialShort_ticker3[11] ? shortDotColor : closeTF_ticker3[10] > ST_ticker3[10] ? color.green : color.red
+nineColor_ticker3 = potentialLong_ticker3[9] and not potentialLong_ticker3[10] ? longDotColor : potentialShort_ticker3[9] and not potentialShort_ticker3[10] ? shortDotColor : closeTF_ticker3[9] > ST_ticker3[9] ? color.green : color.red
+eightColor_ticker3 = potentialLong_ticker3[8] and not potentialLong_ticker3[9] ? longDotColor : potentialShort_ticker3[8] and not potentialShort_ticker3[9] ? shortDotColor : closeTF_ticker3[8] > ST_ticker3[8] ? color.green : color.red
+sevenColor_ticker3 = potentialLong_ticker3[7] and not potentialLong_ticker3[8] ? longDotColor : potentialShort_ticker3[7] and not potentialShort_ticker3[8] ? shortDotColor : closeTF_ticker3[7] > ST_ticker3[7] ? color.green : color.red
+sixColor_ticker3 = potentialLong_ticker3[6] and not potentialLong_ticker3[7] ? longDotColor : potentialShort_ticker3[6] and not potentialShort_ticker3[7] ? shortDotColor : closeTF_ticker3[6] > ST_ticker3[6] ? color.green : color.red
+fiveColor_ticker3 = potentialLong_ticker3[5] and not potentialLong_ticker3[6] ? longDotColor : potentialShort_ticker3[5] and not potentialShort_ticker3[6] ? shortDotColor : closeTF_ticker3[5] > ST_ticker3[5] ? color.green : color.red
+fourColor_ticker3 = potentialLong_ticker3[4] and not potentialLong_ticker3[5] ? longDotColor : potentialShort_ticker3[4] and not potentialShort_ticker3[5] ? shortDotColor : closeTF_ticker3[4] > ST_ticker3[4] ? color.green : color.red
+threeColor_ticker3 = potentialLong_ticker3[3] and not potentialLong_ticker3[4] ? longDotColor : potentialShort_ticker3[3] and not potentialShort_ticker3[4] ? shortDotColor : closeTF_ticker3[3] > ST_ticker3[3] ? color.green : color.red
+twoColor_ticker3 = potentialLong_ticker3[2] and not potentialLong_ticker3[3] ? longDotColor : potentialShort_ticker3[2] and not potentialShort_ticker3[3] ? shortDotColor : closeTF_ticker3[2] > ST_ticker3[2] ? color.green : color.red
+oneColor_ticker3 = potentialLong_ticker3[1] and not potentialLong_ticker3[2] ? longDotColor : potentialShort_ticker3[1] and not potentialShort_ticker3[2] ? shortDotColor : closeTF_ticker3[1] > ST_ticker3[1] ? color.green : color.red
+zeroColor_ticker3 = potentialLong_ticker3 and not potentialLong_ticker3[1] ? longDotColor : potentialShort_ticker3 and not potentialShort_ticker3[1] ? shortDotColor : closeTF_ticker3 > ST_ticker3 ? color.green : color.red
+
+tenMOColor_ticker3 = potentialShort_ticker3[10] and not potentialShort_ticker3[11] ? shortDotColor : potentialLong_ticker3[10] and not potentialLong_ticker3[11] ? longDotColor : Main_ticker3[10] > Signal_ticker3[10] ? color.green : color.red
+nineMOColor_ticker3 = potentialShort_ticker3[9] and not potentialShort_ticker3[10] ? shortDotColor : potentialLong_ticker3[9] and not potentialLong_ticker3[10] ? longDotColor : Main_ticker3[9] > Signal_ticker3[9] ? color.green : color.red
+eightMOColor_ticker3 = potentialShort_ticker3[8] and not potentialShort_ticker3[9] ? shortDotColor : potentialLong_ticker3[8] and not potentialLong_ticker3[9] ? longDotColor : Main_ticker3[8] > Signal_ticker3[8] ? color.green : color.red
+sevenMOColor_ticker3 = potentialShort_ticker3[7] and not potentialShort_ticker3[8] ? shortDotColor : potentialLong_ticker3[7] and not potentialLong_ticker3[8] ? longDotColor : Main_ticker3[7] > Signal_ticker3[7] ? color.green : color.red
+sixMOColor_ticker3 = potentialShort_ticker3[6] and not potentialShort_ticker3[7] ? shortDotColor : potentialLong_ticker3[6] and not potentialLong_ticker3[7] ? longDotColor : Main_ticker3[6] > Signal_ticker3[6] ? color.green : color.red
+fiveMOColor_ticker3 = potentialShort_ticker3[5] and not potentialShort_ticker3[6] ? shortDotColor : potentialLong_ticker3[5] and not potentialLong_ticker3[6] ? longDotColor : Main_ticker3[5] > Signal_ticker3[5] ? color.green : color.red
+fourMOColor_ticker3 = potentialShort_ticker3[4] and not potentialShort_ticker3[5] ? shortDotColor : potentialLong_ticker3[4] and not potentialLong_ticker3[5] ? longDotColor : Main_ticker3[4] > Signal_ticker3[4] ? color.green : color.red
+threeMOColor_ticker3 = potentialShort_ticker3[3] and not potentialShort_ticker3[4] ? shortDotColor : potentialLong_ticker3[3] and not potentialLong_ticker3[4] ? longDotColor : Main_ticker3[3] > Signal_ticker3[3] ? color.green : color.red
+twoMOColor_ticker3 = potentialShort_ticker3[2] and not potentialShort_ticker3[3] ? shortDotColor : potentialLong_ticker3[2] and not potentialLong_ticker3[3] ? longDotColor : Main_ticker3[2] > Signal_ticker3[2] ? color.green : color.red
+oneMOColor_ticker3 = potentialShort_ticker3[1] and not potentialShort_ticker3[2] ? shortDotColor : potentialLong_ticker3[1] and not potentialLong_ticker3[2] ? longDotColor : Main_ticker3[1] > Signal_ticker3[1] ? color.green : color.red
+zeroMOColor_ticker3 = potentialShort_ticker3 and not potentialShort_ticker3[1] ? shortDotColor : potentialLong_ticker3 and not potentialLong_ticker3[1] ? longDotColor : Main_ticker3 > Signal_ticker3 ? color.green : color.red
+
+if showTable and showT3
+    table.cell(dataTable, 1, 7, str.tostring(getRightChars(t3, ':')) + ' ST', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 7, '', bgcolor=color.new(tenColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 7, '', bgcolor=color.new(nineColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 7, '', bgcolor=color.new(eightColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 7, '', bgcolor=color.new(sevenColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 7, '', bgcolor=color.new(sixColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 7, '', bgcolor=color.new(fiveColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 7, '', bgcolor=color.new(fourColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 7, '', bgcolor=color.new(threeColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 7, '', bgcolor=color.new(twoColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 7, '', bgcolor=color.new(oneColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 7, '', bgcolor=color.new(zeroColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+
+    table.cell(dataTable, 1, 8, str.tostring(getRightChars(t3, ':')) + ' MO', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 8, '', bgcolor=color.new(tenMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 8, '', bgcolor=color.new(nineMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 8, '', bgcolor=color.new(eightMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 8, '', bgcolor=color.new(sevenMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 8, '', bgcolor=color.new(sixMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 8, '', bgcolor=color.new(fiveMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 8, '', bgcolor=color.new(fourMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 8, '', bgcolor=color.new(threeMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 8, '', bgcolor=color.new(twoMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 8, '', bgcolor=color.new(oneMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 8, '', bgcolor=color.new(zeroMOColor_ticker3, 0), text_color=color.white, text_size=tableTextSize)
+
+    // Divider
+
+    table.cell(dataTable, 1, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 2, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 3, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 4, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 5, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 6, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 7, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 8, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 9, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 10, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 11, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 12, 9, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+
+// Alerts
+
+if useAlerts
+    if potentialLong_ticker3 and not potentialLong_ticker3[1]
+        alert('Potential Long on: ' + str.tostring(t3), i_alert_mode)
+    else if potentialShort_ticker3 and not potentialShort_ticker3[1]
+        alert('Potential Short on: ' + str.tostring(t3), i_alert_mode)
+
+
+// ticker4
+
+var ATR_ticker4 = 0.0
+var UP_ticker4 = 0.0
+var DN_ticker4 = 0.0
+var ST_ticker4 = 0.0
+
+[atrTF_ticker4, hl2TF_ticker4, closeTF_ticker4, openTF_ticker4] = request.security(t4, timeframe.period, [ta.hma(ta.tr, nATR), hl2, close, open])
+// ST Section
+
+ATR_ticker4 := atrTF_ticker4
+UP_ticker4 := hl2TF_ticker4 + AtrMult * ATR_ticker4
+DN_ticker4 := hl2TF_ticker4 + -AtrMult * ATR_ticker4
+
+if closeTF_ticker4 < ST_ticker4[1]
+    ST_ticker4 := UP_ticker4
+    ST_ticker4
+else
+    ST_ticker4 := DN_ticker4
+    ST_ticker4
+
+//plot(ST_ticker4, color=color.new(closeTF_ticker4 < ST_ticker4 ? color.red : color.lime, stTransparency), linewidth=3)
+
+// TMO Section
+
+//TMO calculates momentum using the delta of price. Giving a much better picture of trend, tend reversals and divergence than momentum oscillators using price.
+
+o_ticker4 = openTF_ticker4
+c_ticker4 = closeTF_ticker4
+s_ticker4 = 0
+for i = 0 to length by 1
+    s_ticker4 += (c_ticker4 > o_ticker4[i] ? 1 : c_ticker4 < o_ticker4[i] ? -1 : 0)
+    s_ticker4
+data_ticker4 = s_ticker4
+
+MA_ticker4 = ta.ema(data_ticker4, calcLength)
+Main_ticker4 = ta.ema(MA_ticker4, smoothLength)
+Signal_ticker4 = ta.ema(Main_ticker4, smoothLength)
+
+// BarsShapesEtc
+
+calculationSourceClose_ticker4 = request.security(t4, calculateTimeframe, calculationSource)
+
+var potentialLong_ticker4 = false
+var potentialShort_ticker4 = false
+
+if calculationMode
+    potentialLong_ticker4 := calculationSourceClose_ticker4 > ST_ticker4 and (calculationSourceClose_ticker4 > ST_ticker4)[1] and (calculationSourceClose_ticker4 > ST_ticker4)[2] and (calculationSourceClose_ticker4 > ST_ticker4)[3] and Main_ticker4 > Signal_ticker4 and not (Main_ticker4 > Signal_ticker4)[1]
+    potentialShort_ticker4 := calculationSourceClose_ticker4 < ST_ticker4 and (calculationSourceClose_ticker4 < ST_ticker4)[1] and (calculationSourceClose_ticker4 < ST_ticker4)[2] and (calculationSourceClose_ticker4 < ST_ticker4)[3] and Main_ticker4 < Signal_ticker4 and not (Main_ticker4 < Signal_ticker4)[1]
+    potentialShort_ticker4
+else
+
+    potentialLong_ticker4 := calculationSourceClose_ticker4 > ST_ticker4 and Main_ticker4 > Signal_ticker4 ? true : false
+    potentialShort_ticker4 := calculationSourceClose_ticker4 < ST_ticker4 and Main_ticker4 < Signal_ticker4 ? true : false
+    potentialShort_ticker4
+
+showPotentialLongDot_ticker4 = calculationMode ? calculationSourceClose_ticker4 > ST_ticker4 and (calculationSourceClose_ticker4 > ST_ticker4)[1] and (calculationSourceClose_ticker4 > ST_ticker4)[2] and (calculationSourceClose_ticker4 > ST_ticker4)[3] and Main_ticker4 < Signal_ticker4 : false
+showPotentialShortDot_ticker4 = calculationMode ? calculationSourceClose_ticker4 < ST_ticker4 and (calculationSourceClose_ticker4 < ST_ticker4)[1] and (calculationSourceClose_ticker4 < ST_ticker4)[2] and (calculationSourceClose_ticker4 < ST_ticker4)[3] and Main_ticker4 > Signal_ticker4 : false
+
+//plotshape(showArrows ? potentialLong_ticker4 and not potentialLong_ticker4[1] : na, style=shape.triangleup, color=color.new(color.blue, 0), location=location.belowbar, size=tableTextSize)
+//plotshape(showArrows ? potentialShort_ticker4 and not potentialShort_ticker4[1] : na, style=shape.triangledown, color=color.new(color.orange, 0), location=location.abovebar, size=tableTextSize)
+
+//plotshape(showArrows ? showPotentialLongDot_ticker4 : na, style=shape.circle, color=color.new(longDotColor, dotTransparency), location=location.belowbar, size=tableTextSize)
+//plotshape(showArrows ? showPotentialShortDot_ticker4 : na, style=shape.circle, color=color.new(shortDotColor, dotTransparency), location=location.abovebar, size=tableTextSize)
+
+var line lineOnClose_ticker4 = na
+var label labelOnClose_ticker4 = na
+var float positionPrice_ticker4 = 0.00
+
+if potentialLong_ticker4 or potentialShort_ticker4
+    positionPrice_ticker4 := close
+    positionPrice_ticker4
+
+if drawLineOnClose and (potentialLong_ticker4 or potentialShort_ticker4)
+    lineOnClose_ticker4 := line.new(bar_index, positionPrice_ticker4, bar_index + (potentialLong_ticker4 and not potentialLong_ticker4[1] or potentialShort_ticker4 and not potentialShort_ticker4[1] ? 2 : 1), positionPrice_ticker4, color=color.new(potentialLong_ticker4 and not potentialLong_ticker4[1] or potentialShort_ticker4 and not potentialShort_ticker4[1] ? color.yellow : potentialLong_ticker4 and potentialLong_ticker4[1] ? color.green : potentialShort_ticker4 and potentialShort_ticker4[1] ? color.red : color.white, 0))  // calculationSourceClose gives you selected timeframe's closes
+    lineOnClose_ticker4
+
+//barcolor(PaintBars ? calculationSourceClose_ticker4 > ST_ticker4 and Main_ticker4 > Signal_ticker4 ? longBarColor : calculationSourceClose_ticker4 < ST_ticker4 and Main_ticker4 < Signal_ticker4 ? shortBarColor :  color.black : na)
+
+var longBarsBack_ticker4 = 0
+var shortBarsBack_ticker4 = 0
+
+longBarsBack_ticker4 := ta.barssince(potentialLong_ticker4 and not potentialLong_ticker4[1])
+shortBarsBack_ticker4 := ta.barssince(potentialShort_ticker4 and not potentialShort_ticker4[1])
+
+aboveST_ticker4 = closeTF_ticker4 > ST_ticker4
+belowST_ticker4 = closeTF_ticker4 < ST_ticker4
+aboveST1Percent_ticker4 = aboveST_ticker4 ? (closeTF_ticker4 - ST_ticker4) / closeTF_ticker4 * 100 : 0.0
+belowST1Percent_ticker4 = belowST_ticker4 ? (ST_ticker4 - closeTF_ticker4) / ST_ticker4 * 100 : 0.0
+
+tenColor_ticker4 = potentialLong_ticker4[10] and not potentialLong_ticker4[11] ? longDotColor : potentialShort_ticker4[10] and not potentialShort_ticker4[11] ? shortDotColor : closeTF_ticker4[10] > ST_ticker4[10] ? color.green : color.red
+nineColor_ticker4 = potentialLong_ticker4[9] and not potentialLong_ticker4[10] ? longDotColor : potentialShort_ticker4[9] and not potentialShort_ticker4[10] ? shortDotColor : closeTF_ticker4[9] > ST_ticker4[9] ? color.green : color.red
+eightColor_ticker4 = potentialLong_ticker4[8] and not potentialLong_ticker4[9] ? longDotColor : potentialShort_ticker4[8] and not potentialShort_ticker4[9] ? shortDotColor : closeTF_ticker4[8] > ST_ticker4[8] ? color.green : color.red
+sevenColor_ticker4 = potentialLong_ticker4[7] and not potentialLong_ticker4[8] ? longDotColor : potentialShort_ticker4[7] and not potentialShort_ticker4[8] ? shortDotColor : closeTF_ticker4[7] > ST_ticker4[7] ? color.green : color.red
+sixColor_ticker4 = potentialLong_ticker4[6] and not potentialLong_ticker4[7] ? longDotColor : potentialShort_ticker4[6] and not potentialShort_ticker4[7] ? shortDotColor : closeTF_ticker4[6] > ST_ticker4[6] ? color.green : color.red
+fiveColor_ticker4 = potentialLong_ticker4[5] and not potentialLong_ticker4[6] ? longDotColor : potentialShort_ticker4[5] and not potentialShort_ticker4[6] ? shortDotColor : closeTF_ticker4[5] > ST_ticker4[5] ? color.green : color.red
+fourColor_ticker4 = potentialLong_ticker4[4] and not potentialLong_ticker4[5] ? longDotColor : potentialShort_ticker4[4] and not potentialShort_ticker4[5] ? shortDotColor : closeTF_ticker4[4] > ST_ticker4[4] ? color.green : color.red
+threeColor_ticker4 = potentialLong_ticker4[3] and not potentialLong_ticker4[4] ? longDotColor : potentialShort_ticker4[3] and not potentialShort_ticker4[4] ? shortDotColor : closeTF_ticker4[3] > ST_ticker4[3] ? color.green : color.red
+twoColor_ticker4 = potentialLong_ticker4[2] and not potentialLong_ticker4[3] ? longDotColor : potentialShort_ticker4[2] and not potentialShort_ticker4[3] ? shortDotColor : closeTF_ticker4[2] > ST_ticker4[2] ? color.green : color.red
+oneColor_ticker4 = potentialLong_ticker4[1] and not potentialLong_ticker4[2] ? longDotColor : potentialShort_ticker4[1] and not potentialShort_ticker4[2] ? shortDotColor : closeTF_ticker4[1] > ST_ticker4[1] ? color.green : color.red
+zeroColor_ticker4 = potentialLong_ticker4 and not potentialLong_ticker4[1] ? longDotColor : potentialShort_ticker4 and not potentialShort_ticker4[1] ? shortDotColor : closeTF_ticker4 > ST_ticker4 ? color.green : color.red
+
+tenMOColor_ticker4 = potentialShort_ticker4[10] and not potentialShort_ticker4[11] ? shortDotColor : potentialLong_ticker4[10] and not potentialLong_ticker4[11] ? longDotColor : Main_ticker4[10] > Signal_ticker4[10] ? color.green : color.red
+nineMOColor_ticker4 = potentialShort_ticker4[9] and not potentialShort_ticker4[10] ? shortDotColor : potentialLong_ticker4[9] and not potentialLong_ticker4[10] ? longDotColor : Main_ticker4[9] > Signal_ticker4[9] ? color.green : color.red
+eightMOColor_ticker4 = potentialShort_ticker4[8] and not potentialShort_ticker4[9] ? shortDotColor : potentialLong_ticker4[8] and not potentialLong_ticker4[9] ? longDotColor : Main_ticker4[8] > Signal_ticker4[8] ? color.green : color.red
+sevenMOColor_ticker4 = potentialShort_ticker4[7] and not potentialShort_ticker4[8] ? shortDotColor : potentialLong_ticker4[7] and not potentialLong_ticker4[8] ? longDotColor : Main_ticker4[7] > Signal_ticker4[7] ? color.green : color.red
+sixMOColor_ticker4 = potentialShort_ticker4[6] and not potentialShort_ticker4[7] ? shortDotColor : potentialLong_ticker4[6] and not potentialLong_ticker4[7] ? longDotColor : Main_ticker4[6] > Signal_ticker4[6] ? color.green : color.red
+fiveMOColor_ticker4 = potentialShort_ticker4[5] and not potentialShort_ticker4[6] ? shortDotColor : potentialLong_ticker4[5] and not potentialLong_ticker4[6] ? longDotColor : Main_ticker4[5] > Signal_ticker4[5] ? color.green : color.red
+fourMOColor_ticker4 = potentialShort_ticker4[4] and not potentialShort_ticker4[5] ? shortDotColor : potentialLong_ticker4[4] and not potentialLong_ticker4[5] ? longDotColor : Main_ticker4[4] > Signal_ticker4[4] ? color.green : color.red
+threeMOColor_ticker4 = potentialShort_ticker4[3] and not potentialShort_ticker4[4] ? shortDotColor : potentialLong_ticker4[3] and not potentialLong_ticker4[4] ? longDotColor : Main_ticker4[3] > Signal_ticker4[3] ? color.green : color.red
+twoMOColor_ticker4 = potentialShort_ticker4[2] and not potentialShort_ticker4[3] ? shortDotColor : potentialLong_ticker4[2] and not potentialLong_ticker4[3] ? longDotColor : Main_ticker4[2] > Signal_ticker4[2] ? color.green : color.red
+oneMOColor_ticker4 = potentialShort_ticker4[1] and not potentialShort_ticker4[2] ? shortDotColor : potentialLong_ticker4[1] and not potentialLong_ticker4[2] ? longDotColor : Main_ticker4[1] > Signal_ticker4[1] ? color.green : color.red
+zeroMOColor_ticker4 = potentialShort_ticker4 and not potentialShort_ticker4[1] ? shortDotColor : potentialLong_ticker4 and not potentialLong_ticker4[1] ? longDotColor : Main_ticker4 > Signal_ticker4 ? color.green : color.red
+
+if showTable and showT4
+    table.cell(dataTable, 1, 10, str.tostring(getRightChars(t4, ':')) + ' ST', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 10, '', bgcolor=color.new(tenColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 10, '', bgcolor=color.new(nineColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 10, '', bgcolor=color.new(eightColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 10, '', bgcolor=color.new(sevenColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 10, '', bgcolor=color.new(sixColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 10, '', bgcolor=color.new(fiveColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 10, '', bgcolor=color.new(fourColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 10, '', bgcolor=color.new(threeColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 10, '', bgcolor=color.new(twoColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 10, '', bgcolor=color.new(oneColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 10, '', bgcolor=color.new(zeroColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+
+    table.cell(dataTable, 1, 11, str.tostring(getRightChars(t4, ':')) + ' MO', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 11, '', bgcolor=color.new(tenMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 11, '', bgcolor=color.new(nineMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 11, '', bgcolor=color.new(eightMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 11, '', bgcolor=color.new(sevenMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 11, '', bgcolor=color.new(sixMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 11, '', bgcolor=color.new(fiveMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 11, '', bgcolor=color.new(fourMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 11, '', bgcolor=color.new(threeMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 11, '', bgcolor=color.new(twoMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 11, '', bgcolor=color.new(oneMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 11, '', bgcolor=color.new(zeroMOColor_ticker4, 0), text_color=color.white, text_size=tableTextSize)
+
+    // Divider
+
+    table.cell(dataTable, 1, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 2, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 3, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 4, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 5, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 6, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 7, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 8, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 9, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 10, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 11, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+    table.cell(dataTable, 12, 12, '', bgcolor=color.new(color.black, 0), text_color=color.white, text_size=size.tiny, height=1)
+
+// Alerts
+
+if useAlerts
+    if potentialLong_ticker4 and not potentialLong_ticker4[1]
+        alert('Potential Long on: ' + str.tostring(t4), i_alert_mode)
+    else if potentialShort_ticker4 and not potentialShort_ticker4[1]
+        alert('Potential Short on: ' + str.tostring(t4), i_alert_mode)
+
+
+// ticker5
+
+var ATR_ticker5 = 0.0
+var UP_ticker5 = 0.0
+var DN_ticker5 = 0.0
+var ST_ticker5 = 0.0
+
+[atrTF_ticker5, hl2TF_ticker5, closeTF_ticker5, openTF_ticker5] = request.security(t5, timeframe.period, [ta.hma(ta.tr, nATR), hl2, close, open])
+// ST Section
+
+ATR_ticker5 := atrTF_ticker5
+UP_ticker5 := hl2TF_ticker5 + AtrMult * ATR_ticker5
+DN_ticker5 := hl2TF_ticker5 + -AtrMult * ATR_ticker5
+
+if closeTF_ticker5 < ST_ticker5[1]
+    ST_ticker5 := UP_ticker5
+    ST_ticker5
+else
+    ST_ticker5 := DN_ticker5
+    ST_ticker5
+
+//plot(ST_ticker5, color=color.new(closeTF_ticker5 < ST_ticker5 ? color.red : color.lime, stTransparency), linewidth=3)
+
+// TMO Section
+
+//TMO calculates momentum using the delta of price. Giving a much better picture of trend, tend reversals and divergence than momentum oscillators using price.
+
+o_ticker5 = openTF_ticker5
+c_ticker5 = closeTF_ticker5
+s_ticker5 = 0
+for i = 0 to length by 1
+    s_ticker5 += (c_ticker5 > o_ticker5[i] ? 1 : c_ticker5 < o_ticker5[i] ? -1 : 0)
+    s_ticker5
+data_ticker5 = s_ticker5
+
+MA_ticker5 = ta.ema(data_ticker5, calcLength)
+Main_ticker5 = ta.ema(MA_ticker5, smoothLength)
+Signal_ticker5 = ta.ema(Main_ticker5, smoothLength)
+
+// BarsShapesEtc
+
+calculationSourceClose_ticker5 = request.security(t5, calculateTimeframe, calculationSource)
+
+var potentialLong_ticker5 = false
+var potentialShort_ticker5 = false
+
+if calculationMode
+    potentialLong_ticker5 := calculationSourceClose_ticker5 > ST_ticker5 and (calculationSourceClose_ticker5 > ST_ticker5)[1] and (calculationSourceClose_ticker5 > ST_ticker5)[2] and (calculationSourceClose_ticker5 > ST_ticker5)[3] and Main_ticker5 > Signal_ticker5 and not (Main_ticker5 > Signal_ticker5)[1]
+    potentialShort_ticker5 := calculationSourceClose_ticker5 < ST_ticker5 and (calculationSourceClose_ticker5 < ST_ticker5)[1] and (calculationSourceClose_ticker5 < ST_ticker5)[2] and (calculationSourceClose_ticker5 < ST_ticker5)[3] and Main_ticker5 < Signal_ticker5 and not (Main_ticker5 < Signal_ticker5)[1]
+    potentialShort_ticker5
+else
+
+    potentialLong_ticker5 := calculationSourceClose_ticker5 > ST_ticker5 and Main_ticker5 > Signal_ticker5 ? true : false
+    potentialShort_ticker5 := calculationSourceClose_ticker5 < ST_ticker5 and Main_ticker5 < Signal_ticker5 ? true : false
+    potentialShort_ticker5
+
+showPotentialLongDot_ticker5 = calculationMode ? calculationSourceClose_ticker5 > ST_ticker5 and (calculationSourceClose_ticker5 > ST_ticker5)[1] and (calculationSourceClose_ticker5 > ST_ticker5)[2] and (calculationSourceClose_ticker5 > ST_ticker5)[3] and Main_ticker5 < Signal_ticker5 : false
+showPotentialShortDot_ticker5 = calculationMode ? calculationSourceClose_ticker5 < ST_ticker5 and (calculationSourceClose_ticker5 < ST_ticker5)[1] and (calculationSourceClose_ticker5 < ST_ticker5)[2] and (calculationSourceClose_ticker5 < ST_ticker5)[3] and Main_ticker5 > Signal_ticker5 : false
+
+//plotshape(showArrows ? potentialLong_ticker5 and not potentialLong_ticker5[1] : na, style=shape.triangleup, color=color.new(color.blue, 0), location=location.belowbar, size=tableTextSize)
+//plotshape(showArrows ? potentialShort_ticker5 and not potentialShort_ticker5[1] : na, style=shape.triangledown, color=color.new(color.orange, 0), location=location.abovebar, size=tableTextSize)
+
+//plotshape(showArrows ? showPotentialLongDot_ticker5 : na, style=shape.circle, color=color.new(longDotColor, dotTransparency), location=location.belowbar, size=tableTextSize)
+//plotshape(showArrows ? showPotentialShortDot_ticker5 : na, style=shape.circle, color=color.new(shortDotColor, dotTransparency), location=location.abovebar, size=tableTextSize)
+
+var line lineOnClose_ticker5 = na
+var label labelOnClose_ticker5 = na
+var float positionPrice_ticker5 = 0.00
+
+if potentialLong_ticker5 or potentialShort_ticker5
+    positionPrice_ticker5 := close
+    positionPrice_ticker5
+
+if drawLineOnClose and (potentialLong_ticker5 or potentialShort_ticker5)
+    lineOnClose_ticker5 := line.new(bar_index, positionPrice_ticker5, bar_index + (potentialLong_ticker5 and not potentialLong_ticker5[1] or potentialShort_ticker5 and not potentialShort_ticker5[1] ? 2 : 1), positionPrice_ticker5, color=color.new(potentialLong_ticker5 and not potentialLong_ticker5[1] or potentialShort_ticker5 and not potentialShort_ticker5[1] ? color.yellow : potentialLong_ticker5 and potentialLong_ticker5[1] ? color.green : potentialShort_ticker5 and potentialShort_ticker5[1] ? color.red : color.white, 0))  // calculationSourceClose gives you selected timeframe's closes
+    lineOnClose_ticker5
+
+//barcolor(PaintBars ? calculationSourceClose_ticker5 > ST_ticker5 and Main_ticker5 > Signal_ticker5 ? longBarColor : calculationSourceClose_ticker5 < ST_ticker5 and Main_ticker5 < Signal_ticker5 ? shortBarColor :  color.black : na)
+
+var longBarsBack_ticker5 = 0
+var shortBarsBack_ticker5 = 0
+
+longBarsBack_ticker5 := ta.barssince(potentialLong_ticker5 and not potentialLong_ticker5[1])
+shortBarsBack_ticker5 := ta.barssince(potentialShort_ticker5 and not potentialShort_ticker5[1])
+
+aboveST_ticker5 = closeTF_ticker5 > ST_ticker5
+belowST_ticker5 = closeTF_ticker5 < ST_ticker5
+aboveST1Percent_ticker5 = aboveST_ticker5 ? (closeTF_ticker5 - ST_ticker5) / closeTF_ticker5 * 100 : 0.0
+belowST1Percent_ticker5 = belowST_ticker5 ? (ST_ticker5 - closeTF_ticker5) / ST_ticker5 * 100 : 0.0
+
+tenColor_ticker5 = potentialLong_ticker5[10] and not potentialLong_ticker5[11] ? longDotColor : potentialShort_ticker5[10] and not potentialShort_ticker5[11] ? shortDotColor : closeTF_ticker5[10] > ST_ticker5[10] ? color.green : color.red
+nineColor_ticker5 = potentialLong_ticker5[9] and not potentialLong_ticker5[10] ? longDotColor : potentialShort_ticker5[9] and not potentialShort_ticker5[10] ? shortDotColor : closeTF_ticker5[9] > ST_ticker5[9] ? color.green : color.red
+eightColor_ticker5 = potentialLong_ticker5[8] and not potentialLong_ticker5[9] ? longDotColor : potentialShort_ticker5[8] and not potentialShort_ticker5[9] ? shortDotColor : closeTF_ticker5[8] > ST_ticker5[8] ? color.green : color.red
+sevenColor_ticker5 = potentialLong_ticker5[7] and not potentialLong_ticker5[8] ? longDotColor : potentialShort_ticker5[7] and not potentialShort_ticker5[8] ? shortDotColor : closeTF_ticker5[7] > ST_ticker5[7] ? color.green : color.red
+sixColor_ticker5 = potentialLong_ticker5[6] and not potentialLong_ticker5[7] ? longDotColor : potentialShort_ticker5[6] and not potentialShort_ticker5[7] ? shortDotColor : closeTF_ticker5[6] > ST_ticker5[6] ? color.green : color.red
+fiveColor_ticker5 = potentialLong_ticker5[5] and not potentialLong_ticker5[6] ? longDotColor : potentialShort_ticker5[5] and not potentialShort_ticker5[6] ? shortDotColor : closeTF_ticker5[5] > ST_ticker5[5] ? color.green : color.red
+fourColor_ticker5 = potentialLong_ticker5[4] and not potentialLong_ticker5[5] ? longDotColor : potentialShort_ticker5[4] and not potentialShort_ticker5[5] ? shortDotColor : closeTF_ticker5[4] > ST_ticker5[4] ? color.green : color.red
+threeColor_ticker5 = potentialLong_ticker5[3] and not potentialLong_ticker5[4] ? longDotColor : potentialShort_ticker5[3] and not potentialShort_ticker5[4] ? shortDotColor : closeTF_ticker5[3] > ST_ticker5[3] ? color.green : color.red
+twoColor_ticker5 = potentialLong_ticker5[2] and not potentialLong_ticker5[3] ? longDotColor : potentialShort_ticker5[2] and not potentialShort_ticker5[3] ? shortDotColor : closeTF_ticker5[2] > ST_ticker5[2] ? color.green : color.red
+oneColor_ticker5 = potentialLong_ticker5[1] and not potentialLong_ticker5[2] ? longDotColor : potentialShort_ticker5[1] and not potentialShort_ticker5[2] ? shortDotColor : closeTF_ticker5[1] > ST_ticker5[1] ? color.green : color.red
+zeroColor_ticker5 = potentialLong_ticker5 and not potentialLong_ticker5[1] ? longDotColor : potentialShort_ticker5 and not potentialShort_ticker5[1] ? shortDotColor : closeTF_ticker5 > ST_ticker5 ? color.green : color.red
+
+tenMOColor_ticker5 = potentialShort_ticker5[10] and not potentialShort_ticker5[11] ? shortDotColor : potentialLong_ticker5[10] and not potentialLong_ticker5[11] ? longDotColor : Main_ticker5[10] > Signal_ticker5[10] ? color.green : color.red
+nineMOColor_ticker5 = potentialShort_ticker5[9] and not potentialShort_ticker5[10] ? shortDotColor : potentialLong_ticker5[9] and not potentialLong_ticker5[10] ? longDotColor : Main_ticker5[9] > Signal_ticker5[9] ? color.green : color.red
+eightMOColor_ticker5 = potentialShort_ticker5[8] and not potentialShort_ticker5[9] ? shortDotColor : potentialLong_ticker5[8] and not potentialLong_ticker5[9] ? longDotColor : Main_ticker5[8] > Signal_ticker5[8] ? color.green : color.red
+sevenMOColor_ticker5 = potentialShort_ticker5[7] and not potentialShort_ticker5[8] ? shortDotColor : potentialLong_ticker5[7] and not potentialLong_ticker5[8] ? longDotColor : Main_ticker5[7] > Signal_ticker5[7] ? color.green : color.red
+sixMOColor_ticker5 = potentialShort_ticker5[6] and not potentialShort_ticker5[7] ? shortDotColor : potentialLong_ticker5[6] and not potentialLong_ticker5[7] ? longDotColor : Main_ticker5[6] > Signal_ticker5[6] ? color.green : color.red
+fiveMOColor_ticker5 = potentialShort_ticker5[5] and not potentialShort_ticker5[6] ? shortDotColor : potentialLong_ticker5[5] and not potentialLong_ticker5[6] ? longDotColor : Main_ticker5[5] > Signal_ticker5[5] ? color.green : color.red
+fourMOColor_ticker5 = potentialShort_ticker5[4] and not potentialShort_ticker5[5] ? shortDotColor : potentialLong_ticker5[4] and not potentialLong_ticker5[5] ? longDotColor : Main_ticker5[4] > Signal_ticker5[4] ? color.green : color.red
+threeMOColor_ticker5 = potentialShort_ticker5[3] and not potentialShort_ticker5[4] ? shortDotColor : potentialLong_ticker5[3] and not potentialLong_ticker5[4] ? longDotColor : Main_ticker5[3] > Signal_ticker5[3] ? color.green : color.red
+twoMOColor_ticker5 = potentialShort_ticker5[2] and not potentialShort_ticker5[3] ? shortDotColor : potentialLong_ticker5[2] and not potentialLong_ticker5[3] ? longDotColor : Main_ticker5[2] > Signal_ticker5[2] ? color.green : color.red
+oneMOColor_ticker5 = potentialShort_ticker5[1] and not potentialShort_ticker5[2] ? shortDotColor : potentialLong_ticker5[1] and not potentialLong_ticker5[2] ? longDotColor : Main_ticker5[1] > Signal_ticker5[1] ? color.green : color.red
+zeroMOColor_ticker5 = potentialShort_ticker5 and not potentialShort_ticker5[1] ? shortDotColor : potentialLong_ticker5 and not potentialLong_ticker5[1] ? longDotColor : Main_ticker5 > Signal_ticker5 ? color.green : color.red
+
+if showTable and showT5
+    table.cell(dataTable, 1, 13, str.tostring(getRightChars(t5, ':')) + ' ST', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 13, '', bgcolor=color.new(tenColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 13, '', bgcolor=color.new(nineColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 13, '', bgcolor=color.new(eightColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 13, '', bgcolor=color.new(sevenColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 13, '', bgcolor=color.new(sixColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 13, '', bgcolor=color.new(fiveColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 13, '', bgcolor=color.new(fourColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 13, '', bgcolor=color.new(threeColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 13, '', bgcolor=color.new(twoColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 13, '', bgcolor=color.new(oneColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 13, '', bgcolor=color.new(zeroColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+
+    table.cell(dataTable, 1, 14, str.tostring(getRightChars(t5, ':')) + ' MO', bgcolor=color.new(color.black, 100), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 2, 14, '', bgcolor=color.new(tenMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 3, 14, '', bgcolor=color.new(nineMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 4, 14, '', bgcolor=color.new(eightMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 5, 14, '', bgcolor=color.new(sevenMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 6, 14, '', bgcolor=color.new(sixMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 7, 14, '', bgcolor=color.new(fiveMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 8, 14, '', bgcolor=color.new(fourMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 9, 14, '', bgcolor=color.new(threeMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 10, 14, '', bgcolor=color.new(twoMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 11, 14, '', bgcolor=color.new(oneMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+    table.cell(dataTable, 12, 14, '', bgcolor=color.new(zeroMOColor_ticker5, 0), text_color=color.white, text_size=tableTextSize)
+
+// Alerts
+
+if useAlerts
+    if potentialLong_ticker5 and not potentialLong_ticker5[1]
+        alert('Potential Long on: ' + str.tostring(t5), i_alert_mode)
+    else if potentialShort_ticker5 and not potentialShort_ticker5[1]
+        alert('Potential Short on: ' + str.tostring(t5), i_alert_mode)
+

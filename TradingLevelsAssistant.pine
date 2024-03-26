@@ -9,6 +9,8 @@
 
 // TODO: Improve buy and sell entry to consider if too much chop (a lot of cross on main/signal lines)
 
+// TODO: ATR + cross is buy/sell
+
 // FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY

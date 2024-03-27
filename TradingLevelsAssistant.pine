@@ -10,6 +10,7 @@
 
 // TODO: ATR + cross is buy/sell
 
+// TODO: Disable certain instruments based on time
 
 // TODO: Look at HMA for confirm line
 
@@ -89,6 +90,14 @@ alertIntraBounce = input(true, title="Alert on Intra Bounce", group="Level Bounc
 includeTrigIntra = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Intra)", inline="Intra")
 includeRevIntra = input(true, title="Trigger Reversal", group="Level Bounce (Intra)", inline="Intra")
 
+// ATR
+showATRArrow = input(true, title="Show ATR Arrow", group="ATR")
+atrArrowTransparency = input.int(20, title="    └ ATR Arrow Transparency", group="ATR", minval=0, maxval=100)
+showATRDots = input(true, title="Show ATR Dots", group="ATR", inline="main")
+atrDotTransparency = input.int(70, title="    └ ATR Dot Transparency", group="ATR", minval=0, maxval=100)
+buyATRColor = input(color.rgb(20, 161, 44), title="Buy ATR Color", group="ATR", inline="color")
+sellATRColor = input(color.rgb(133, 0, 55), title="   |   Sell ATR Color", group="ATR", inline="color")
+
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
 colorFastMA = input.color(color.new(color.fuchsia,50), title="Fast MA Color", group="Moving Averages", inline="fast")
@@ -108,6 +117,7 @@ confirmMASmoothPeriod = input(3, title="Confirm MA Smooth Period", group="Moving
 alertDirectionalBuySell = input(true, title="Buy/Sell", group="Alerts", inline="main")
 alertReversalBuySell = input(true, title="Buy/Sell (Reversal)", group="Alerts", inline="main")
 alertCrossBuySell = input(true, title="Buy/Sell (Cross)", group="Alerts", inline="main")
+alertATRArrow = input(true, title="ATR Arrow", group="Alerts", inline="ATR")
 
 show_table      = input.bool(true,"Show Dashboard", group="Dashboard", inline="Table")
 tableLocation   = input.string(defval='Bottom right', options=['Top left', 'Top center', 'Top right', 'Bottom left', 'Bottom center', 'Bottom right'], title='| Location', group="Dashboard", inline="Table")
@@ -302,6 +312,33 @@ anySym1BounceDownRev = (anyPivotSym1BounceDown and includeRevPivots) or (anyBuyS
 anySym2BounceUpRev = (anyPivotSym2BounceUp and includeRevPivots) or (anyBuySym2BounceUp and includeRevBuy) or (anySellSym2BounceUp and includeRevSell) or (anyIntraSym2BounceUp and includeRevIntra)
 anySym2BounceDownRev = (anyPivotSym2BounceDown and includeRevPivots) or (anyBuySym2BounceDown and includeRevBuy) or (anySellSym2BounceDown and includeRevSell) or (anyIntraSym2BounceDown and includeRevIntra)
 
+// ********** ATR RENDERING **********
+dataLength = 8
+atrMALength = 5
+atrSmoothLength = 3
+atrMultiplier = 1.0
+numATR = 4
+checkPastSignal = true
+
+// ATR calculation if close is outside of ATR
+[atrTF, hl2TF, closeTF] = request.security(syminfo.tickerid, '', [ta.hma(ta.tr, nATR), hl2, close])
+
+var ATR = 0.0
+ATR := atrTF
+
+var UP = 0.0
+UP := hl2TF + AtrMult * ATR
+
+var DN = 0.0
+DN := hl2TF + -AtrMult * ATR
+
+var ST = 0.0
+
+if closeTF < ST[1]
+    ST := UP
+else
+    ST := DN
+
 // ********** EMA RENDERING **********
 fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodFastMA))
 slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodSlowMA))
@@ -323,6 +360,7 @@ trendMagnitude = math.abs(maDifference)
 momentumMagnitude = math.abs(delta)
 
 // Trend calculation
+// TODO: Normalise trend against range
 trendDirection = direction * (trendMagnitude + momentumMagnitude + math.abs(acceleration))
 trendColor = color.gray
 volatileLimit = 5

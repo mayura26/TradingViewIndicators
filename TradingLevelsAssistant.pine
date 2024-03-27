@@ -5,6 +5,8 @@
 
 // TODO: Rework lines and labels to add all to an array which is cleared on replot
 
+// TODO: Look at HMA for confirm line
+
 // FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY
@@ -347,10 +349,10 @@ normalizedTrendMagnitude = math.min(trendDirection / maxTrendMagnitude, 3)
 var float adaptiveLine  = na
 if trendDirection > 1.5
     // Uptrend: More bias towards fastMA
-    adaptiveLine  := stableMA + (fastMA - stableMA) * (normalizedTrendMagnitude) + (slowMA - stableMA) * normalizedTrendMagnitude/4
+    adaptiveLine  := stableMA + (fastMA - stableMA) * (2*normalizedTrendMagnitude/3) + (slowMA - stableMA) * normalizedTrendMagnitude/3
 else if trendDirection < -1.5
     // Downtrend: Bias towards slowMA, but capped at stableMA
-    adaptiveLine  := stableMA - (stableMA - fastMA) * (normalizedTrendMagnitude) - (stableMA - slowMA) * normalizedTrendMagnitude/4
+    adaptiveLine  := stableMA + (stableMA - fastMA) * (2*normalizedTrendMagnitude/3) + (stableMA - slowMA) * normalizedTrendMagnitude/3
 else
     // No clear trend: Use stableMA
     adaptiveLine  := (stableMA + fastMA + slowMA)/3

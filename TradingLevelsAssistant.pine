@@ -1,9 +1,15 @@
 //@version=5
 // TODO: Bring in ATR trigger as condition
 
+// TODO: Identify bounce off confirm
+
 // TODO: Create dynamic pivots based on ER/pivots
 
 // TODO: Rework lines and labels to add all to an array which is cleared on replot
+// TODO: Improve buy and sell entry to consider if too much chop (a lot of cross on main/signal lines)
+
+// TODO: ATR + cross is buy/sell
+
 
 // TODO: Look at HMA for confirm line
 

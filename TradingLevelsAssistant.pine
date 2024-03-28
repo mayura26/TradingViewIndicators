@@ -8,6 +8,10 @@
 // TODO: Rework lines and labels to add all to an array which is cleared on replot
 // TODO: Improve buy and sell entry to consider if too much chop (a lot of cross on main/signal lines)
 
+// TODO: simplifies buy sell text and add limit to alert
+
+
+
 // TODO: ATR + cross is buy/sell
 
 // TODO: Disable certain instruments based on time

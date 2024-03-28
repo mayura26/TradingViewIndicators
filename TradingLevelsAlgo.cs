@@ -28,6 +28,9 @@ namespace NinjaTrader.NinjaScript.Strategies
     public class TradingLevelsAlgo : Strategy
     {
         private Order entryOrder = null;
+        private Order entryOrderRunner = null;
+        private double entryPrice = 0.0;
+        private bool stopLossAdjusted = false;
         private int entryBar = -1;
         private EMA ema5;
         private EMA ema8;
@@ -90,19 +93,52 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             // Entry condition: 5 EMA crosses above 13 EMA
-            if (CrossAbove(ema5, ema13, 1))
+            if (CrossAbove(ema5, ema13, 1) && entryOrder == null)
             {
                 // Enter a long trade at the 8 EMA level
-                entryOrder = EnterLongLimit(0, true, 1, ema8[0], "EMA_5_8_13_Long");
+                entryOrder = EnterLongLimit(0, true, 4, ema8[0], "EMA_5_8_13_Long");
+                entryOrderRunner = EnterLongLimit(0, true, 1, ema8[0], "EMA_5_8_13_Long_Runner");
                 entryBar = CurrentBar; // Remember the bar at which we entered
+                entryPrice = ema8[0]; // Assuming immediate execution at the close price
+                stopLossAdjusted = false; // Resetting the flag as this is a new trade
             }
             // Entry condition: 5 EMA crosses below 13 EMA
-            if (CrossBelow(ema5, ema13, 1))
+            if (CrossBelow(ema5, ema13, 1) && entryOrder == null)
             {
                 // Enter a short trade at the 8 EMA level
-                entryOrder = EnterShortLimit(0, true, 1, ema8[0], "EMA_5_8_13_Short");
+                entryOrder = EnterShortLimit(0, true, 4, ema8[0], "EMA_5_8_13_Short");
+                entryOrderRunner = EnterShortLimit(0, true, 1, ema8[0], "EMA_5_8_13_Short_Runner");
                 entryBar = CurrentBar; // Remember the bar at which we entered
+                entryPrice = ema8[0]; // Assuming immediate execution at the close price
+                stopLossAdjusted = false; // Resetting the flag as this is a new trade
             }
+
+            // If we have an open order and the price has moved in our favor by 5 points, adjust the stop loss to breakeven
+            if (entryOrder != null && !stopLossAdjusted && entryOrder.OrderState == OrderState.Working)
+            {
+                if (entryOrder.OrderAction == OrderAction.Buy && Highs[0][0] - entryPrice >= 15)
+                {
+                    SetStopLoss("EMA_5_8_13_Long", CalculationMode.Price, entryPrice, false);
+                    SetStopLoss("EMA_5_8_13_Long_Runner", CalculationMode.Price, entryPrice, false);
+                    stopLossAdjusted = true;
+                }
+                else if (entryOrder.OrderAction == OrderAction.SellShort && entryPrice - Lows[0][0] >= 15)
+                {
+                    SetStopLoss("EMA_5_8_13_Short", CalculationMode.Price, entryPrice, false);
+                    SetStopLoss("EMA_5_8_13_Short_Runner", CalculationMode.Price, entryPrice, false);
+                    stopLossAdjusted = true;
+                }
+            }
+
+            // Add visualisation of cross above and below
+            if (CrossAbove(ema5, ema13, 1))
+            {
+                Draw.ArrowUp(this, "ArrowUp" + CurrentBar, true, 0, Low[0] - 2 * TickSize, Brushes.Green);
+            }
+            else if (CrossBelow(ema5, ema13, 1))
+            {
+                Draw.ArrowDown(this, "ArrowDown" + CurrentBar, true, 0, High[0] + 2 * TickSize, Brushes.Red);
+            }   
         }
         protected override void OnOrderUpdate(Cbi.Order order, double limitPrice, double stopPrice,
                                               int quantity, int filled, double averageFillPrice,
@@ -114,6 +150,29 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Set stop loss and profit target for the filled order
                 SetStopLoss("EMA_5_8_13_Long", CalculationMode.Price, averageFillPrice - 15, false);
                 SetProfitTarget("EMA_5_8_13_Long", CalculationMode.Price, averageFillPrice + 15);
+            }
+            else if (order.Name == "EMA_5_8_13_Long_Runner" && orderState == OrderState.Filled)
+            {
+                // Set stop loss and profit target for the filled order
+                SetStopLoss("EMA_5_8_13_Long_Runner", CalculationMode.Price, averageFillPrice - 15, false);
+                SetProfitTarget("EMA_5_8_13_Long_Runner", CalculationMode.Price, averageFillPrice + 45);
+            }
+            else if (order.Name == "EMA_5_8_13_Short" && orderState == OrderState.Filled)
+            {
+                // Set stop loss and profit target for the filled order
+                SetStopLoss("EMA_5_8_13_Short", CalculationMode.Price, averageFillPrice + 15, false);
+                SetProfitTarget("EMA_5_8_13_Short", CalculationMode.Price, averageFillPrice - 15);
+            }
+            else if (order.Name == "EMA_5_8_13_Short_Runner" && orderState == OrderState.Filled)
+            {
+                // Set stop loss and profit target for the filled order
+                SetStopLoss("EMA_5_8_13_Short_Runner", CalculationMode.Price, averageFillPrice + 45, false);
+                SetProfitTarget("EMA_5_8_13_Short_Runner", CalculationMode.Price, averageFillPrice - 15);
+            }
+            else if (order.OrderState == OrderState.Cancelled || order.OrderState == OrderState.Rejected)
+            {
+                // If the order is cancelled or rejected, reset the entryOrder variable to allow new orders
+                entryOrder = null;
             }
         }
     }

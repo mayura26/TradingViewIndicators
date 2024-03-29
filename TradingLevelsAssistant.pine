@@ -1,9 +1,15 @@
 //@version=5
+// Author is not responsible for your trading using this script.
+// Data provided in this script is not financial advice.
+// Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, and other scripts.
+
 // TODO: Identify bounce off confirm
 
-// TODO: Create dynamic pivots based on ER/pivots. Check if pivot is close to other pivots
+// TODO: Add expected range level
 
-// TODO: Improve buy and sell entry to consider if too much chop (a lot of cross on main/signal lines)
+// TODO: Create dynamic pivots
+
+// TODO: Improve buy and sell entry to consider if too much chop by looking at delta. If delta has crossed 0 too many times, we should consider this chop (and draw a box to identify)
 
 // TODO: ATR + cross is buy/sell
 
@@ -60,7 +66,7 @@ preCalcColor = input.color(color.rgb(0, 255, 255), title="Calculated Color", gro
 preCalcLabel = input("Calc", title="Calculated Label", group="Level Settings", inline = "preCalc")
 preCalcWidth = input(2, title="    └ Calculated Width", group="Level Settings", inline = "pcwidth")
 
-labelOffset = input(15, title="Label Offset", group="General")
+labelOffset = input(10, title="Label Offset", group="General")
 // TODO: Change this to ticks
 buffer = input.float(25.0, title="Level Bounce Buffer [H-L] (%)", group="General", minval=0, maxval=100) // Define a buffer to avoid false positives due to noise
 buySellBuffer = input.float(20, title="Buy/Sell Buffer [0.001x%]", group="General",minval=0, maxval=1000) 
@@ -142,13 +148,28 @@ timePeriod2 = input.session("0100-0800", title="Active Period 2", group="Trading
 timePeriod3 = input.session("1700-1715", title="Active Period 3", group="Trading Time (NY Time)")
 
 // ********** GLOBAL VARIABLES *********
+// System variables
 var displayTable = table.new(tablePosition, 2, 6, border_width=1, bgcolor = table_bgcolor)
 var float bounceLevel = na
 var int systemState = 0
 var bool lastCrossDir = na
+
+// Constants
+var int startOfDayIndex = na
+var int startOfWeekIndex = na
+
+// Check if this is the first bar of the new day
+if (dayofmonth != dayofmonth[1] or month != month[1] or year != year[1])
+    startOfDayIndex := bar_index
+
+if (weekofyear != weekofyear[1])
+    startOfWeekIndex := bar_index
+
+// Arrays
 var line [] lineArray = array.new_line()
 var label [] labelArray = array.new_label()
 var float [] liveLevels = array.new_float() 
+var float [] calcLevels = array.new_float() 
 for line in lineArray
     line.delete(line)
 for label in labelArray
@@ -156,6 +177,7 @@ for label in labelArray
 array.clear(lineArray)    
 array.clear(labelArray)
 array.clear(liveLevels)
+array.clear(calcLevels)
 
 // ********** FUNCTIONS **********
 draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
@@ -217,19 +239,47 @@ check_optimal_level(levels, symbolEnabled) =>
                 
     result = optLevel
 
+check_calclevels_low(levels, bounceType, symbolEnabled) =>    
+    anyBounce = false
+    for level in levels
+        if check_bounce_low(level)
+            anyBounce := true
+            if symbolEnabled
+                draw_label(bar_index, level, bounceType, xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
+    result = anyBounce
+
+check_calclevels_high(levels, bounceType, symbolEnabled) =>    
+    anyBounce = false
+    for level in levels
+        if check_bounce_high(level)
+            anyBounce := true
+            if symbolEnabled
+                draw_label(bar_index, level, bounceType, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
+    result = anyBounce
+
+check_calcoptimal_level(levels, symbolEnabled) =>    
+    optLevel = 0.0
+    if symbolEnabled
+        for level in levels
+            if math.abs(level - close) < (close * buySellBuffer/100000)
+                optLevel := level
+                
+    result = optLevel
+
 draw_levels(levels, color, width, label, labeloffset) =>
     plotLevels = str.split(levels, ",")
     for level in plotLevels
         array.push(liveLevels, str.tonumber(level))
-        draw_line(bar_index, str.tonumber(level), bar_index + labeloffset + 15, str.tonumber(level),  xloc.bar_index, extend.left, color, line.style_solid, width)
         if barstate.islast
+            draw_line(bar_index, str.tonumber(level), bar_index + labeloffset + 15, str.tonumber(level),  xloc.bar_index, extend.left, color, line.style_solid, width)
             plot_label = label.new(bar_index + labeloffset + 10, str.tonumber(level))
             label.set_text(plot_label, label)
             label.set_style(plot_label, label.style_none)
             label.set_textcolor(plot_label, color)
+            label.set_textalign(plot_label, text.align_right)
             array.push(labelArray, plot_label)
 
-draw_levels_calculated(level, color, width, label, labeloffset) =>
+draw_levels_calculated(level, color, width, label, labeloffset, startBar) =>
     offset = levelClashOffset * syminfo.mintick
     shouldDraw = true
     for levelInArray in liveLevels
@@ -239,12 +289,14 @@ draw_levels_calculated(level, color, width, label, labeloffset) =>
             break
     if shouldDraw
         array.push(liveLevels, level)
-        draw_line(bar_index, level, bar_index + labeloffset + 15, level,  xloc.bar_index, extend.left, color, line.style_solid, width)
+        array.push(calcLevels, level)
+        draw_line(startBar, level, bar_index + labeloffset + 15, level,  xloc.bar_index, extend.none, color, line.style_solid, width)
         if barstate.islast
             plot_label = label.new(bar_index + labeloffset + 10, level)
             label.set_text(plot_label, label)
             label.set_style(plot_label, label.style_none)
             label.set_textcolor(plot_label, color)
+            label.set_textalign(plot_label, text.align_right)
             array.push(labelArray, plot_label)
     
 f_fillCell(_row, _column,series string _cellText) =>
@@ -317,35 +369,67 @@ lastWeekLow = request.security(syminfo.tickerid, "W", low[1])
 todayHigh = request.security(syminfo.tickerid, "D", high)
 todayLow = request.security(syminfo.tickerid, "D", low)
 
-draw_levels_calculated(lastWeekHigh, preCalcColor, preCalcWidth, "Previous Week High", labelOffset)
-draw_levels_calculated(lastWeekLow, preCalcColor, preCalcWidth, "Previous Week Low", labelOffset)
-draw_levels_calculated(lastWeekClose, preCalcColor, preCalcWidth, "Previous Week Close", labelOffset)
-draw_levels_calculated(yesterdayHigh, preCalcColor, preCalcWidth, "Yesterday High", labelOffset)
-draw_levels_calculated(yesterdayLow, preCalcColor, preCalcWidth, "Yesterday Low", labelOffset)
-draw_levels_calculated(yesterdayClose, preCalcColor, preCalcWidth, "Yesterday Close", labelOffset)
-draw_levels_calculated(todayHigh, preCalcColor, preCalcWidth, "Current High", labelOffset)
-draw_levels_calculated(todayLow, preCalcColor, preCalcWidth, "Current Low", labelOffset)
+// ATR Calculation
+atr_length = 14
+period_index = 1
+trigger_percentage = 0.236
+previous_close = request.security(syminfo.tickerid, 'D', close[period_index], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+atr = request.security(syminfo.tickerid, 'D', ta.atr(atr_length)[period_index], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+period_high = request.security(syminfo.tickerid, 'D', high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+period_low = request.security(syminfo.tickerid, 'D', low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+range_1 = period_high - period_low
+tr_percent_of_atr = range_1 / atr * 100
+atrBear = previous_close - trigger_percentage * atr
+atrBull = previous_close + trigger_percentage * atr
+atrNeg618 = previous_close - atr * 0.618
+atr618 = previous_close + atr * 0.618
+atrNeg100 = previous_close - atr
+atr100 = previous_close + atr
+
+// Historical levels
+draw_levels_calculated(lastWeekHigh, preCalcColor, preCalcWidth, "Previous Week High", labelOffset, startOfWeekIndex)
+draw_levels_calculated(lastWeekLow, preCalcColor, preCalcWidth, "Previous Week Low", labelOffset, startOfWeekIndex)
+draw_levels_calculated(lastWeekClose, preCalcColor, preCalcWidth, "Previous Week Close", labelOffset, startOfWeekIndex)
+draw_levels_calculated(yesterdayHigh, preCalcColor, preCalcWidth, "Yesterday High", labelOffset, startOfDayIndex)
+draw_levels_calculated(yesterdayLow, preCalcColor, preCalcWidth, "Yesterday Low", labelOffset, startOfDayIndex)
+draw_levels_calculated(yesterdayClose, preCalcColor, preCalcWidth, "Yesterday Close", labelOffset, startOfDayIndex)
+
+// Daily levels
+draw_levels_calculated(todayHigh, preCalcColor, preCalcWidth, "Current High", labelOffset, startOfDayIndex)
+draw_levels_calculated(todayLow, preCalcColor, preCalcWidth, "Current Low", labelOffset, startOfDayIndex)
+
+// ATR levels
+draw_levels_calculated(atrBear, preCalcColor, preCalcWidth, "ATR Bearish", labelOffset, startOfDayIndex)
+draw_levels_calculated(atrBull, preCalcColor, preCalcWidth, "ATR Bullish", labelOffset, startOfDayIndex)
+draw_levels_calculated(atrNeg618, preCalcColor, preCalcWidth, "ATR -0.618", labelOffset, startOfDayIndex)
+draw_levels_calculated(atr618, preCalcColor, preCalcWidth, "ATR +0.618", labelOffset, startOfDayIndex)
+draw_levels_calculated(atrNeg100, preCalcColor, preCalcWidth, "ATR -1.0", labelOffset, startOfDayIndex)
+draw_levels_calculated(atr100, preCalcColor, preCalcWidth, "ATR +1.0", labelOffset, startOfDayIndex)
 
 // ********** LEVEL BOUNCE CHECK **********
 anyPivotSym1BounceUp = false
 anyBuySym1BounceUp = false
 anySellSym1BounceUp = false
 anyIntraSym1BounceUp = false
+anyCalcSym1BounceUp = false
 
 anyPivotSym1BounceDown = false
 anyBuySym1BounceDown = false
 anySellSym1BounceDown = false
 anyIntraSym1BounceDown = false
+anyCalcSym1BounceDown = false
 
 anyPivotSym2BounceUp = false
 anyBuySym2BounceUp = false
 anySellSym2BounceUp = false
 anyIntraSym2BounceUp = false
+anyCalcSym2BounceUp = false
 
 anyPivotSym2BounceDown = false
 anyBuySym2BounceDown = false
 anySellSym2BounceDown = false
 anyIntraSym2BounceDown = false
+anyCalcSym2BounceDown = false
 
 if ticker.standard() == sym1
     anyPivotSym1BounceUp := check_levels_low(sym1Pivots, pivotsLabel, showPivotsBounce)
@@ -356,6 +440,8 @@ if ticker.standard() == sym1
     anySellSym1BounceDown := check_levels_high(sym1SellLevels, sellLabel, showSellBounce)
     anyIntraSym1BounceUp := check_levels_low(sym1IntraDayLevels, intraLabel, showIntraBounce)
     anyIntraSym1BounceDown := check_levels_high(sym1IntraDayLevels, intraLabel, showIntraBounce)
+    anyCalcSym1BounceUp := check_calclevels_low(calcLevels, preCalcLabel, showPreCalcBounce)
+    anyCalcSym1BounceDown := check_calclevels_high(calcLevels, preCalcLabel, showPreCalcBounce)
 
 if ticker.standard() == sym2
     anyPivotSym2BounceUp := check_levels_low(sym2Pivots, pivotsLabel, showPivotsBounce)
@@ -366,28 +452,32 @@ if ticker.standard() == sym2
     anySellSym2BounceDown := check_levels_high(sym2SellLevels, sellLabel, showSellBounce)
     anyIntraSym2BounceUp := check_levels_low(sym2IntraDayLevels, intraLabel, showIntraBounce)
     anyIntraSym2BounceDown := check_levels_high(sym2IntraDayLevels, intraLabel, showIntraBounce)
+    anyCalcSym2BounceUp := check_calclevels_low(calcLevels, preCalcLabel, showPreCalcBounce)
+    anyCalcSym2BounceDown := check_calclevels_high(calcLevels, preCalcLabel, showPreCalcBounce)
 
 anyPivotSym1Bounce = anyPivotSym1BounceUp or anyPivotSym1BounceDown
 anyBuySym1Bounce = anyBuySym1BounceUp or anyBuySym1BounceDown
 anySellSym1Bounce = anySellSym1BounceUp or anySellSym1BounceDown
 anyIntraSym1Bounce = anyIntraSym1BounceUp or anyIntraSym1BounceDown
+anyCalcSym1Bounce = anyCalcSym1BounceUp or anyCalcSym1BounceDown
 
 anyPivotSym2Bounce = anyPivotSym2BounceUp or anyPivotSym2BounceDown
 anyBuySym2Bounce = anyBuySym2BounceUp or anyBuySym2BounceDown
 anySellSym2Bounce = anySellSym2BounceUp or anySellSym2BounceDown
 anyIntraSym2Bounce = anyIntraSym2BounceUp or anyIntraSym2BounceDown
+anyCalcSym2Bounce = anyCalcSym2BounceUp or anyCalcSym2BounceDown
 
-anySym1BounceUp = (anyPivotSym1BounceUp and includeTrigPivots) or (anyBuySym1BounceUp and includeTrigBuy) or (anySellSym1BounceUp and includeTrigSell) or (anyIntraSym1BounceUp and includeTrigIntra)
-anySym1BounceDown = (anyPivotSym1BounceDown and includeTrigPivots) or (anyBuySym1BounceDown and includeTrigBuy) or (anySellSym1BounceDown and includeTrigSell) or (anyIntraSym1BounceDown and includeTrigIntra)
+anySym1BounceUp = (anyPivotSym1BounceUp and includeTrigPivots) or (anyBuySym1BounceUp and includeTrigBuy) or (anySellSym1BounceUp and includeTrigSell) or (anyIntraSym1BounceUp and includeTrigIntra) or (anyCalcSym1BounceUp and includeTrigPreCalc)
+anySym1BounceDown = (anyPivotSym1BounceDown and includeTrigPivots) or (anyBuySym1BounceDown and includeTrigBuy) or (anySellSym1BounceDown and includeTrigSell) or (anyIntraSym1BounceDown and includeTrigIntra) or (anyCalcSym1BounceDown and includeTrigPreCalc)
 
-anySym2BounceUp = (anyPivotSym2BounceUp and includeTrigPivots) or (anyBuySym2BounceUp and includeTrigBuy) or (anySellSym2BounceUp and includeTrigSell) or (anyIntraSym2BounceUp and includeTrigIntra)
-anySym2BounceDown = (anyPivotSym2BounceDown and includeTrigPivots) or (anyBuySym2BounceDown and includeTrigBuy) or (anySellSym2BounceDown and includeTrigSell) or (anyIntraSym2BounceDown and includeTrigIntra)
+anySym2BounceUp = (anyPivotSym2BounceUp and includeTrigPivots) or (anyBuySym2BounceUp and includeTrigBuy) or (anySellSym2BounceUp and includeTrigSell) or (anyIntraSym2BounceUp and includeTrigIntra) or (anyCalcSym2BounceUp and includeTrigPreCalc)
+anySym2BounceDown = (anyPivotSym2BounceDown and includeTrigPivots) or (anyBuySym2BounceDown and includeTrigBuy) or (anySellSym2BounceDown and includeTrigSell) or (anyIntraSym2BounceDown and includeTrigIntra) or (anyCalcSym2BounceDown and includeTrigPreCalc)
 
-anySym1BounceUpRev = (anyPivotSym1BounceUp and includeRevPivots) or (anyBuySym1BounceUp and includeRevBuy) or (anySellSym1BounceUp and includeRevSell) or (anyIntraSym1BounceUp and includeRevIntra)
-anySym1BounceDownRev = (anyPivotSym1BounceDown and includeRevPivots) or (anyBuySym1BounceDown and includeRevBuy) or (anySellSym1BounceDown and includeRevSell) or (anyIntraSym1BounceDown and includeRevIntra)
+anySym1BounceUpRev = (anyPivotSym1BounceUp and includeRevPivots) or (anyBuySym1BounceUp and includeRevBuy) or (anySellSym1BounceUp and includeRevSell) or (anyIntraSym1BounceUp and includeRevIntra) or (anyCalcSym1BounceUp and includeRevPreCalc)
+anySym1BounceDownRev = (anyPivotSym1BounceDown and includeRevPivots) or (anyBuySym1BounceDown and includeRevBuy) or (anySellSym1BounceDown and includeRevSell) or (anyIntraSym1BounceDown and includeRevIntra) or (anyCalcSym1BounceDown and includeRevPreCalc)
 
-anySym2BounceUpRev = (anyPivotSym2BounceUp and includeRevPivots) or (anyBuySym2BounceUp and includeRevBuy) or (anySellSym2BounceUp and includeRevSell) or (anyIntraSym2BounceUp and includeRevIntra)
-anySym2BounceDownRev = (anyPivotSym2BounceDown and includeRevPivots) or (anyBuySym2BounceDown and includeRevBuy) or (anySellSym2BounceDown and includeRevSell) or (anyIntraSym2BounceDown and includeRevIntra)
+anySym2BounceUpRev = (anyPivotSym2BounceUp and includeRevPivots) or (anyBuySym2BounceUp and includeRevBuy) or (anySellSym2BounceUp and includeRevSell) or (anyIntraSym2BounceUp and includeRevIntra) or (anyCalcSym2BounceUp and includeRevPreCalc)
+anySym2BounceDownRev = (anyPivotSym2BounceDown and includeRevPivots) or (anyBuySym2BounceDown and includeRevBuy) or (anySellSym2BounceDown and includeRevSell) or (anyIntraSym2BounceDown and includeRevIntra) or (anyCalcSym2BounceDown and includeRevPreCalc)
 
 // ********** ATR RENDERING **********
 dataLength = 8
@@ -531,6 +621,7 @@ if ticker.standard() == sym1
     priceOptimalEntryLevel2 = check_optimal_level(sym1BuyLevels, includeTrigBuy)
     priceOptimalEntryLevel3 = check_optimal_level(sym1SellLevels, includeTrigSell)
     priceOptimalEntryLevel4 = check_optimal_level(sym1IntraDayLevels, includeTrigIntra)
+    priceOptimalEntryLevel5 = check_calcoptimal_level(calcLevels, includeTrigPreCalc)
     if priceOptimalEntryLevel1 > 0
         bounceLevel := priceOptimalEntryLevel1
     if priceOptimalEntryLevel2 > 0
@@ -539,6 +630,8 @@ if ticker.standard() == sym1
         bounceLevel := priceOptimalEntryLevel3
     if priceOptimalEntryLevel4 > 0
         bounceLevel := priceOptimalEntryLevel4
+    if priceOptimalEntryLevel5 > 0
+        bounceLevel := priceOptimalEntryLevel5
 
 priceCandleBufferEntry = (high - low) * buffer/100
 priceOptimalBufferEntry = (close) * buySellBuffer/100000
@@ -563,12 +656,6 @@ if ticker.standard() == sym1
     buyReversalSignal := trendDirection <= -1 and anySym1BounceUpRev
     sellReversalSignal := trendDirection >= 1 and anySym1BounceDownRev
 
-if ticker.standard() == sym2
-    buySignal := trendDirection >= 1 and anySym2BounceUp
-    sellSignal := trendDirection <= -1 and anySym2BounceDown 
-    buyReversalSignal := trendDirection <= -1 and anySym2BounceUpRev
-    sellReversalSignal := trendDirection >= 1 and anySym2BounceDownRev
-
 // Look back over the last 2 bars to see if we had a trigger once we get a cross
 if fastCrossSlowDown or sellATRSignal
     lastCrossDir := false
@@ -589,6 +676,33 @@ cancelBuyCondition = anySym1BounceDown or fastCrossSlowDown or sellATRSignal
 ticker1_price  = request.security(sym1, timeframe.period, math.round_to_mintick(close))
 ticker2_price  = request.security(sym2, timeframe.period, math.round_to_mintick(close))
 
+// Calculate the last 10-minute close of ticker 1
+[ticker1_10mClose, ticker1_hlcc4, ticker1_10mHigh, ticker1_10mLow] = request.security(sym1, "10", [close, hlcc4, high, low])
+[ticker2_10mClose, ticker2_hlcc4, ticker2_10mHigh, ticker2_10mLow] = request.security(sym2, "10", [close, hlcc4, high, low])
+
+ticker1_bgcolor = color.rgb(71, 71, 71)
+ticker2_bgcolor = color.rgb(71, 71, 71)
+
+// Check if ticker 1 is higher or lower than its last 10-minute close
+if ticker1_price > ticker1_10mHigh
+    ticker1_bgcolor := color.rgb(0, 190, 6)
+else if ticker1_price < ticker1_10mLow
+    ticker1_bgcolor := color.rgb(190, 0, 0)
+else if ticker1_price > ticker1_10mClose and ticker1_price > ticker1_hlcc4
+    ticker1_bgcolor := color.rgb(0, 95, 3)
+else if ticker1_price < ticker1_10mClose and ticker1_price < ticker1_hlcc4
+    ticker1_bgcolor := color.rgb(83, 0, 0)
+
+// Check if ticker 2 is higher or lower than its last 10-minute close
+if ticker2_price > ticker2_10mHigh
+    ticker2_bgcolor := color.rgb(0, 190, 6)
+else if ticker2_price < ticker2_10mLow
+    ticker2_bgcolor := color.rgb(190, 0, 0)
+else if ticker2_price > ticker2_10mClose and ticker2_price > ticker2_hlcc4
+    ticker2_bgcolor := color.rgb(0, 95, 3)
+else if ticker2_price < ticker2_10mClose and ticker2_price < ticker2_hlcc4
+    ticker2_bgcolor := color.rgb(83, 0, 0)
+
 if barstate.islast and show_table
     f_fillCell(0, 0, "Confirm")
     f_fillCell(1, 0, "Trend")
@@ -596,12 +710,11 @@ if barstate.islast and show_table
     f_fillCell(3, 0, extractSymbolName(sym2))
     f_fillCell(4, 0, "Entry")
 
-    f_fillCellColorText(0,1,    chopDetect ? 'CHOP' : (volatileMove ? '!!!!' : ''),priceAboveConfirm ? color.rgb(0, 114, 4) : color.rgb(116, 0, 0))
-    f_fillCellColorText(1, 1,  str.tostring(math.round(trendDirection,1)), trendColor)
-    f_fillCell(2, 1, str.tostring(ticker1_price))
-    f_fillCell(3, 1, str.tostring(ticker2_price))
+    f_fillCellColorText(0, 1, chopDetect ? 'CHOP' : (volatileMove ? 'RISK' : ''),priceAboveConfirm ? color.rgb(0, 114, 4) : color.rgb(116, 0, 0))
+    f_fillCellColorText(1, 1, str.tostring(math.round(trendDirection,1)), trendColor)
+    f_fillCellColorText(2, 1, str.tostring(ticker1_price), ticker1_bgcolor)
+    f_fillCellColorText(3, 1, str.tostring(ticker2_price), ticker2_bgcolor)
     f_fillCellColorText(4, 1, str.tostring(math.round(priceOptimalBufferEntry,1)) + "/" + str.tostring(math.round(priceOptimalReversalEntry,1)), priceOptimalEntryConfirm ? color.green : color.gray)
-    //TODO: Add symbol to show trend of both tickers
 
 // ********** TRADING **********
 allowedTimes() =>
@@ -780,6 +893,9 @@ if (anySellSym1Bounce or anySellSym2Bounce) and alertSellBounce
 
 if (anyIntraSym1Bounce or anyIntraSym2Bounce) and alertIntraBounce
     alert("Bounce off intra level at"  + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+
+if (anyCalcSym1Bounce or anyCalcSym2Bounce) and alertPreCalcBounce
+    alert("Bounce off calculated level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
 
 if alertATRArrow
     if buyATRSignal and not buyATRSignal[1]

@@ -26,7 +26,7 @@ indicator("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 
 // ********** INPUTS **********
 
 // Define input for ticker
-sym1 = input.symbol("CME_MINI:MNQ1!", "Ticker 1", group="Tickers")
+sym1 = input.symbol("CME_MINI:MNQ1!", "Ticker 1 [Trading Ticker]", group="Tickers")
 sym2 = input.symbol("AMEX:SPY", "Ticker 2", group="Tickers")
 
 // Define input for pivots
@@ -56,10 +56,16 @@ intraColor = input.color(color.orange, title="Intraday Color", group="Level Sett
 intraLabel = input("Intra", title="Intraday Label", group="Level Settings", inline = "intra")
 intraWidth = input(2, title="    └ Intraday Width", group="Level Settings", inline = "iwidth")
 
+preCalcColor = input.color(color.rgb(0, 255, 255), title="Calculated Color", group="Level Settings", inline = "preCalc")
+preCalcLabel = input("Calc", title="Calculated Label", group="Level Settings", inline = "preCalc")
+preCalcWidth = input(2, title="    └ Calculated Width", group="Level Settings", inline = "pcwidth")
+
 labelOffset = input(15, title="Label Offset", group="General")
+// TODO: Change this to ticks
 buffer = input.float(25.0, title="Level Bounce Buffer [H-L] (%)", group="General", minval=0, maxval=100) // Define a buffer to avoid false positives due to noise
 buySellBuffer = input.float(20, title="Buy/Sell Buffer [0.001x%]", group="General",minval=0, maxval=1000) 
 reversalOffset = input.float(10, title="Reversal Buffer [0.001x%]", group="General",minval=0, maxval=1000) 
+levelClashOffset = input.float(20, title="Level Clash Buffer [ticks]", group="General",minval=0, maxval=1000)
 lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10) 
 
 crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="General",minval=3, maxval=30) 
@@ -67,8 +73,8 @@ bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", grou
 showAllConditions = input(false, title="Show Conditions for Entry", group = "General")
 showBuySellLevels = input(true, title="Show Buy/Sell Text| ", group = "General")
 showBuySellMarkers = input(false, title="Show Buy/Sell Marker | ", group = "General", inline = "marker")
-tpLevel = input(60, title="Take Profit (ticks)", group = "General", inline = "marker")
-slLevel = input(60, title="        └ Stop Loss (ticks)", group = "General", inline = "marker2")
+tpLevel = input(60, title="Take Profit [ticks]", group = "General", inline = "marker")
+slLevel = input(60, title="        └ Stop Loss [ticks]", group = "General", inline = "marker2")
 
 showPivotsBounce = input(true, title=" Show Pivot Level Bounce Symbol   |   ", group="Level Bounce (Pivot)", inline="alert")
 alertPivotsBounce = input(true, title="Alert on Pivot Bounce", group="Level Bounce (Pivot)",inline="alert")
@@ -89,6 +95,11 @@ showIntraBounce = input(true, title=" Show Intra Level Bounce Symbol   |�
 alertIntraBounce = input(true, title="Alert on Intra Bounce", group="Level Bounce (Intra)",inline="alert")
 includeTrigIntra = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Intra)", inline="Intra")
 includeRevIntra = input(true, title="Trigger Reversal", group="Level Bounce (Intra)", inline="Intra")
+
+showPreCalcBounce = input(true, title=" Show PreCalc Level Bounce Symbol   |   ", group="Level Bounce (PreCalc)", inline="alert")
+alertPreCalcBounce = input(true, title="Alert on PreCalc Bounce", group="Level Bounce (PreCalc)",inline="alert")
+includeTrigPreCalc = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (PreCalc)", inline="PreCalc")
+includeRevPreCalc = input(true, title="Trigger Reversal", group="Level Bounce (PreCalc)", inline="PreCalc")
 
 // ATR
 showATRArrow = input(true, title="Show ATR Arrow", group="ATR")
@@ -137,12 +148,14 @@ var int systemState = 0
 var bool lastCrossDir = na
 var line [] lineArray = array.new_line()
 var label [] labelArray = array.new_label()
+var float [] liveLevels = array.new_float() 
 for line in lineArray
     line.delete(line)
 for label in labelArray
     label.delete(label)
 array.clear(lineArray)    
 array.clear(labelArray)
+array.clear(liveLevels)
 
 // ********** FUNCTIONS **********
 draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
@@ -207,9 +220,28 @@ check_optimal_level(levels, symbolEnabled) =>
 draw_levels(levels, color, width, label, labeloffset) =>
     plotLevels = str.split(levels, ",")
     for level in plotLevels
+        array.push(liveLevels, str.tonumber(level))
         draw_line(bar_index, str.tonumber(level), bar_index + labeloffset + 15, str.tonumber(level),  xloc.bar_index, extend.left, color, line.style_solid, width)
         if barstate.islast
             plot_label = label.new(bar_index + labeloffset + 10, str.tonumber(level))
+            label.set_text(plot_label, label)
+            label.set_style(plot_label, label.style_none)
+            label.set_textcolor(plot_label, color)
+            array.push(labelArray, plot_label)
+
+draw_levels_calculated(level, color, width, label, labeloffset) =>
+    offset = levelClashOffset * syminfo.mintick
+    shouldDraw = true
+    for levelInArray in liveLevels
+        if level != levelInArray and level >= levelInArray - offset and level <= levelInArray + offset
+            // Level is within offset, do not draw
+            shouldDraw := false
+            break
+    if shouldDraw
+        array.push(liveLevels, level)
+        draw_line(bar_index, level, bar_index + labeloffset + 15, level,  xloc.bar_index, extend.left, color, line.style_solid, width)
+        if barstate.islast
+            plot_label = label.new(bar_index + labeloffset + 10, level)
             label.set_text(plot_label, label)
             label.set_style(plot_label, label.style_none)
             label.set_textcolor(plot_label, color)
@@ -260,7 +292,6 @@ getLimitLevel(priceTarget, close, buyDir) =>
     limitLevel = buyDir ? math.min(priceTarget, close) : math.max(priceTarget, close)
 
 // ********** LEVEL RENDERING **********
-
 // Check if symbol matches the selected ticker
 if ticker.standard() == sym1
     draw_levels(sym1Pivots, pivotsColor, pivotsWidth, pivotsLabel, labelOffset)
@@ -273,6 +304,27 @@ if ticker.standard() == sym2
     draw_levels(sym2BuyLevels, buyColor, buyWidth, buyLabel, labelOffset)
     draw_levels(sym2SellLevels, sellColor, sellWidth, sellLabel, labelOffset)
     draw_levels(sym2IntraDayLevels, intraColor, intraWidth, intraLabel, labelOffset)
+
+// ********** Calculated Pivot Levels **********
+// Get yesterday's levels
+yesterdayClose = request.security(syminfo.tickerid, "D", close[1])
+yesterdayHigh = request.security(syminfo.tickerid, "D", high[1])
+yesterdayLow = request.security(syminfo.tickerid, "D", low[1])
+lastWeekClose = request.security(syminfo.tickerid, "W", close[1])
+lastWeekHigh = request.security(syminfo.tickerid, "W", high[1])
+lastWeekLow = request.security(syminfo.tickerid, "W", low[1])
+// Get premarket high and low
+todayHigh = request.security(syminfo.tickerid, "D", high)
+todayLow = request.security(syminfo.tickerid, "D", low)
+
+draw_levels_calculated(lastWeekHigh, preCalcColor, preCalcWidth, "Previous Week High", labelOffset)
+draw_levels_calculated(lastWeekLow, preCalcColor, preCalcWidth, "Previous Week Low", labelOffset)
+draw_levels_calculated(lastWeekClose, preCalcColor, preCalcWidth, "Previous Week Close", labelOffset)
+draw_levels_calculated(yesterdayHigh, preCalcColor, preCalcWidth, "Yesterday High", labelOffset)
+draw_levels_calculated(yesterdayLow, preCalcColor, preCalcWidth, "Yesterday Low", labelOffset)
+draw_levels_calculated(yesterdayClose, preCalcColor, preCalcWidth, "Yesterday Close", labelOffset)
+draw_levels_calculated(todayHigh, preCalcColor, preCalcWidth, "Current High", labelOffset)
+draw_levels_calculated(todayLow, preCalcColor, preCalcWidth, "Current Low", labelOffset)
 
 // ********** LEVEL BOUNCE CHECK **********
 anyPivotSym1BounceUp = false

@@ -3,19 +3,7 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, and other scripts.
 
-// TODO: Identify bounce off confirm
-
-// TODO: Add expected range level
-
-// TODO: Create dynamic pivots
-
-// TODO: Improve buy and sell entry to consider if too much chop by looking at delta. If delta has crossed 0 too many times, we should consider this chop (and draw a box to identify)
-
-// TODO: ATR + cross is buy/sell
-
-// TODO: Disable certain instruments based on time
-
-// TODO: Look at HMA for confirm line
+// TODO: Look at HMA for confirm line combined with MA calcs from ATR
 
 // FEATURE: Supertrend
 
@@ -23,11 +11,9 @@
 
 // FEATURE: Orderflow oscilator
 
-// FEATURE: ATR
-
 
 // ********** BASE SETUP **********
-indicator("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 500, overlay=true)
+indicator("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, overlay=true)
 
 // ********** INPUTS **********
 
@@ -75,10 +61,11 @@ levelClashOffset = input.float(20, title="Level Clash Buffer [ticks]", group="Ge
 lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10) 
 
 crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="General",minval=3, maxval=30) 
-bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", group="General",minval=3, maxval=30)  
-showAllConditions = input(false, title="Show Conditions for Entry", group = "General")
-showBuySellLevels = input(true, title="Show Buy/Sell Text| ", group = "General")
-showBuySellMarkers = input(false, title="Show Buy/Sell Marker | ", group = "General", inline = "marker")
+bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", group="General",minval=3, maxval=30)
+crossATRLookbackTime = input.int(9, title="Crossover/ATR Lookback Timeframe [min]", group="General",minval=3, maxval=30) 
+showAllConditions = input(false, title="Show Conditions for Entry", group = "General", tooltip="This will show all the conditions being triggered. Mostly useful for debugging.")
+showBuySellLevels = input(true, title="Show Buy/Sell Text", group = "General")
+showBuySellMarkers = input(false, title="Show Buy/Sell Marker | ", group = "General", inline = "marker", tooltip="This will show the buy/sell markers on the chart with the TP/SL levels. Useful for debugging and reviewing trades. Recommended to keep this off for live trading.")
 tpLevel = input(60, title="Take Profit [ticks]", group = "General", inline = "marker")
 slLevel = input(60, title="        └ Stop Loss [ticks]", group = "General", inline = "marker2")
 
@@ -143,9 +130,10 @@ table_font_size       = input.string('Normal', "    └ Font Size", opti
 table_bgcolor       = input.color(color.gray, title="Background Color", group="Dashboard", inline="line3")
 table_fontcolor       = input.color(color.white, title="  |  Font Color", group="Dashboard", inline="line3")
 
-timePeriod1 = input.session("1030-1615", title="Active Period 1", group="Trading Time (NY Time)")
-timePeriod2 = input.session("0100-0800", title="Active Period 2", group="Trading Time (NY Time)")
-timePeriod3 = input.session("1700-1715", title="Active Period 3", group="Trading Time (NY Time)")
+timePeriod1 = input.session("1030-1615", title="Main Period 1 [All confluences]", group="Trading Time (NY Time)")
+timePeriod2 = input.session("0100-0800", title="Active Period 2 [Levels only]", group="Trading Time (NY Time)")
+timePeriod3 = input.session("1700-1715", title="Active Period 3 [Levels only]", group="Trading Time (NY Time)")
+orbSession = input.session("0930-1000", title="ORB Calculation Time", group="Trading Time (NY Time)")
 
 // ********** GLOBAL VARIABLES *********
 // System variables
@@ -359,44 +347,62 @@ if ticker.standard() == sym2
 
 // ********** Calculated Pivot Levels **********
 // Get yesterday's levels
-yesterdayClose = request.security(syminfo.tickerid, "D", close[1])
-yesterdayHigh = request.security(syminfo.tickerid, "D", high[1])
-yesterdayLow = request.security(syminfo.tickerid, "D", low[1])
-lastWeekClose = request.security(syminfo.tickerid, "W", close[1])
-lastWeekHigh = request.security(syminfo.tickerid, "W", high[1])
-lastWeekLow = request.security(syminfo.tickerid, "W", low[1])
-// Get premarket high and low
-todayHigh = request.security(syminfo.tickerid, "D", high)
-todayLow = request.security(syminfo.tickerid, "D", low)
+[yesterdayClose, yesterdayHigh,yesterdayLow]  = request.security(syminfo.tickerid, "D", [close[1], high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_on)
+[lastWeekClose, lastWeekHigh,lastWeekLow]  = request.security(syminfo.tickerid, "W", [close[1], high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_on)
+[todayHigh, todayLow] = request.security(syminfo.tickerid, "D", [high, low], barmerge.gaps_off, barmerge.lookahead_on)
 
 // ATR Calculation
 atr_length = 14
-period_index = 1
 trigger_percentage = 0.236
-previous_close = request.security(syminfo.tickerid, 'D', close[period_index], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-atr = request.security(syminfo.tickerid, 'D', ta.atr(atr_length)[period_index], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-period_high = request.security(syminfo.tickerid, 'D', high, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-period_low = request.security(syminfo.tickerid, 'D', low, gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-range_1 = period_high - period_low
-tr_percent_of_atr = range_1 / atr * 100
-atrBear = previous_close - trigger_percentage * atr
-atrBull = previous_close + trigger_percentage * atr
-atrNeg618 = previous_close - atr * 0.618
-atr618 = previous_close + atr * 0.618
-atrNeg100 = previous_close - atr
-atr100 = previous_close + atr
+atr = request.security(syminfo.tickerid, 'D', ta.atr(atr_length)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
 
+range_1 = todayHigh - todayLow
+tr_percent_of_atr = range_1 / atr * 100
+atrBear = yesterdayClose - trigger_percentage * atr
+atrBull = yesterdayClose + trigger_percentage * atr
+atrNeg618 = yesterdayClose - atr * 0.618
+atr618 = yesterdayClose + atr * 0.618
+atrNeg100 = yesterdayClose - atr
+atr100 = yesterdayClose + atr
+
+//Calculate camarilla pivots
+r = yesterdayHigh - yesterdayLow
+R6 = yesterdayHigh / yesterdayLow * yesterdayClose  //Bull target 2
+R4 = yesterdayClose + r * (1.1 / 2)  //Bear Last Stand
+S4 = yesterdayClose - r * (1.1 / 2)  //Bull Last Stand 
+S6 = yesterdayClose - (R6 - yesterdayClose)  //Bear Target 2
+
+// Calculate ORB
+orbTime = time(timeframe.period, orbSession, timezone = "America/New_York")
+in_session = not na(orbTime)
+is_first = in_session and not in_session[1]
+var float orb_high = na
+var float orb_low = na
+
+if is_first
+    orb_high := high
+    orb_low := low
+else
+    orb_high := orb_high[1]
+    orb_low := orb_low[1]
+if high > orb_high and in_session
+    orb_high := high
+if low < orb_low and in_session
+    orb_low := low
+
+
+// ********** Draw Calculated Levels **********
 // Historical levels
 draw_levels_calculated(lastWeekHigh, preCalcColor, preCalcWidth, "Previous Week High", labelOffset, startOfWeekIndex)
 draw_levels_calculated(lastWeekLow, preCalcColor, preCalcWidth, "Previous Week Low", labelOffset, startOfWeekIndex)
 draw_levels_calculated(lastWeekClose, preCalcColor, preCalcWidth, "Previous Week Close", labelOffset, startOfWeekIndex)
-draw_levels_calculated(yesterdayHigh, preCalcColor, preCalcWidth, "Yesterday High", labelOffset, startOfDayIndex)
-draw_levels_calculated(yesterdayLow, preCalcColor, preCalcWidth, "Yesterday Low", labelOffset, startOfDayIndex)
-draw_levels_calculated(yesterdayClose, preCalcColor, preCalcWidth, "Yesterday Close", labelOffset, startOfDayIndex)
+draw_levels_calculated(yesterdayHigh, preCalcColor, preCalcWidth, "Previous High", labelOffset, startOfDayIndex)
+draw_levels_calculated(yesterdayLow, preCalcColor, preCalcWidth, "Previous Low", labelOffset, startOfDayIndex)
+draw_levels_calculated(yesterdayClose, preCalcColor, preCalcWidth, "Previous Close", labelOffset, startOfDayIndex)
 
 // Daily levels
-draw_levels_calculated(todayHigh, preCalcColor, preCalcWidth, "Current High", labelOffset, startOfDayIndex)
-draw_levels_calculated(todayLow, preCalcColor, preCalcWidth, "Current Low", labelOffset, startOfDayIndex)
+draw_levels_calculated(todayHigh, preCalcColor, preCalcWidth, "Day High", labelOffset, startOfDayIndex)
+draw_levels_calculated(todayLow, preCalcColor, preCalcWidth, "Day Low", labelOffset, startOfDayIndex)
 
 // ATR levels
 draw_levels_calculated(atrBear, preCalcColor, preCalcWidth, "ATR Bearish", labelOffset, startOfDayIndex)
@@ -405,6 +411,18 @@ draw_levels_calculated(atrNeg618, preCalcColor, preCalcWidth, "ATR -0.618", labe
 draw_levels_calculated(atr618, preCalcColor, preCalcWidth, "ATR +0.618", labelOffset, startOfDayIndex)
 draw_levels_calculated(atrNeg100, preCalcColor, preCalcWidth, "ATR -1.0", labelOffset, startOfDayIndex)
 draw_levels_calculated(atr100, preCalcColor, preCalcWidth, "ATR +1.0", labelOffset, startOfDayIndex)
+
+// Camarilla pivots
+draw_levels_calculated(R6, preCalcColor, preCalcWidth, "Bull Target", labelOffset, startOfDayIndex)
+draw_levels_calculated(R4, preCalcColor, preCalcWidth, "Bear Reversal", labelOffset, startOfDayIndex)
+draw_levels_calculated(S4, preCalcColor, preCalcWidth, "Bull Reversal", labelOffset, startOfDayIndex)
+draw_levels_calculated(S6, preCalcColor, preCalcWidth, "Bear Target", labelOffset, startOfDayIndex)
+
+// ORB levels
+if not na(orb_high)
+    draw_levels_calculated(orb_high, preCalcColor, preCalcWidth, "ORB High", labelOffset, startOfDayIndex)
+if not na(orb_low)
+    draw_levels_calculated(orb_low, preCalcColor, preCalcWidth, "ORB Low", labelOffset, startOfDayIndex)
 
 // ********** LEVEL BOUNCE CHECK **********
 anyPivotSym1BounceUp = false
@@ -488,7 +506,7 @@ numATR = 4
 checkPastSignal = true
 
 // ATR calculation if close is outside of ATR
-[atrHMA, hl2HMA, closeHMA] = request.security(syminfo.tickerid, '', [ta.hma(ta.tr, numATR), hl2, close])
+[atrHMA, hl2HMA, closeHMA] = request.security(syminfo.tickerid, str.tostring(lowerTF), [ta.hma(ta.tr, numATR), hl2, close])
 
 var upperATRRange = 0.0
 upperATRRange := hl2HMA + atrMultiplier * atrHMA
@@ -503,7 +521,7 @@ if closeHMA < movingRange[1]
 else
     movingRange := lowerATRRange
 
-[curOpen, curClose] = request.security(syminfo.tickerid, '', [open, close])
+[curOpen, curClose] = request.security(syminfo.tickerid, str.tostring(lowerTF), [open, close])
 
 momentum = 0
 for i = 0 to dataLength by 1
@@ -514,7 +532,7 @@ momentumMA = ta.ema(momentum, atrMALength)
 momentumMain = ta.ema(momentumMA, atrSmoothLength)
 momentumSignal = ta.ema(momentumMain, atrSmoothLength)
 
-currentClose = request.security(syminfo.tickerid, '', close)
+currentClose = request.security(syminfo.tickerid, str.tostring(lowerTF), close)
 
 var buyATRSignal = false
 var sellATRSignal = false
@@ -556,6 +574,11 @@ direction = math.sign(maDifference)
 trendMagnitude = math.abs(maDifference)
 momentumMagnitude = math.abs(delta)
 
+// Chop calculation
+chopCalcLength = 14
+chopIndex = 100 * math.log10(math.sum(ta.atr(1), chopCalcLength) / (ta.highest(chopCalcLength) - ta.lowest(chopCalcLength))) / math.log10(chopCalcLength)
+chopIndexDetect = chopIndex > 61.8
+
 // Trend calculation
 // TODO: Normalise trend against range
 trendDirection = direction * (trendMagnitude + momentumMagnitude + math.abs(acceleration))
@@ -578,7 +601,7 @@ else if trendDirection < (-1 * trendLimit)
 else if trendDirection < (-1 * chopLimit)
     trendColor := color.rgb(110, 3, 3)
 
-chopDetect = trendDirection < chopLimit and trendDirection > (-1 * chopLimit)
+chopDetect = (trendDirection < chopLimit and trendDirection > (-1 * chopLimit)) or chopIndexDetect
 volatileMove = trendDirection > volatileLimit or trendDirection < (-1 * volatileLimit)
 
 // Adjust maxTrendMagnitude based on observed max values to fine-tune interpolation
@@ -611,8 +634,11 @@ plot(slowMA, color=colorSlowMA, title="Slow MA")
 plot(stableMA, color=colorStableMA, title="Balancing MA")
 plot(smoothConfirmMA, title="Confirm MA", color=showConfirmMA ? trendColor : na, linewidth=2)
 
+// Check for bounce on confirmMA
 priceAboveConfirm = close > smoothConfirmMA
 priceBelowConfirm = close < smoothConfirmMA
+bounceUpConfirm = check_bounce_low(smoothConfirmMA)
+bounceDownConfirm = check_bounce_high(smoothConfirmMA)
 
 // **********ENTRY CONDITIONS **********
 // BUG: Potential bug in the execution of this
@@ -648,6 +674,7 @@ buyCrossSignal = false
 sellCrossSignal = false
 crossSignalLookback = math.floor(crossLookbackTime / getTimeframeInMinutes())
 bufferBuySellLookback = math.floor(bounceLookbackTime / getTimeframeInMinutes())
+crossATRLookback = math.floor(crossATRLookbackTime / getTimeframeInMinutes())
 
 // If trend is up and we get a bounce up we have a buy directional else its reversal
 if ticker.standard() == sym1
@@ -663,18 +690,38 @@ if fastCrossSlowDown or sellATRSignal
         if anySym1BounceDown[i]
             sellCrossSignal := true
 
+if fastCrossSlowDown
+    for i = 0 to crossATRLookback
+        if sellATRSignal[i]
+            sellCrossSignal := true 
+
+if sellATRSignal
+    for i = 0 to crossATRLookback
+        if fastCrossSlowDown[i]
+            sellCrossSignal := true 
+
 if fastCrossSlowUp or buyATRSignal
     lastCrossDir := true
     for i = 0 to crossSignalLookback
         if anySym1BounceUp[i] 
             buyCrossSignal := true
 
+if fastCrossSlowUp
+    for i = 0 to crossATRLookback
+        if buyATRSignal[i]
+            buyCrossSignal := true 
+
+if buyATRSignal
+    for i = 0 to crossATRLookback
+        if fastCrossSlowUp[i]
+            buyCrossSignal := true 
+
 cancelSellCondition = anySym1BounceUp or fastCrossSlowUp or buyATRSignal
 cancelBuyCondition = anySym1BounceDown or fastCrossSlowDown or sellATRSignal
 
 // ********** DASHBOARD **********
-ticker1_price  = request.security(sym1, timeframe.period, math.round_to_mintick(close))
-ticker2_price  = request.security(sym2, timeframe.period, math.round_to_mintick(close))
+ticker1_price  = request.security(sym1, str.tostring(lowerTF), math.round_to_mintick(close))
+ticker2_price  = request.security(sym2, str.tostring(lowerTF), math.round_to_mintick(close))
 
 // Calculate the last 10-minute close of ticker 1
 [ticker1_10mClose, ticker1_hlcc4, ticker1_10mHigh, ticker1_10mLow] = request.security(sym1, "10", [close, hlcc4, high, low])
@@ -720,7 +767,9 @@ if barstate.islast and show_table
 allowedTimes() =>
     not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod2, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod3, timezone = "America/New_York"))
 
+
 bool validTriggerPeriod = allowedTimes()
+bool allConfluencesEnabled = not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York"))
 var float limitLevel = na
 
 buyTriggeredInLookback = false
@@ -767,13 +816,13 @@ for i = 0 to bufferBuySellLookback
     if cancelSellCondition[revIndex]
         sellCancelIndex := revIndex
            
-if not chopDetect
-    // Check first if we have any cancels from before
-    if systemState[1] > 0 and systemState[1] < 10 and cancelBuyCondition
-        systemState := 0
-    else if systemState[1] > 10 and cancelSellCondition
-        systemState := 0
-    else
+// Check first if we have any cancels from before
+if systemState[1] > 0 and systemState[1] < 10 and cancelBuyCondition
+    systemState := 0
+else if systemState[1] > 10 and cancelSellCondition
+    systemState := 0
+else
+    if not chopDetect and allConfluencesEnabled
         for i = 0 to bufferBuySellLookback
             int revIndex = bufferBuySellLookback - i
             if buyCrossSignal[revIndex] and lastCrossDir and buyCancelIndex > revIndex
@@ -783,26 +832,26 @@ if not chopDetect
                 systemState := 13
                 limitLevel := getLimitLevel(math.ceil(smoothConfirmMA * (1 - buySellBuffer/100000)), close, false)
 
-        // Check for buy/sell signals
-        if systemState == 0
-            for i = 0 to bufferBuySellLookback
-                int revIndex = bufferBuySellLookback - i
-                if buySignal[revIndex] and not sellTriggeredInLookback and buyCancelIndex > revIndex
-                    systemState := 2
-                    limitLevel := getLimitLevel(math.floor(limitBounceLevel * (1 + buySellBuffer/100000)), close, true)
-                else if sellSignal[revIndex] and not buyTriggeredInLookback and sellCancelIndex > revIndex
-                    systemState := 12
-                    limitLevel := getLimitLevel(math.ceil(limitBounceLevel * (1 - buySellBuffer/100000)), close, false)
-            
-        if systemState == 0
-            for i = 0 to bufferBuySellLookback
-                int revIndex = bufferBuySellLookback - i
-                if buyReversalSignal[revIndex] and not sellTriggeredInLookback and buyCancelIndex > revIndex
-                    systemState := 4
-                    limitLevel := getLimitLevel(math.floor(limitBounceLevel * (1 + reversalOffset/100000)), close, true)
-                else if sellReversalSignal[revIndex] and not buyTriggeredInLookback and sellCancelIndex > revIndex
-                    systemState := 14
-                    limitLevel := getLimitLevel(math.ceil(limitBounceLevel * (1 - reversalOffset/100000)), close, false)
+    // Check for buy/sell signals
+    if systemState == 0
+        for i = 0 to bufferBuySellLookback
+            int revIndex = bufferBuySellLookback - i
+            if buySignal[revIndex] and not sellTriggeredInLookback and buyCancelIndex > revIndex
+                systemState := 2
+                limitLevel := getLimitLevel(math.floor(limitBounceLevel * (1 + buySellBuffer/100000)), close, true)
+            else if sellSignal[revIndex] and not buyTriggeredInLookback and sellCancelIndex > revIndex
+                systemState := 12
+                limitLevel := getLimitLevel(math.ceil(limitBounceLevel * (1 - buySellBuffer/100000)), close, false)
+        
+    if systemState == 0
+        for i = 0 to bufferBuySellLookback
+            int revIndex = bufferBuySellLookback - i
+            if buyReversalSignal[revIndex] and not sellTriggeredInLookback and buyCancelIndex > revIndex
+                systemState := 4
+                limitLevel := getLimitLevel(math.floor(limitBounceLevel * (1 + reversalOffset/100000)), close, true)
+            else if sellReversalSignal[revIndex] and not buyTriggeredInLookback and sellCancelIndex > revIndex
+                systemState := 14
+                limitLevel := getLimitLevel(math.ceil(limitBounceLevel * (1 - reversalOffset/100000)), close, false)
 
 buyLong = systemState == 2
 buyCross = systemState == 3
@@ -813,6 +862,7 @@ sellReversal = systemState == 14
 
 buyReversalTrigger = buyReversal and buyReversalCount > 1
 sellReversalTrigger = sellReversal and sellReversalCount > 1
+
 // ********** RENDERING SYMBOLS **********
 if showAllConditions
     if priceOptimalEntryLevel and false
@@ -823,6 +873,12 @@ if showAllConditions
         draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.fuchsia, label.style_arrowdown, color.white, size.small, text.align_center, '')
     if fastCrossSlowUp 
         draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.aqua, label.style_arrowup, color.white, size.small, text.align_center, '')
+    if bounceUpConfirm
+        draw_label(bar_index, close, 'Confirm', xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
+    if bounceDownConfirm
+        draw_label(bar_index, close, 'Confirm', xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
+    if chopDetect
+        box.new(bar_index, high, bar_index - 1, low, border_color=color.rgb(120, 120, 122, 35), border_width=1, bgcolor=color.rgb(120, 120, 122, 35), border_style=line.style_dashed)
 
 TP = tpLevel * syminfo.mintick
 SL = slLevel * syminfo.mintick

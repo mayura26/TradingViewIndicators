@@ -33,8 +33,6 @@ if systemState != systemState[1] and systemState[1] > 0 and systemState > 0 and 
 else if systemState == 0
     strategy.cancel_all()
 
-// TODO: Track level of fill and if TP1 + 5 is passed, move SL to BE. If close > limit + TPs then close all
-    // TODO: Switch to FIFO to handle orders
 if (buyLong or buyCross or (buyReversal and buyReversalCount > 1 )) and validTriggerPeriod
     if strategy.position_size == 0
         strategy.order("Buy", strategy.long, qty=5, limit = limitLevel)

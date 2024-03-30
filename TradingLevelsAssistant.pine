@@ -1,9 +1,7 @@
 //@version=5
 // Author is not responsible for your trading using this script.
 // Data provided in this script is not financial advice.
-// Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, and other scripts.
-
-// TODO: Look at HMA for confirm line combined with MA calcs from ATR. Maybe MDMA
+// Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
 // FEATURE: Supertrend
 
@@ -13,15 +11,14 @@
 
 // FEATURE: Lorezian classsifcations
 
-
 // ********** BASE SETUP **********
 indicator("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, overlay=true)
 
 // ********** INPUTS **********
 
 // Define input for ticker
-sym1 = input.symbol("CME_MINI:MNQ1!", "Ticker 1 [Trading Ticker]", group="Tickers")
-sym2 = input.symbol("AMEX:SPY", "Ticker 2", group="Tickers")
+sym1 = input.symbol("CME_MINI:MNQ1!", "Ticker 1 [Trading Ticker]", group="Tickers", tooltip = "This is the ticker which will be used for buy/sell indications and trading")
+sym2 = input.symbol("AMEX:SPY", "Ticker 2", group="Tickers", tooltip = "This is a secondary ticker which levels can be setup for and plotted/alerted. The purpose of this ticker is to provide confluences on a secondary ticker.")
 
 // Define input for pivots
 sym1Pivots = input("", title="Pivot", group="Ticker 1 Levels (comma delimited)", inline="line1")
@@ -54,12 +51,11 @@ preCalcColor = input.color(color.rgb(0, 255, 255), title="Calculated Color", gro
 preCalcLabel = input("Calc", title="Calculated Label", group="Level Settings", inline = "preCalc")
 preCalcWidth = input(2, title="    └ Calculated Width", group="Level Settings", inline = "pcwidth")
 
-labelOffset = input(10, title="Label Offset", group="General")
-// TODO: Change this to ticks
-buffer = input.float(25.0, title="Level Bounce Buffer [H-L] (%)", group="General", minval=0, maxval=100) // Define a buffer to avoid false positives due to noise
-buySellBuffer = input.float(20, title="Buy/Sell Buffer [0.001x%]", group="General",minval=0, maxval=1000) 
-reversalOffset = input.float(10, title="Reversal Buffer [0.001x%]", group="General",minval=0, maxval=1000) 
-levelClashOffset = input.float(20, title="Level Clash Buffer [ticks]", group="General",minval=0, maxval=1000)
+labelOffset = input(10, title="Label Offset", group="General", tooltip = "This is the offset of the labels for the lines. Caution can sometimes end up in the wrong place and will move when this is adjusted. Seems to be a function of TradingView repainting.")
+buffer = input.float(25.0, title="Level Bounce Buffer [H-L] (%)", group="General", minval=0, maxval=100)
+buySellBuffer = input.float(10, title="Buy/Sell Buffer [ticks]", group="General",minval=0) 
+reversalOffset = input.float(5, title="Reversal Buffer [ticks]", group="General",minval=0) 
+levelClashOffset = input.float(20, title="Level Clash Buffer [ticks]", group="General",minval=0)
 lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10) 
 
 crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="General",minval=3, maxval=30) 
@@ -107,18 +103,18 @@ sellATRColor = input(color.rgb(133, 0, 55), title="   |   Sell ATR C
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
 colorFastMA = input.color(color.new(color.fuchsia,50), title="Fast MA Color", group="Moving Averages", inline="fast")
-typeFastMA = input.string("EMA", title="    └ Fast MA Type", options=["EMA", "SMA"], group="Moving Averages", inline="tfast")
+typeFastMA = input.string("EMA", title="    └ Fast MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tfast")
 
 periodSlowMA = input(13, title="Slow MA Period", group="Moving Averages", inline="slow")
 colorSlowMA = input.color(color.new(color.green,50), title="Slow MA Color", group="Moving Averages", inline="slow")
-typeSlowMA = input.string("EMA", title="    └ Slow MA Type", options=["EMA", "SMA"], group="Moving Averages", inline="tslow")
+typeSlowMA = input.string("EMA", title="    └ Slow MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tslow")
 
 periodStableMA = input(21, title="Stable MA Period", group="Moving Averages", inline="Stable")
 colorStableMA = input.color(color.new(color.red,50), title="Stable MA Color", group="Moving Averages", inline="Stable")
-typeStableMA = input.string("EMA", title="    └ Stable MA Type", options=["EMA", "SMA"], group="Moving Averages", inline="tStable")
+typeStableMA = input.string("EMA", title="    └ Stable MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tStable")
 
 showConfirmMA = input(true, title="Show Confirm MA   |   ", group="Moving Averages", inline="confirm")
-confirmMASmoothPeriod = input(3, title="Confirm MA Smooth Period", group="Moving Averages", inline="confirm")
+confirmMASmoothPeriod = input(1, title="Confirm MA Smooth Period", group="Moving Averages", inline="confirm")
 
 alertDirectionalBuySell = input(true, title="Buy/Sell", group="Alerts", inline="main")
 alertReversalBuySell = input(true, title="Buy/Sell (Reversal)", group="Alerts", inline="main")
@@ -224,7 +220,7 @@ check_optimal_level(levels, symbolEnabled) =>
     optLevel = 0.0
     if symbolEnabled
         for level in plotLevels
-            if math.abs(str.tonumber(level) - close) < (close * buySellBuffer/100000)
+            if math.abs(str.tonumber(level) - close) < (buySellBuffer * syminfo.mintick)
                 optLevel := str.tonumber(level)
                 
     result = optLevel
@@ -251,7 +247,7 @@ check_calcoptimal_level(levels, symbolEnabled) =>
     optLevel = 0.0
     if symbolEnabled
         for level in levels
-            if math.abs(level - close) < (close * buySellBuffer/100000)
+            if math.abs(level - close) < (buySellBuffer * syminfo.mintick)
                 optLevel := level
                 
     result = optLevel
@@ -289,24 +285,24 @@ draw_levels_calculated(level, color, width, label, labeloffset, startBar) =>
             label.set_textalign(plot_label, text.align_right)
             array.push(labelArray, plot_label)
     
-f_fillCell(_row, _column,series string _cellText) =>
+f_fillCell(_row, _column,series string _cellText, _tooltip) =>
     switch table_font_size
-        "Auto" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.auto)
-        "Tiny" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.tiny)
-        "Small" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.small)
-        "Normal" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.normal)
-        "Large" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.large)
+        "Auto" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.auto, tooltip = _tooltip)
+        "Tiny" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.tiny, tooltip = _tooltip)
+        "Small" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.small, tooltip = _tooltip)
+        "Normal" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.normal, tooltip = _tooltip)
+        "Large" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color.new(chart.bg_color,50), text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.large, tooltip = _tooltip)
 
-f_fillCellColor(_row,_column, color) =>
-    table.cell(displayTable,_column,_row, bgcolor=color)
+f_fillCellColor(_row,_column, color, _tooltip) =>
+    table.cell(displayTable,_column,_row, bgcolor=color, tooltip = _tooltip)
 
-f_fillCellColorText(_row, _column, series string _cellText, color) =>
+f_fillCellColorText(_row, _column, series string _cellText, color, _tooltip) =>
     switch table_font_size
-        "Auto" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.auto)
-        "Tiny" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.tiny)
-        "Small" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.small)
-        "Normal" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.normal)
-        "Large" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.large)
+        "Auto" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.auto, tooltip = _tooltip)
+        "Tiny" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.tiny, tooltip = _tooltip)
+        "Small" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.small, tooltip = _tooltip)
+        "Normal" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.normal, tooltip = _tooltip)
+        "Large" => table.cell(displayTable, _column, _row, _cellText, bgcolor=color, text_color=table_fontcolor, text_halign = text.align_left, text_valign = text.align_center, text_size = size.large, tooltip = _tooltip)
 
 extractSymbolName(simple string sym) =>
     pos = str.pos(sym, ":")  // Get position of ":" character
@@ -332,6 +328,15 @@ getTimeframeInMinutes() =>
 // Function to calculate the limit level
 getLimitLevel(priceTarget, close, buyDir) =>
     limitLevel = buyDir ? math.min(priceTarget, close) : math.max(priceTarget, close)
+    limitLevel := math.round_to_mintick(limitLevel)
+
+imd(Series, fPeriod) => // "Improved McGinley Dynamic" Function - @midtownsk8rguy
+    fK = 0.6
+    fExponent = 4.0
+    period = math.max(1.0, fPeriod)
+    var float result = na 
+    priorMD = nz(result[1], Series)
+    result := priorMD + (Series - priorMD) / math.min(period, math.max(1.0, fK * period * math.pow(Series / priorMD, fExponent)))
 
 // ********** LEVEL RENDERING **********
 // Check if symbol matches the selected ticker
@@ -557,24 +562,13 @@ plotshape(showATRDots ? potentialATRLongDot : na, title="ATR Long Forming", styl
 plotshape(showATRDots ? potentialATRShortDot : na, title="ATR Short Forming", style=shape.circle, color=color.new(sellATRColor, atrDotTransparency), location=location.abovebar, size=size.small)
 
 // ********** EMA RENDERING **********
-fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodFastMA))
-slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodSlowMA))
-stableMA = typeStableMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodStableMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), ta.sma(close, periodStableMA))
+fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), imd(close, periodFastMA))
+slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), imd(close, periodSlowMA))
+stableMA = typeStableMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodStableMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), imd(close, periodStableMA))
 
 // ********** EMA ANALYSIS **********
 fastCrossSlowUp = ta.crossover(fastMA, slowMA)
 fastCrossSlowDown = ta.crossunder(fastMA, slowMA)
-
-// Calculate differentials/deltas
-maDifference = fastMA - slowMA
-delta = maDifference - maDifference[1]
-acceleration = delta - delta[1]
-
-direction = math.sign(maDifference)
-
-// Magnitude of Trend and Momentum
-trendMagnitude = math.abs(maDifference)
-momentumMagnitude = math.abs(delta)
 
 // Chop calculation
 chopCalcLength = 14
@@ -582,8 +576,8 @@ chopIndex = 100 * math.log10(math.sum(ta.atr(1), chopCalcLength) / (ta.highest(c
 chopIndexDetect = chopIndex > 61.8
 
 // Trend calculation
-// TODO: Normalise trend against range
-trendDirection = direction * (trendMagnitude + momentumMagnitude + math.abs(acceleration))
+//trendDirection = direction * (trendMagnitude + momentumMagnitude + math.abs(acceleration))
+trendDirection = momentumMain + (momentumMain - momentumSignal)
 trendColor = color.gray
 volatileLimit = 5
 trendLimit = 2.5
@@ -603,32 +597,27 @@ else if trendDirection < (-1 * trendLimit)
 else if trendDirection < (-1 * chopLimit)
     trendColor := color.rgb(110, 3, 3)
 
-chopDetect = (trendDirection < chopLimit and trendDirection > (-1 * chopLimit)) or chopIndexDetect
-volatileMove = trendDirection > volatileLimit or trendDirection < (-1 * volatileLimit)
+chopDetect = math.abs(trendDirection) < chopLimit or chopIndexDetect
+volatileMove = math.abs(trendDirection) > volatileLimit
 
 // Adjust maxTrendMagnitude based on observed max values to fine-tune interpolation
 maxTrendMagnitude = 7.5 // Example max value, adjust based on data
-normalizedTrendMagnitude = math.min(trendDirection / maxTrendMagnitude, 2)
+normalizedTrendMagnitude = math.min(trendDirection / maxTrendMagnitude, 1)
 
 // Calculate adaptive line
-// At 0 trendMagnitude, line = stableMA. At max bias, line = fastMA.
-var float adaptiveLine  = na
-if trendDirection > chopLimit
-    // Uptrend: More bias towards fastMA
-    adaptiveLine  := stableMA + (fastMA - stableMA) * (1*normalizedTrendMagnitude/2) + (slowMA - stableMA) * normalizedTrendMagnitude/4
-else if trendDirection < (-1 * chopLimit)
-    // Downtrend: Bias towards slowMA, but capped at stableMA
-    adaptiveLine  := stableMA + (stableMA - fastMA) * (1*normalizedTrendMagnitude/2) + (stableMA - slowMA) * normalizedTrendMagnitude/4
-else
-    // No clear trend: Use stableMA
-    adaptiveLine  := (stableMA + fastMA + slowMA)/3
+// Using the McGinely MA
+adaptiveSource = close
+adaptivePeriod = 8.0
 
-if (trendDirection > trendLimit) and (adaptiveLine - fastMA) > 5
-    adaptiveLine := fastMA + 5
-else if (trendDirection < (-1 * trendLimit)) and (fastMA - adaptiveLine) > 5
-    adaptiveLine := fastMA - 5
+if math.abs(trendDirection) > volatileLimit
+    adaptivePeriod := periodFastMA
+else if math.abs(trendDirection) > trendLimit
+    adaptivePeriod := periodSlowMA
+else
+    adaptivePeriod := stableMA
     
-smoothConfirmMA = ta.hma(adaptiveLine, confirmMASmoothPeriod)
+adaptiveLine = imd(adaptiveSource, adaptivePeriod)
+smoothConfirmMA = imd(adaptiveLine, confirmMASmoothPeriod)
 
 // Plot MAs
 plot(fastMA, color=colorFastMA, title="Fast MA")
@@ -637,13 +626,11 @@ plot(stableMA, color=colorStableMA, title="Balancing MA")
 plot(smoothConfirmMA, title="Confirm MA", color=showConfirmMA ? trendColor : na, linewidth=2)
 
 // Check for bounce on confirmMA
-priceAboveConfirm = close > smoothConfirmMA
-priceBelowConfirm = close < smoothConfirmMA
 bounceUpConfirm = check_bounce_low(smoothConfirmMA)
 bounceDownConfirm = check_bounce_high(smoothConfirmMA)
 
 // **********ENTRY CONDITIONS **********
-// BUG: Potential bug in the execution of this
+// BUG: Potential bug in the execution of this. Need to rework
 if ticker.standard() == sym1
     priceOptimalEntryLevel1 = check_optimal_level(sym1Pivots, includeTrigPivots)
     priceOptimalEntryLevel2 = check_optimal_level(sym1BuyLevels, includeTrigBuy)
@@ -662,10 +649,10 @@ if ticker.standard() == sym1
         bounceLevel := priceOptimalEntryLevel5
 
 priceCandleBufferEntry = (high - low) * buffer/100
-priceOptimalBufferEntry = (close) * buySellBuffer/100000
-priceOptimalReversalEntry = (close) * reversalOffset/100000
-priceOptimalEntryConfirm = math.abs(close - smoothConfirmMA) < (close * buySellBuffer/100000)
-priceOptimalEntryLevel = math.abs(close- bounceLevel) < (close * buySellBuffer/100000)
+priceOptimalBufferEntry =  buySellBuffer * syminfo.mintick
+priceOptimalReversalEntry = reversalOffset * syminfo.mintick
+priceOptimalEntryConfirm = math.abs(close - smoothConfirmMA) < priceOptimalBufferEntry
+priceOptimalEntryLevel = math.abs(close- bounceLevel) < priceOptimalBufferEntry
 
 // ********** SIGNALS **********
 buySignal = false
@@ -752,18 +739,23 @@ else if ticker2_price > ticker2_10mClose and ticker2_price > ticker2_hlcc4
 else if ticker2_price < ticker2_10mClose and ticker2_price < ticker2_hlcc4
     ticker2_bgcolor := color.rgb(83, 0, 0)
 
-if barstate.islast and show_table
-    f_fillCell(0, 0, "Confirm")
-    f_fillCell(1, 0, "Trend")
-    f_fillCell(2, 0, extractSymbolName(sym1))
-    f_fillCell(3, 0, extractSymbolName(sym2))
-    f_fillCell(4, 0, "Entry")
+confirmBoxColor = color.rgb(71, 71, 71)
+if close - smoothConfirmMA > priceOptimalBufferEntry
+    confirmBoxColor := color.rgb(0, 114, 4)
+else if close - smoothConfirmMA < -1 * priceOptimalBufferEntry
+    confirmBoxColor := color.rgb(116, 0, 0)
 
-    f_fillCellColorText(0, 1, chopDetect ? 'CHOP' : (volatileMove ? 'RISK' : ''),priceAboveConfirm ? color.rgb(0, 114, 4) : color.rgb(116, 0, 0))
-    f_fillCellColorText(1, 1, str.tostring(math.round(trendDirection,1)), trendColor)
-    f_fillCellColorText(2, 1, str.tostring(ticker1_price), ticker1_bgcolor)
-    f_fillCellColorText(3, 1, str.tostring(ticker2_price), ticker2_bgcolor)
-    f_fillCellColorText(4, 1, str.tostring(math.round(priceOptimalBufferEntry,1)) + "/" + str.tostring(math.round(priceOptimalReversalEntry,1)), priceOptimalEntryConfirm ? color.green : color.gray)
+if barstate.islast and show_table
+    f_fillCell(0, 0, "Confirm","This indicates the position of price compared to the confirmation line. It will also show whether the trend is particularly volatile and risky or whether it is a chop zone")
+    f_fillCell(1, 0, "Trend", "This shows the calculated trend index (0-10) and color. The brightest green/red indicates an aggresive up/down trend.")
+    f_fillCell(2, 0, extractSymbolName(sym1), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
+    f_fillCell(3, 0, extractSymbolName(sym2), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
+    
+
+    f_fillCellColorText(0, 1, chopDetect ? 'CHOP' : (volatileMove ? 'RISK' : ''),confirmBoxColor, "")
+    f_fillCellColorText(1, 1, str.tostring(math.round(trendDirection,1)), trendColor,"")
+    f_fillCellColorText(2, 1, str.tostring(ticker1_price), ticker1_bgcolor, "")
+    f_fillCellColorText(3, 1, str.tostring(ticker2_price), ticker2_bgcolor, "")
 
 // ********** TRADING **********
 allowedTimes() =>
@@ -794,7 +786,6 @@ for i = 0 to bufferBuySellLookback
         sellReversalCount += 1
 
 // Make sure we get the last level in the lookback for the calcs
-// BUG: Pulls back the wrong level after a cross to  directionalyou
 limitBounceLevel = 0.0
 lastBounceDir = 0
 for i = 0 to bufferBuySellLookback
@@ -829,10 +820,10 @@ else
             int revIndex = bufferBuySellLookback - i
             if buyCrossSignal[revIndex] and lastCrossDir and buyCancelIndex > revIndex
                 systemState := 3
-                limitLevel := getLimitLevel(math.floor(smoothConfirmMA * (1 + buySellBuffer/100000)), close, true)
+                limitLevel := getLimitLevel(smoothConfirmMA + priceOptimalBufferEntry, close, true)
             else if sellCrossSignal[revIndex] and not lastCrossDir and sellCancelIndex > revIndex
                 systemState := 13
-                limitLevel := getLimitLevel(math.ceil(smoothConfirmMA * (1 - buySellBuffer/100000)), close, false)
+                limitLevel := getLimitLevel(smoothConfirmMA - priceOptimalBufferEntry, close, false)
 
     // Check for buy/sell signals
     if systemState == 0
@@ -840,20 +831,20 @@ else
             int revIndex = bufferBuySellLookback - i
             if buySignal[revIndex] and not sellTriggeredInLookback and buyCancelIndex > revIndex
                 systemState := 2
-                limitLevel := getLimitLevel(math.floor(limitBounceLevel * (1 + buySellBuffer/100000)), close, true)
+                limitLevel := getLimitLevel(limitBounceLevel + priceOptimalBufferEntry, close, true)
             else if sellSignal[revIndex] and not buyTriggeredInLookback and sellCancelIndex > revIndex
                 systemState := 12
-                limitLevel := getLimitLevel(math.ceil(limitBounceLevel * (1 - buySellBuffer/100000)), close, false)
+                limitLevel := getLimitLevel(limitBounceLevel - priceOptimalBufferEntry, close, false)
         
     if systemState == 0
         for i = 0 to bufferBuySellLookback
             int revIndex = bufferBuySellLookback - i
             if buyReversalSignal[revIndex] and not sellTriggeredInLookback and buyCancelIndex > revIndex
                 systemState := 4
-                limitLevel := getLimitLevel(math.floor(limitBounceLevel * (1 + reversalOffset/100000)), close, true)
+                limitLevel := getLimitLevel(limitBounceLevel + priceOptimalReversalEntry, close, true)
             else if sellReversalSignal[revIndex] and not buyTriggeredInLookback and sellCancelIndex > revIndex
                 systemState := 14
-                limitLevel := getLimitLevel(math.ceil(limitBounceLevel * (1 - reversalOffset/100000)), close, false)
+                limitLevel := getLimitLevel(limitBounceLevel - priceOptimalReversalEntry, close, false)
 
 buyLong = systemState == 2
 buyCross = systemState == 3

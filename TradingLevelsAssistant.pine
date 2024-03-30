@@ -52,17 +52,18 @@ preCalcLabel = input("Calc", title="Calculated Label", group="Level Settings", i
 preCalcWidth = input(2, title="    └ Calculated Width", group="Level Settings", inline = "pcwidth")
 
 labelOffset = input(10, title="Label Offset", group="General", tooltip = "This is the offset of the labels for the lines. Caution can sometimes end up in the wrong place and will move when this is adjusted. Seems to be a function of TradingView repainting.")
-buffer = input.float(25.0, title="Level Bounce Buffer [H-L] (%)", group="General", minval=0, maxval=100)
-buySellBuffer = input.float(10, title="Buy/Sell Buffer [ticks]", group="General",minval=0) 
-reversalOffset = input.float(5, title="Reversal Buffer [ticks]", group="General",minval=0) 
-levelClashOffset = input.float(20, title="Level Clash Buffer [ticks]", group="General",minval=0)
-lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10) 
+levelBounceBuffer = input.float(25.0, title="Level Bounce Buffer [H-L] (%)", group="General", minval=0, maxval=100, tooltip = "This is the offset for the level bounce. This is a percentage of the high/low range of the bar. If the close/open is within this buffer of the level, it will be considered a bounce.")
+buySellBuffer = input.float(10, title="Buy/Sell Offset [ticks]", group="General",minval=0, tooltip = "This is the offset for the buy/sell levels. This is in ticks and will be used to determine the optimal level for the buy/sell.")
+reversalOffset = input.float(5, title="Reversal Offset [ticks]", group="General",minval=0, tooltip = "This is the offset for the reversal levels. This is in ticks and will be used to determine the optimal level for the reversal buy/sell.")
+levelClashOffset = input.float(20, title="Level Clash Buffer [ticks]", group="General",minval=0, tooltip = "This the level clash offset. This is in ticks and will be used to determine if levels are too close to each other. If levels are within this buffer, they will not be drawn.")
+lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the MA. This is in minutes and will be used to calculate the MA.") 
+trendTF = input.int(10, title="Trend Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the trend on the dashboard.")
 
-crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="General",minval=3, maxval=30) 
-bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", group="General",minval=3, maxval=30)
-crossATRLookbackTime = input.int(9, title="Crossover/ATR Lookback Timeframe [min]", group="General",minval=3, maxval=30) 
+crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time after a crossover/ATR trigger to check for bounces off levels.")
+bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time to look for a bounce off a level to trigger a buy/sell.")
+crossATRLookbackTime = input.int(9, title="Crossover/ATR Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time after a crossover/ATR trigger to check for a crossover/ATR.")
 showAllConditions = input(false, title="Show Conditions for Entry", group = "General", tooltip="This will show all the conditions being triggered. Mostly useful for debugging.")
-showBuySellLevels = input(true, title="Show Buy/Sell Text", group = "General")
+showBuySellLevels = input(true, title="Show Buy/Sell Text", group = "General", tooltip="This will show the buy/sell levels on the chart. Ideal if you want to see the actual price to enter the trade.")
 showBuySellMarkers = input(false, title="Show Buy/Sell Marker | ", group = "General", inline = "marker", tooltip="This will show the buy/sell markers on the chart with the TP/SL levels. Useful for debugging and reviewing trades. Recommended to keep this off for live trading.")
 tpLevel = input(60, title="Take Profit [ticks]", group = "General", inline = "marker")
 slLevel = input(60, title="        └ Stop Loss [ticks]", group = "General", inline = "marker2")
@@ -102,19 +103,19 @@ sellATRColor = input(color.rgb(133, 0, 55), title="   |   Sell ATR C
 
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
-colorFastMA = input.color(color.new(color.fuchsia,50), title="Fast MA Color", group="Moving Averages", inline="fast")
-typeFastMA = input.string("EMA", title="    └ Fast MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tfast")
+colorFastMA = input.color(color.new(color.fuchsia,20), title="Fast MA Color", group="Moving Averages", inline="fast")
+typeFastMA = input.string("EMA", title="    └ Fast MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tfast", tooltip="This is the type of MA to use for the fast MA. IMD is the Improved McGinley Dynamic.")
 
 periodSlowMA = input(13, title="Slow MA Period", group="Moving Averages", inline="slow")
-colorSlowMA = input.color(color.new(color.green,50), title="Slow MA Color", group="Moving Averages", inline="slow")
-typeSlowMA = input.string("EMA", title="    └ Slow MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tslow")
+colorSlowMA = input.color(color.new(color.green,20), title="Slow MA Color", group="Moving Averages", inline="slow")
+typeSlowMA = input.string("EMA", title="    └ Slow MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tslow", tooltip="This is the type of MA to use for the slow MA. IMD is the Improved McGinley Dynamic.")
 
 periodStableMA = input(21, title="Stable MA Period", group="Moving Averages", inline="Stable")
-colorStableMA = input.color(color.new(color.red,50), title="Stable MA Color", group="Moving Averages", inline="Stable")
-typeStableMA = input.string("EMA", title="    └ Stable MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tStable")
+colorStableMA = input.color(color.new(color.red,20), title="Stable MA Color", group="Moving Averages", inline="Stable")
+typeStableMA = input.string("EMA", title="    └ Stable MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tStable", tooltip="This is the type of MA to use for the stable MA. IMD is the Improved McGinley Dynamic.")
 
 showConfirmMA = input(true, title="Show Confirm MA   |   ", group="Moving Averages", inline="confirm")
-confirmMASmoothPeriod = input(1, title="Confirm MA Smooth Period", group="Moving Averages", inline="confirm")
+confirmMASmoothPeriod = input(1, title="Confirm MA Smooth Period", group="Moving Averages", inline="confirm", tooltip="This is the smooth period for the confirm MA. The confirm MA is already smoothed, but this will add additional smoothing if required at the cost of slower response.")
 
 alertDirectionalBuySell = input(true, title="Buy/Sell", group="Alerts", inline="main")
 alertReversalBuySell = input(true, title="Buy/Sell (Reversal)", group="Alerts", inline="main")
@@ -128,10 +129,10 @@ table_font_size       = input.string('Normal', "    └ Font Size", opti
 table_bgcolor       = input.color(color.gray, title="Background Color", group="Dashboard", inline="line3")
 table_fontcolor       = input.color(color.white, title="  |  Font Color", group="Dashboard", inline="line3")
 
-timePeriod1 = input.session("1030-1615", title="Main Period 1 [All confluences]", group="Trading Time (NY Time)")
-timePeriod2 = input.session("0100-0800", title="Active Period 2 [Levels only]", group="Trading Time (NY Time)")
-timePeriod3 = input.session("1700-1715", title="Active Period 3 [Levels only]", group="Trading Time (NY Time)")
-orbSession = input.session("0930-1000", title="ORB Calculation Time", group="Trading Time (NY Time)")
+timePeriod1 = input.session("1030-1615", title="Main Period 1 [All confluences]", group="Trading Time (NY Time)", tooltip="This is the main trading period. All confluences will be checked during this time.")
+timePeriod2 = input.session("0100-0800", title="Active Period 2 [Levels only]", group="Trading Time (NY Time)", tooltip="This is the active period for levels only. Only level bounces will be used during this time. Ideally set this to overnight sessions.")
+timePeriod3 = input.session("1700-1715", title="Active Period 3 [Levels only]", group="Trading Time (NY Time)", tooltip="This is the active period for levels only. Only level bounces will be used during this time. Ideally set this to overnight sessions.")
+orbSession = input.session("0930-1000", title="ORB Calculation Time", group="Trading Time (NY Time)", tooltip="This is the time for the Opening Range Breakout calculation.Reccomended to set this to the first 15-60 minutes of the trading day.")
 
 // ********** GLOBAL VARIABLES *********
 // System variables
@@ -190,67 +191,68 @@ draw_sellmarker(limitLevel,TP,SL) =>
         line.new(bar_index,limitLevel + TP, bar_index, limitLevel - SL,xloc.bar_index,extend.none,color.rgb(137, 0, 0),line.style_dotted,2)
 
 check_bounce_high(level) =>
-    highBounce = high >= level and close < level - (high - low) * (buffer/100) and (open <= level + (high - low) * (buffer/100)) and barstate.isconfirmed
+    highBounce = high >= level and close < level - (high - low) * (levelBounceBuffer/100) and (open <= level + (high - low) * (levelBounceBuffer/100)) and barstate.isconfirmed
 
 check_bounce_low(level) =>
-    lowBounce = low <= level and close > level + (high - low) * (buffer/100) and (open >= level - (high - low) * (buffer/100)) and barstate.isconfirmed
+    lowBounce = low <= level and close > level + (high - low) * (levelBounceBuffer/100) and (open >= level - (high - low) * (levelBounceBuffer/100)) and barstate.isconfirmed
 
 check_levels_low(levels, bounceType, symbolEnabled) =>    
     plotLevels = str.split(levels, ",")
     anyBounce = false
+    limitLevel = 0.0
     for level in plotLevels
         if check_bounce_low(str.tonumber(level))
             anyBounce := true
+            limitLevel := str.tonumber(level)
             if symbolEnabled
-                draw_label(bar_index, str.tonumber(level), bounceType, xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
-    result = anyBounce
+                labelText = bounceType
+                if showAllConditions
+                    labelText := bounceType + "(" + str.tostring(math.round_to_mintick((high - low) * (levelBounceBuffer/100))) + ")"
+                draw_label(bar_index, str.tonumber(level), labelText, xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
+    [anyBounce, limitLevel]
 
 check_levels_high(levels, bounceType, symbolEnabled) =>    
     plotLevels = str.split(levels, ",")
     anyBounce = false
+    limitLevel = 0.0
     for level in plotLevels
         if check_bounce_high(str.tonumber(level))
             anyBounce := true
+            limitLevel := str.tonumber(level)
             if symbolEnabled
-                draw_label(bar_index, str.tonumber(level), bounceType, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
-    result = anyBounce
-
-check_optimal_level(levels, symbolEnabled) =>    
-    plotLevels = str.split(levels, ",")
-    optLevel = 0.0
-    if symbolEnabled
-        for level in plotLevels
-            if math.abs(str.tonumber(level) - close) < (buySellBuffer * syminfo.mintick)
-                optLevel := str.tonumber(level)
-                
-    result = optLevel
+                labelText = bounceType
+                if showAllConditions
+                    labelText := bounceType + "(" + str.tostring(math.round_to_mintick((high - low) * (levelBounceBuffer/100))) + ")"
+                draw_label(bar_index, str.tonumber(level), labelText, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
+    [anyBounce, limitLevel]
 
 check_calclevels_low(levels, bounceType, symbolEnabled) =>    
     anyBounce = false
+    limitLevel = 0.0
     for level in levels
         if check_bounce_low(level)
             anyBounce := true
+            limitLevel := level
             if symbolEnabled
-                draw_label(bar_index, level, bounceType, xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
-    result = anyBounce
+                labelText = bounceType
+                if showAllConditions
+                    labelText := bounceType + "(" + str.tostring(math.round_to_mintick((high - low) * (levelBounceBuffer/100))) + ")"
+                draw_label(bar_index, level, labelText, xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
+    [anyBounce, limitLevel]
 
 check_calclevels_high(levels, bounceType, symbolEnabled) =>    
     anyBounce = false
+    limitLevel = 0.0
     for level in levels
         if check_bounce_high(level)
             anyBounce := true
+            limitLevel := level
             if symbolEnabled
-                draw_label(bar_index, level, bounceType, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
-    result = anyBounce
-
-check_calcoptimal_level(levels, symbolEnabled) =>    
-    optLevel = 0.0
-    if symbolEnabled
-        for level in levels
-            if math.abs(level - close) < (buySellBuffer * syminfo.mintick)
-                optLevel := level
-                
-    result = optLevel
+                labelText = bounceType
+                if showAllConditions
+                    labelText := bounceType + "(" + str.tostring(math.round_to_mintick((high - low) * (levelBounceBuffer/100))) + ")"
+                draw_label(bar_index, level, labelText, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
+    [anyBounce, limitLevel]
 
 draw_levels(levels, color, width, label, labeloffset) =>
     plotLevels = str.split(levels, ",")
@@ -326,6 +328,7 @@ getTimeframeInMinutes() =>
     minutes
 
 // Function to calculate the limit level
+// BUG: Error on calculating levels, probably here
 getLimitLevel(priceTarget, close, buyDir) =>
     limitLevel = buyDir ? math.min(priceTarget, close) : math.max(priceTarget, close)
     limitLevel := math.round_to_mintick(limitLevel)
@@ -337,6 +340,12 @@ imd(Series, fPeriod) => // "Improved McGinley Dynamic" Function - @midtownsk8rgu
     var float result = na 
     priorMD = nz(result[1], Series)
     result := priorMD + (Series - priorMD) / math.min(period, math.max(1.0, fK * period * math.pow(Series / priorMD, fExponent)))
+
+retrieveBounceLevel(newLevel, oldLevel) =>
+    returnLevel = oldLevel
+    if newLevel > 0
+        returnLevel := newLevel
+    returnLevel
 
 // ********** LEVEL RENDERING **********
 // Check if symbol matches the selected ticker
@@ -457,28 +466,68 @@ anyIntraSym2BounceDown = false
 anyCalcSym2BounceDown = false
 
 if ticker.standard() == sym1
-    anyPivotSym1BounceUp := check_levels_low(sym1Pivots, pivotsLabel, showPivotsBounce)
-    anyPivotSym1BounceDown := check_levels_high(sym1Pivots, pivotsLabel, showPivotsBounce)
-    anyBuySym1BounceUp := check_levels_low(sym1BuyLevels, buyLabel, showBuyBounce)
-    anyBuySym1BounceDown := check_levels_high(sym1BuyLevels, buyLabel, showBuyBounce)
-    anySellSym1BounceUp := check_levels_low(sym1SellLevels, sellLabel, showSellBounce)
-    anySellSym1BounceDown := check_levels_high(sym1SellLevels, sellLabel, showSellBounce)
-    anyIntraSym1BounceUp := check_levels_low(sym1IntraDayLevels, intraLabel, showIntraBounce)
-    anyIntraSym1BounceDown := check_levels_high(sym1IntraDayLevels, intraLabel, showIntraBounce)
-    anyCalcSym1BounceUp := check_calclevels_low(calcLevels, preCalcLabel, showPreCalcBounce)
-    anyCalcSym1BounceDown := check_calclevels_high(calcLevels, preCalcLabel, showPreCalcBounce)
+    [bounceResult1, bounceResultLevel1] = check_levels_low(sym1Pivots, pivotsLabel, showPivotsBounce)
+    [bounceResult2, bounceResultLevel2] = check_levels_high(sym1Pivots, pivotsLabel, showPivotsBounce)
+    [bounceResult3, bounceResultLevel3] = check_levels_low(sym1BuyLevels, buyLabel, showBuyBounce)
+    [bounceResult4, bounceResultLevel4] = check_levels_high(sym1BuyLevels, buyLabel, showBuyBounce)
+    [bounceResult5, bounceResultLevel5] = check_levels_low(sym1SellLevels, sellLabel, showSellBounce)
+    [bounceResult6, bounceResultLevel6] = check_levels_high(sym1SellLevels, sellLabel, showSellBounce)
+    [bounceResult7, bounceResultLevel7] = check_levels_low(sym1IntraDayLevels, intraLabel, showIntraBounce)
+    [bounceResult8, bounceResultLevel8] = check_levels_high(sym1IntraDayLevels, intraLabel, showIntraBounce)
+    [bounceResult9, bounceResultLevel9] = check_calclevels_low(calcLevels, preCalcLabel, showPreCalcBounce)
+    [bounceResult10, bounceResultLevel10] = check_calclevels_high(calcLevels, preCalcLabel, showPreCalcBounce)
+    anyPivotSym1BounceUp := bounceResult1
+    anyPivotSym1BounceDown := bounceResult2
+    anyBuySym1BounceUp := bounceResult3
+    anyBuySym1BounceDown := bounceResult4
+    anySellSym1BounceUp := bounceResult5
+    anySellSym1BounceDown := bounceResult6
+    anyIntraSym1BounceUp := bounceResult7
+    anyIntraSym1BounceDown := bounceResult8
+    anyCalcSym1BounceUp := bounceResult9
+    anyCalcSym1BounceDown := bounceResult10
+    bounceLevel := retrieveBounceLevel(bounceResultLevel1, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel2, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel3, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel4, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel5, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel6, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel7, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel8, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel9, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel10, bounceLevel)
 
 if ticker.standard() == sym2
-    anyPivotSym2BounceUp := check_levels_low(sym2Pivots, pivotsLabel, showPivotsBounce)
-    anyPivotSym2BounceDown := check_levels_high(sym2Pivots, pivotsLabel, showPivotsBounce)
-    anyBuySym2BounceUp := check_levels_low(sym2BuyLevels, buyLabel, showBuyBounce)
-    anyBuySym2BounceDown := check_levels_high(sym2BuyLevels, buyLabel, showBuyBounce)
-    anySellSym2BounceUp := check_levels_low(sym2SellLevels, sellLabel, showSellBounce)
-    anySellSym2BounceDown := check_levels_high(sym2SellLevels, sellLabel, showSellBounce)
-    anyIntraSym2BounceUp := check_levels_low(sym2IntraDayLevels, intraLabel, showIntraBounce)
-    anyIntraSym2BounceDown := check_levels_high(sym2IntraDayLevels, intraLabel, showIntraBounce)
-    anyCalcSym2BounceUp := check_calclevels_low(calcLevels, preCalcLabel, showPreCalcBounce)
-    anyCalcSym2BounceDown := check_calclevels_high(calcLevels, preCalcLabel, showPreCalcBounce)
+    [bounceResult1, bounceResultLevel1] = check_levels_low(sym2Pivots, pivotsLabel, showPivotsBounce)
+    [bounceResult2, bounceResultLevel2] = check_levels_high(sym2Pivots, pivotsLabel, showPivotsBounce)
+    [bounceResult3, bounceResultLevel3] = check_levels_low(sym2BuyLevels, buyLabel, showBuyBounce)
+    [bounceResult4, bounceResultLevel4] = check_levels_high(sym2BuyLevels, buyLabel, showBuyBounce)
+    [bounceResult5, bounceResultLevel5] = check_levels_low(sym2SellLevels, sellLabel, showSellBounce)
+    [bounceResult6, bounceResultLevel6] = check_levels_high(sym2SellLevels, sellLabel, showSellBounce)
+    [bounceResult7, bounceResultLevel7] = check_levels_low(sym2IntraDayLevels, intraLabel, showIntraBounce)
+    [bounceResult8, bounceResultLevel8] = check_levels_high(sym2IntraDayLevels, intraLabel, showIntraBounce)
+    [bounceResult9, bounceResultLevel9] = check_calclevels_low(calcLevels, preCalcLabel, showPreCalcBounce)
+    [bounceResult10, bounceResultLevel10] = check_calclevels_high(calcLevels, preCalcLabel, showPreCalcBounce)
+    anyPivotSym2BounceUp := bounceResult1
+    anyPivotSym2BounceDown := bounceResult2
+    anyBuySym2BounceUp := bounceResult3
+    anyBuySym2BounceDown := bounceResult4
+    anySellSym2BounceUp := bounceResult5
+    anySellSym2BounceDown := bounceResult6
+    anyIntraSym2BounceUp := bounceResult7
+    anyIntraSym2BounceDown := bounceResult8
+    anyCalcSym2BounceUp := bounceResult9
+    anyCalcSym2BounceDown := bounceResult10
+    bounceLevel := retrieveBounceLevel(bounceResultLevel1, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel2, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel3, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel4, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel5, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel6, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel7, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel8, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel9, bounceLevel)
+    bounceLevel := retrieveBounceLevel(bounceResultLevel10, bounceLevel)
 
 anyPivotSym1Bounce = anyPivotSym1BounceUp or anyPivotSym1BounceDown
 anyBuySym1Bounce = anyBuySym1BounceUp or anyBuySym1BounceDown
@@ -578,10 +627,13 @@ chopIndexDetect = chopIndex > 61.8
 // Trend calculation
 //trendDirection = direction * (trendMagnitude + momentumMagnitude + math.abs(acceleration))
 trendDirection = momentumMain + (momentumMain - momentumSignal)
+deltaMomentum = math.abs((momentumMA - momentumMA[1])/momentumMA)
 trendColor = color.gray
 volatileLimit = 5
 trendLimit = 2.5
 chopLimit = 1.5
+deltaMomentumChopLimt = 0.5
+deltaMomentumVolLimt = 2.5
 
 // Set color based on trendScore
 if trendDirection > volatileLimit
@@ -597,16 +649,12 @@ else if trendDirection < (-1 * trendLimit)
 else if trendDirection < (-1 * chopLimit)
     trendColor := color.rgb(110, 3, 3)
 
-chopDetect = math.abs(trendDirection) < chopLimit or chopIndexDetect
-volatileMove = math.abs(trendDirection) > volatileLimit
-
-// Adjust maxTrendMagnitude based on observed max values to fine-tune interpolation
-maxTrendMagnitude = 7.5 // Example max value, adjust based on data
-normalizedTrendMagnitude = math.min(trendDirection / maxTrendMagnitude, 1)
+chopDetect = (math.abs(trendDirection) < chopLimit and deltaMomentum < deltaMomentumChopLimt) or chopIndexDetect
+volatileMove = math.abs(trendDirection) > volatileLimit or deltaMomentum > deltaMomentumVolLimt
 
 // Calculate adaptive line
 // Using the McGinely MA
-adaptiveSource = close
+adaptiveSource = request.security(syminfo.tickerid, str.tostring(lowerTF), close)
 adaptivePeriod = 8.0
 
 if math.abs(trendDirection) > volatileLimit
@@ -622,7 +670,7 @@ smoothConfirmMA = imd(adaptiveLine, confirmMASmoothPeriod)
 // Plot MAs
 plot(fastMA, color=colorFastMA, title="Fast MA")
 plot(slowMA, color=colorSlowMA, title="Slow MA")
-plot(stableMA, color=colorStableMA, title="Balancing MA")
+plot(stableMA, color=colorStableMA, title="Stable MA")
 plot(smoothConfirmMA, title="Confirm MA", color=showConfirmMA ? trendColor : na, linewidth=2)
 
 // Check for bounce on confirmMA
@@ -630,25 +678,6 @@ bounceUpConfirm = check_bounce_low(smoothConfirmMA)
 bounceDownConfirm = check_bounce_high(smoothConfirmMA)
 
 // **********ENTRY CONDITIONS **********
-// BUG: Potential bug in the execution of this. Need to rework
-if ticker.standard() == sym1
-    priceOptimalEntryLevel1 = check_optimal_level(sym1Pivots, includeTrigPivots)
-    priceOptimalEntryLevel2 = check_optimal_level(sym1BuyLevels, includeTrigBuy)
-    priceOptimalEntryLevel3 = check_optimal_level(sym1SellLevels, includeTrigSell)
-    priceOptimalEntryLevel4 = check_optimal_level(sym1IntraDayLevels, includeTrigIntra)
-    priceOptimalEntryLevel5 = check_calcoptimal_level(calcLevels, includeTrigPreCalc)
-    if priceOptimalEntryLevel1 > 0
-        bounceLevel := priceOptimalEntryLevel1
-    if priceOptimalEntryLevel2 > 0
-        bounceLevel := priceOptimalEntryLevel2
-    if priceOptimalEntryLevel3 > 0
-        bounceLevel := priceOptimalEntryLevel3
-    if priceOptimalEntryLevel4 > 0
-        bounceLevel := priceOptimalEntryLevel4
-    if priceOptimalEntryLevel5 > 0
-        bounceLevel := priceOptimalEntryLevel5
-
-priceCandleBufferEntry = (high - low) * buffer/100
 priceOptimalBufferEntry =  buySellBuffer * syminfo.mintick
 priceOptimalReversalEntry = reversalOffset * syminfo.mintick
 priceOptimalEntryConfirm = math.abs(close - smoothConfirmMA) < priceOptimalBufferEntry
@@ -712,31 +741,31 @@ cancelBuyCondition = anySym1BounceDown or fastCrossSlowDown or sellATRSignal
 ticker1_price  = request.security(sym1, str.tostring(lowerTF), math.round_to_mintick(close))
 ticker2_price  = request.security(sym2, str.tostring(lowerTF), math.round_to_mintick(close))
 
-// Calculate the last 10-minute close of ticker 1
-[ticker1_10mClose, ticker1_hlcc4, ticker1_10mHigh, ticker1_10mLow] = request.security(sym1, "10", [close, hlcc4, high, low])
-[ticker2_10mClose, ticker2_hlcc4, ticker2_10mHigh, ticker2_10mLow] = request.security(sym2, "10", [close, hlcc4, high, low])
+// Get last close, high, and low for both tickers using the trend TF
+[ticker1_TrendClose, ticker1_hlcc4, ticker1_TrendHigh, ticker1_TrendLow] = request.security(sym1, str.tostring(trendTF), [close, hlcc4, high, low])
+[ticker2_TrendClose, ticker2_hlcc4, ticker2_TrendHigh, ticker2_TrendLow] = request.security(sym2, str.tostring(trendTF), [close, hlcc4, high, low])
 
 ticker1_bgcolor = color.rgb(71, 71, 71)
 ticker2_bgcolor = color.rgb(71, 71, 71)
 
 // Check if ticker 1 is higher or lower than its last 10-minute close
-if ticker1_price > ticker1_10mHigh
+if ticker1_price > ticker1_TrendHigh
     ticker1_bgcolor := color.rgb(0, 190, 6)
-else if ticker1_price < ticker1_10mLow
+else if ticker1_price < ticker1_TrendLow
     ticker1_bgcolor := color.rgb(190, 0, 0)
-else if ticker1_price > ticker1_10mClose and ticker1_price > ticker1_hlcc4
+else if ticker1_price > ticker1_TrendClose and ticker1_price > ticker1_hlcc4
     ticker1_bgcolor := color.rgb(0, 95, 3)
-else if ticker1_price < ticker1_10mClose and ticker1_price < ticker1_hlcc4
+else if ticker1_price < ticker1_TrendClose and ticker1_price < ticker1_hlcc4
     ticker1_bgcolor := color.rgb(83, 0, 0)
 
 // Check if ticker 2 is higher or lower than its last 10-minute close
-if ticker2_price > ticker2_10mHigh
+if ticker2_price > ticker2_TrendHigh
     ticker2_bgcolor := color.rgb(0, 190, 6)
-else if ticker2_price < ticker2_10mLow
+else if ticker2_price < ticker2_TrendLow
     ticker2_bgcolor := color.rgb(190, 0, 0)
-else if ticker2_price > ticker2_10mClose and ticker2_price > ticker2_hlcc4
+else if ticker2_price > ticker2_TrendClose and ticker2_price > ticker2_hlcc4
     ticker2_bgcolor := color.rgb(0, 95, 3)
-else if ticker2_price < ticker2_10mClose and ticker2_price < ticker2_hlcc4
+else if ticker2_price < ticker2_TrendClose and ticker2_price < ticker2_hlcc4
     ticker2_bgcolor := color.rgb(83, 0, 0)
 
 confirmBoxColor = color.rgb(71, 71, 71)

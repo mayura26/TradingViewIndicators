@@ -3,13 +3,15 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, and other scripts.
 
-// TODO: Look at HMA for confirm line combined with MA calcs from ATR
+// TODO: Look at HMA for confirm line combined with MA calcs from ATR. Maybe MDMA
 
 // FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY
 
 // FEATURE: Orderflow oscilator
+
+// FEATURE: Lorezian classsifcations
 
 
 // ********** BASE SETUP **********
@@ -605,28 +607,28 @@ chopDetect = (trendDirection < chopLimit and trendDirection > (-1 * chopLimit)) 
 volatileMove = trendDirection > volatileLimit or trendDirection < (-1 * volatileLimit)
 
 // Adjust maxTrendMagnitude based on observed max values to fine-tune interpolation
-maxTrendMagnitude = 5 // Example max value, adjust based on data
-normalizedTrendMagnitude = math.min(trendDirection / maxTrendMagnitude, 3)
+maxTrendMagnitude = 7.5 // Example max value, adjust based on data
+normalizedTrendMagnitude = math.min(trendDirection / maxTrendMagnitude, 2)
 
 // Calculate adaptive line
 // At 0 trendMagnitude, line = stableMA. At max bias, line = fastMA.
 var float adaptiveLine  = na
-if trendDirection > 1.5
+if trendDirection > chopLimit
     // Uptrend: More bias towards fastMA
-    adaptiveLine  := stableMA + (fastMA - stableMA) * (2*normalizedTrendMagnitude/3) + (slowMA - stableMA) * normalizedTrendMagnitude/3
-else if trendDirection < -1.5
+    adaptiveLine  := stableMA + (fastMA - stableMA) * (1*normalizedTrendMagnitude/2) + (slowMA - stableMA) * normalizedTrendMagnitude/4
+else if trendDirection < (-1 * chopLimit)
     // Downtrend: Bias towards slowMA, but capped at stableMA
-    adaptiveLine  := stableMA + (stableMA - fastMA) * (2*normalizedTrendMagnitude/3) + (stableMA - slowMA) * normalizedTrendMagnitude/3
+    adaptiveLine  := stableMA + (stableMA - fastMA) * (1*normalizedTrendMagnitude/2) + (stableMA - slowMA) * normalizedTrendMagnitude/4
 else
     // No clear trend: Use stableMA
     adaptiveLine  := (stableMA + fastMA + slowMA)/3
 
-if (trendDirection > 2.5) and (adaptiveLine - fastMA) > 10
-    adaptiveLine := fastMA + 10
-else if (trendDirection < -2.5) and (fastMA - adaptiveLine) > 10
-    adaptiveLine := fastMA - 10
+if (trendDirection > trendLimit) and (adaptiveLine - fastMA) > 5
+    adaptiveLine := fastMA + 5
+else if (trendDirection < (-1 * trendLimit)) and (fastMA - adaptiveLine) > 5
+    adaptiveLine := fastMA - 5
     
-smoothConfirmMA = ta.ema(adaptiveLine, confirmMASmoothPeriod)
+smoothConfirmMA = ta.hma(adaptiveLine, confirmMASmoothPeriod)
 
 // Plot MAs
 plot(fastMA, color=colorFastMA, title="Fast MA")

@@ -109,15 +109,15 @@ showVolDashboard = input(true, title="Show Volume Dashboard", group="Volume Anal
 
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
-colorFastMA = input.color(color.new(color.fuchsia,20), title="Fast MA Color", group="Moving Averages", inline="fast")
+colorFastMA = input.color(color.new(color.fuchsia,80), title="Fast MA Color", group="Moving Averages", inline="fast")
 typeFastMA = input.string("EMA", title="    └ Fast MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tfast", tooltip="This is the type of MA to use for the fast MA. IMD is the Improved McGinley Dynamic.")
 
 periodSlowMA = input(13, title="Slow MA Period", group="Moving Averages", inline="slow")
-colorSlowMA = input.color(color.new(color.green,20), title="Slow MA Color", group="Moving Averages", inline="slow")
+colorSlowMA = input.color(color.new(color.green,80), title="Slow MA Color", group="Moving Averages", inline="slow")
 typeSlowMA = input.string("EMA", title="    └ Slow MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tslow", tooltip="This is the type of MA to use for the slow MA. IMD is the Improved McGinley Dynamic.")
 
 periodStableMA = input(21, title="Stable MA Period", group="Moving Averages", inline="Stable")
-colorStableMA = input.color(color.new(color.red,20), title="Stable MA Color", group="Moving Averages", inline="Stable")
+colorStableMA = input.color(color.new(color.red,80), title="Stable MA Color", group="Moving Averages", inline="Stable")
 typeStableMA = input.string("EMA", title="    └ Stable MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tStable", tooltip="This is the type of MA to use for the stable MA. IMD is the Improved McGinley Dynamic.")
 
 colorVWAP = input(color.new(color.yellow,20), title="VWAP Color", group="Moving Averages")
@@ -199,10 +199,10 @@ draw_sellmarker(limitLevel,TP,SL) =>
         line.new(bar_index,limitLevel + TP, bar_index, limitLevel - SL,xloc.bar_index,extend.none,color.rgb(137, 0, 0),line.style_dotted,2)
 
 check_bounce_high(level) =>
-    highBounce = high >= level and close < level - (high - low) * (levelBounceBuffer/100) and (open <= level + (high - low) * (levelBounceBuffer/100)) and barstate.isconfirmed
+    highBounce = high >= level - (high - low) * (levelBounceBuffer/100) and close < level - (high - low) * (levelBounceBuffer/100) and (open <= level + (high - low) * (levelBounceBuffer/100)) and barstate.isconfirmed
 
 check_bounce_low(level) =>
-    lowBounce = low <= level and close > level + (high - low) * (levelBounceBuffer/100) and (open >= level - (high - low) * (levelBounceBuffer/100)) and barstate.isconfirmed
+    lowBounce = low <= level + - (high - low) * (levelBounceBuffer/100) and close > level + (high - low) * (levelBounceBuffer/100) and (open >= level - (high - low) * (levelBounceBuffer/100)) and barstate.isconfirmed
 
 check_levels_low(levels, bounceType, symbolEnabled) =>    
     plotLevels = str.split(levels, ",")

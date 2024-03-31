@@ -104,7 +104,7 @@ buyATRColor = input(color.rgb(20, 161, 44), title="Buy ATR Color", group="ATR", 
 sellATRColor = input(color.rgb(133, 0, 55), title="   |   Sell ATR Color", group="ATR", inline="color")
 
 // Volume Analysis
-showVolIndicator = input(true, title="Show Volume Indicator", group="Volume Analysis", inline="main", tooltip="Show the volume indicator for each bar. This is analysing the buy and sell volume and attempting to identify the trend directions")
+showVolIndicator = input(true, title="Show Volume Indicator", group="Volume Analysis", inline="main", tooltip="Show the volume indicator for each bar. This is analysing the buy and sell volume and attempting to identify the trend directions. The triangle up or down indicates the cross of the volume, which is the start of the new trend. The circle indicates onesided volume. The cross indicates irregular volume (higher than the last period averaged). A square is the default state.")
 showVolDashboard = input(true, title="Show Volume Dashboard", group="Volume Analysis", inline="main")
 
 // Define EMA/SMA settings
@@ -694,8 +694,8 @@ else if irregVol
     volIndStyle := shape.xcross
 
 plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.square, title="Volume Indication", style=shape.square, color=volColor, location=location.bottom, size=size.tiny)
-plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangleup, title="Volume Indication", style=shape.triangleup, color=volColor, location=location.bottom, size=size.tiny, text = "Chg")
-plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangledown, title="Volume Indication", style=shape.triangledown, color=volColor, location=location.bottom, size=size.tiny, text = "Chg")
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangleup, title="Volume Indication", style=shape.triangleup, color=volColor, location=location.bottom, size=size.tiny, text = "Chg", textcolor = color.rgb(197, 255, 183))
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangledown, title="Volume Indication", style=shape.triangledown, color=volColor, location=location.bottom, size=size.tiny, text = "Chg", textcolor = color.rgb(255, 181, 181))
 plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.circle, title="Volume Indication", style=shape.circle, color=volColor, location=location.bottom, size=size.tiny)
 plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.xcross, title="Volume Indication", style=shape.xcross, color=volColor, location=location.bottom, size=size.tiny)
 

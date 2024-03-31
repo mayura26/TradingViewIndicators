@@ -3,6 +3,8 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
+// TODO: Add volume analysis
+
 // FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY
@@ -101,6 +103,10 @@ atrDotTransparency = input.int(80, title="    └ ATR Dot Transparency",
 buyATRColor = input(color.rgb(20, 161, 44), title="Buy ATR Color", group="ATR", inline="color")
 sellATRColor = input(color.rgb(133, 0, 55), title="   |   Sell ATR Color", group="ATR", inline="color")
 
+// Volume Analysis
+showVolIndicator = input(true, title="Show Volume Indicator", group="Volume Analysis", inline="main", tooltip="Show the volume indicator for each bar. This is analysing the buy and sell volume and attempting to identify the trend directions")
+showVolDashboard = input(true, title="Show Volume Dashboard", group="Volume Analysis", inline="main")
+
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
 colorFastMA = input.color(color.new(color.fuchsia,20), title="Fast MA Color", group="Moving Averages", inline="fast")
@@ -113,6 +119,8 @@ typeSlowMA = input.string("EMA", title="    └ Slow MA Type", options=[
 periodStableMA = input(21, title="Stable MA Period", group="Moving Averages", inline="Stable")
 colorStableMA = input.color(color.new(color.red,20), title="Stable MA Color", group="Moving Averages", inline="Stable")
 typeStableMA = input.string("EMA", title="    └ Stable MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tStable", tooltip="This is the type of MA to use for the stable MA. IMD is the Improved McGinley Dynamic.")
+
+colorVWAP = input(color.new(color.yellow,20), title="VWAP Color", group="Moving Averages")
 
 showConfirmMA = input(true, title="Show Confirm MA   |   ", group="Moving Averages", inline="confirm")
 confirmMASmoothPeriod = input(1, title="Confirm MA Smooth Period", group="Moving Averages", inline="confirm", tooltip="This is the smooth period for the confirm MA. The confirm MA is already smoothed, but this will add additional smoothing if required at the cost of slower response.")
@@ -328,7 +336,6 @@ getTimeframeInMinutes() =>
     minutes
 
 // Function to calculate the limit level
-// BUG: Error on calculating levels, probably here
 getLimitLevel(priceTarget, close, buyDir) =>
     limitLevel = buyDir ? math.min(priceTarget, close) : math.max(priceTarget, close)
     limitLevel := math.round_to_mintick(limitLevel)
@@ -583,7 +590,6 @@ momentum = 0
 for i = 0 to dataLength by 1
     momentum += (curClose > curOpen[i] ? 1 : curClose < curOpen[i] ? -1 : 0)
 
-// TOOD: Use momentumMA as trend calc
 momentumMA = ta.ema(momentum, atrMALength)
 momentumMain = ta.ema(momentumMA, atrSmoothLength)
 momentumSignal = ta.ema(momentumMain, atrSmoothLength)
@@ -609,6 +615,89 @@ plotshape(showATRArrow ? sellATRSignal and not sellATRSignal[1] : na, title="ATR
 
 plotshape(showATRDots ? potentialATRLongDot : na, title="ATR Long Forming", style=shape.circle, color=color.new(buyATRColor, atrDotTransparency), location=location.belowbar, size=size.small)
 plotshape(showATRDots ? potentialATRShortDot : na, title="ATR Short Forming", style=shape.circle, color=color.new(sellATRColor, atrDotTransparency), location=location.abovebar, size=size.small)
+
+// ********** VOLUME ANALYSIS **********
+simple_buy_volume = volume * (close - low) / (high - low)
+simple_sell_volume = volume * (high - close) / (high - low)
+simple_buy_percent = (simple_buy_volume / volume) * 100
+simple_sell_percent = (simple_sell_volume / volume) * 100
+
+gap         = open - close[1]
+    
+bull_gap    = math.max(gap, 0) 
+bear_gap    = math.abs(math.min(gap, 0))
+
+body        = math.abs(close - open)
+BarRange    = high - low
+wick        = BarRange - body
+
+up_bar      = close > open
+
+bull        = wick + (up_bar ? body : 0) + bull_gap
+bear        = wick + (up_bar ? 0 : body) + bear_gap
+VolRange     = bull + bear
+BScore      = VolRange > 0 ? bull / VolRange : 0.5
+BuyVol      = BScore * volume
+SellVol     = volume - BuyVol
+buy_percent = (BuyVol / volume) * 100
+sell_percent = (SellVol / volume) * 100
+volLength   = 14
+volSmooth   = 3
+smoothBuy      = ta.wma(ta.wma(BuyVol, volLength), volSmooth)
+smoothSell     = ta.wma(ta.wma(SellVol, volLength), volSmooth)
+smoothNetVol      = smoothBuy - smoothSell
+
+netVolH = math.max(smoothBuy, smoothSell)
+netVolL = math.min(smoothBuy, smoothSell)
+
+
+risingVol      = ta.change(smoothNetVol) > 0
+
+upperVolLevel = 75
+topVolLevel = 85
+volPumpLevel = 0.1
+irregVolLevel = 1.5
+aveVolPeriod = 5
+
+avgVolume = ta.sma(volume, aveVolPeriod)
+bullVolPump = risingVol and math.abs(smoothBuy - smoothBuy[1])/smoothBuy > volPumpLevel  and smoothBuy > smoothSell
+bullVolDump = not risingVol and (smoothSell - smoothSell[1])/smoothSell > volPumpLevel and smoothBuy < smoothSell
+volCrossBuy = ta.crossover(smoothBuy,smoothSell)
+volCrossSell = ta.crossover(smoothSell,smoothBuy)
+irregVol = volume/avgVolume > irregVolLevel
+
+// ********** VOLUME RENDERING **********
+volColor = color.rgb(0,0,0)
+volIndStyle = shape.square
+if (bullVolPump)
+    volColor := color.rgb(0, 255, 8)
+else if (bullVolDump)
+    volColor := color.rgb(255, 0, 0)
+else if smoothBuy > smoothSell and risingVol
+    volColor := color.rgb(18, 170, 23)
+else if smoothBuy < smoothSell and not risingVol
+    volColor := color.rgb(175, 24, 24)
+else if buy_percent > upperVolLevel
+    volColor := color.rgb(0, 102, 22)
+else if sell_percent > upperVolLevel
+    volColor := color.rgb(110, 3, 3)
+
+if volCrossBuy
+    volIndStyle := shape.triangleup
+else if volCrossSell
+    volIndStyle := shape.triangledown
+else if buy_percent > topVolLevel
+    volIndStyle := shape.circle
+else if sell_percent > topVolLevel
+    volIndStyle := shape.circle
+else if irregVol
+    volIndStyle := shape.xcross
+
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.square, title="Volume Indication", style=shape.square, color=volColor, location=location.bottom, size=size.tiny)
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangleup, title="Volume Indication", style=shape.triangleup, color=volColor, location=location.bottom, size=size.tiny)
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangledown, title="Volume Indication", style=shape.triangledown, color=volColor, location=location.bottom, size=size.tiny)
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.circle, title="Volume Indication", style=shape.circle, color=volColor, location=location.bottom, size=size.tiny)
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.xcross, title="Volume Indication", style=shape.xcross, color=volColor, location=location.bottom, size=size.tiny)
 
 // ********** EMA RENDERING **********
 fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), imd(close, periodFastMA))
@@ -667,11 +756,15 @@ else
 adaptiveLine = imd(adaptiveSource, adaptivePeriod)
 smoothConfirmMA = imd(adaptiveLine, confirmMASmoothPeriod)
 
+// VWAP
+vwapValue = request.security(syminfo.tickerid, str.tostring(lowerTF), ta.vwap(hlc3), barmerge.gaps_off, barmerge.lookahead_on)
+
 // Plot MAs
 plot(fastMA, color=colorFastMA, title="Fast MA")
 plot(slowMA, color=colorSlowMA, title="Slow MA")
 plot(stableMA, color=colorStableMA, title="Stable MA")
 plot(smoothConfirmMA, title="Confirm MA", color=showConfirmMA ? trendColor : na, linewidth=2)
+plot(vwapValue, title="VWAP", color=colorVWAP, linewidth=2, style=plot.style_circles)
 
 // Check for bounce on confirmMA
 bounceUpConfirm = check_bounce_low(smoothConfirmMA)
@@ -774,17 +867,43 @@ if close - smoothConfirmMA > priceOptimalBufferEntry
 else if close - smoothConfirmMA < -1 * priceOptimalBufferEntry
     confirmBoxColor := color.rgb(116, 0, 0)
 
-if barstate.islast and show_table
-    f_fillCell(0, 0, "Confirm","This indicates the position of price compared to the confirmation line. It will also show whether the trend is particularly volatile and risky or whether it is a chop zone")
-    f_fillCell(1, 0, "Trend", "This shows the calculated trend index (0-10) and color. The brightest green/red indicates an aggresive up/down trend.")
-    f_fillCell(2, 0, extractSymbolName(sym1), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
-    f_fillCell(3, 0, extractSymbolName(sym2), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
-    
+confirmToolTip = ""
+if (volatileMove)
+    confirmToolTip := "Volatile move in progress, caution fading this"
+else if (chopDetect)
+    confirmToolTip := "Market caught in chop. Advised to wait for trade"
 
-    f_fillCellColorText(0, 1, chopDetect ? 'CHOP' : (volatileMove ? 'RISK' : ''),confirmBoxColor, "")
+volumePercent = 0.0
+volumeColor = color.rgb(71, 71, 71)
+if buy_percent > sell_percent
+    volumePercent := (buy_percent - 50)*2
+    if buy_percent > topVolLevel
+        volumeColor := color.rgb(0, 255, 8)
+    else if buy_percent > upperVolLevel
+        volumeColor := color.rgb(0, 114, 4)
+    else
+        volumeColor := color.rgb(0, 56, 2)
+else
+    volumePercent := (sell_percent - 50)*2
+    if sell_percent > topVolLevel
+        volumeColor := color.rgb(255, 0, 0)
+    else if sell_percent > upperVolLevel
+        volumeColor := color.rgb(116, 0, 0)
+    else
+        volumeColor := color.rgb(56, 0, 0)
+
+if barstate.islast and show_table
+    f_fillCell(0, 0, "Confirm","Status of price compared to the confirmation line. Ideally you want to be entering this is grey, so you are close to the confirm support. Caution taking shorts while green and longs while red as you are on the wrong side of the trend.\n\nIt will also show whether the trend is particularly volatile and risky or whether it is a chop zone")
+    f_fillCell(1, 0, "Trend", "Shows the calculated trend index (0-10) and color. The brightest green/red indicates an aggresive up/down trend. Generally never look to short a bright green or long a bright red.")
+    f_fillCell(2,0,"Volume","Show breakdown of buyers vs sellers in the volume. Scale is 0-100% both directions, with the color indicating if its buy or sell volume")
+    f_fillCell(3, 0, extractSymbolName(sym1), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
+    f_fillCell(4, 0, extractSymbolName(sym2), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
+
+    f_fillCellColorText(0, 1, chopDetect ? 'CHOP' : (volatileMove ? 'WARN' : ''),confirmBoxColor, confirmToolTip)
     f_fillCellColorText(1, 1, str.tostring(math.round(trendDirection,1)), trendColor,"")
-    f_fillCellColorText(2, 1, str.tostring(ticker1_price), ticker1_bgcolor, "")
-    f_fillCellColorText(3, 1, str.tostring(ticker2_price), ticker2_bgcolor, "")
+    f_fillCellColorText(2, 1, str.tostring(math.round(volumePercent,1)) + "%", volumeColor, "")
+    f_fillCellColorText(3, 1, str.tostring(ticker1_price), ticker1_bgcolor, "")
+    f_fillCellColorText(4, 1, str.tostring(ticker2_price), ticker2_bgcolor, "")
 
 // ********** TRADING **********
 allowedTimes() =>
@@ -901,6 +1020,10 @@ if showAllConditions
         draw_label(bar_index, close, 'Confirm', xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
     if chopDetect
         box.new(bar_index, high, bar_index - 1, low, border_color=color.rgb(120, 120, 122, 35), border_width=1, bgcolor=color.rgb(120, 120, 122, 35), border_style=line.style_dashed)
+    if volCrossSell 
+        draw_label(bar_index, close, 'Vol Sell', xloc.bar_index, yloc.abovebar,  color.rgb(251, 64, 136), label.style_arrowdown, color.white, size.small, text.align_center, '')
+    if volCrossBuy 
+        draw_label(bar_index, close, 'Vol Buy', xloc.bar_index, yloc.belowbar,  color.rgb(113, 212, 0), label.style_arrowup, color.white, size.small, text.align_center, '')
 
 TP = tpLevel * syminfo.mintick
 SL = slLevel * syminfo.mintick

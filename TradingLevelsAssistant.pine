@@ -694,8 +694,8 @@ else if irregVol
     volIndStyle := shape.xcross
 
 plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.square, title="Volume Indication", style=shape.square, color=volColor, location=location.bottom, size=size.tiny)
-plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangleup, title="Volume Indication", style=shape.triangleup, color=volColor, location=location.bottom, size=size.tiny)
-plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangledown, title="Volume Indication", style=shape.triangledown, color=volColor, location=location.bottom, size=size.tiny)
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangleup, title="Volume Indication", style=shape.triangleup, color=volColor, location=location.bottom, size=size.tiny, text = "Chg")
+plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.triangledown, title="Volume Indication", style=shape.triangledown, color=volColor, location=location.bottom, size=size.tiny, text = "Chg")
 plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.circle, title="Volume Indication", style=shape.circle, color=volColor, location=location.bottom, size=size.tiny)
 plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.xcross, title="Volume Indication", style=shape.xcross, color=volColor, location=location.bottom, size=size.tiny)
 

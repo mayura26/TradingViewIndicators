@@ -123,7 +123,8 @@ periodStableMA = input(21, title="Stable MA Period", group="Moving Averages", in
 colorStableMA = input.color(color.new(color.red,80), title="Stable MA Color", group="Moving Averages", inline="Stable")
 typeStableMA = input.string("EMA", title="    └ Stable MA Type", options=["EMA", "IMD"], group="Moving Averages", inline="tStable", tooltip="This is the type of MA to use for the stable MA. IMD is the Improved McGinley Dynamic.")
 
-colorVWAP = input(color.new(color.yellow,20), title="VWAP Color", group="Moving Averages")
+showVWAP = input(true, title="Show VWAP  |  ", group="Moving Averages", inline="VWAP")
+colorVWAP = input(color.new(color.yellow,20), title="VWAP Color", group="Moving Averages", inline="VWAP")
 
 showConfirmMA = input(true, title="Show Confirm MA   |   ", group="Moving Averages", inline="confirm")
 confirmMASmoothPeriod = input(1, title="Confirm MA Smooth Period", group="Moving Averages", inline="confirm", tooltip="This is the smooth period for the confirm MA. The confirm MA is already smoothed, but this will add additional smoothing if required at the cost of slower response.")
@@ -1036,7 +1037,7 @@ TP = tpLevel * syminfo.mintick
 SL = slLevel * syminfo.mintick
 
 if validTriggerPeriod
-    if (systemState != systemState[1] and systemState[1] > 0 and systemState > 0 and ((systemState < 10 and systemState[1] > 10) or (systemState > 10 and systemState[1] < 10))) or (systemState[1] > 0 and systemState == 0 and (cancelBuyCondition or cancelSellCondition))
+    if (systemState != systemState[1] and systemState[1] > 0 and systemState > 0 and ((systemState < 10 and systemState[1] > 10) or (systemState > 10 and systemState[1] < 10))) or (systemState[1] > 0 and systemState == 0 and ((systemState[1] > 0 and systemState[1] < 10 and cancelBuyCondition) or (systemState[1] > 10 and cancelSellCondition)))
         if showBuySellLevels
             draw_label(bar_index, limitLevel, "Close Position: " + str.tostring(systemState[1]) + "->" + str.tostring(systemState), xloc.bar_index, yloc.abovebar,  color.rgb(110, 0, 137), label.style_text_outline, color.white, size.small, text.align_center, '')
             draw_label(bar_index, close, str.tostring(close), xloc.bar_index, yloc.abovebar,  color.rgb(137, 0, 130), label.style_label_upper_left, color.white, size.tiny, text.align_center, '')
@@ -1091,19 +1092,19 @@ plotshape(series=close, title="Cross Short", style=shape.labeldown, location=loc
 
 // ********** ALERTS **********
 if (anyPivotSym1Bounce or anyPivotSym2Bounce) and alertPivotsBounce
-    alert("Bounce off pivot level at: " + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off pivot level at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if (anyBuySym1Bounce or anyBuySym2Bounce) and alertBuyBounce
-    alert("Bounce off buy level at: " + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off buy level at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if (anySellSym1Bounce or anySellSym2Bounce) and alertSellBounce
-    alert("Bounce off sell level at: " + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off sell level at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if (anyIntraSym1Bounce or anyIntraSym2Bounce) and alertIntraBounce
-    alert("Bounce off intra level at: "  + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off intra level at: "  + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if (anyCalcSym1Bounce or anyCalcSym2Bounce) and alertPreCalcBounce
-    alert("Bounce off calculated level at: " + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off calculated level at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if alertATRArrow
     if buyATRSignal and not buyATRSignal[1]

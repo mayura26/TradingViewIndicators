@@ -3,6 +3,21 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
+// TODO: Create tick box and min count for each timezone
+
+// TODO:create min number of confluences for a cross auto buy
+
+// TODO: Add check for directional buy if vol and trend match
+
+
+// TODO: Show clashing lines with faded colour and option 
+
+// TODO: Add delay for checking high and lows when they are being set
+
+
+// TODO: add volume as trigger for cross buy
+
+
 // FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY

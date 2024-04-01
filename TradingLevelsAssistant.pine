@@ -3,8 +3,6 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
-// TODO: Add volume analysis
-
 // FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY
@@ -14,7 +12,7 @@
 // FEATURE: Lorezian classsifcations
 
 // ********** BASE SETUP **********
-indicator("Trading Levels Assistant", max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, overlay=true)
+indicator("Trading Levels Algo", max_labels_count = 500, max_lines_count = 500, max_boxes_count = 500, overlay=true)
 
 // ********** INPUTS **********
 

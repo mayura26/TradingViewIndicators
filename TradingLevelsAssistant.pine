@@ -104,8 +104,13 @@ buyATRColor = input(color.rgb(20, 161, 44), title="Buy ATR Color", group="ATR", 
 sellATRColor = input(color.rgb(133, 0, 55), title="   |   Sell ATR Color", group="ATR", inline="color")
 
 // Volume Analysis
-showVolIndicator = input(true, title="Show Volume Indicator", group="Volume Analysis", inline="main", tooltip="Show the volume indicator for each bar. This is analysing the buy and sell volume and attempting to identify the trend directions. The triangle up or down indicates the cross of the volume, which is the start of the new trend. The circle indicates onesided volume. The cross indicates irregular volume (higher than the last period averaged). A square is the default state.")
-showVolDashboard = input(true, title="Show Volume Dashboard", group="Volume Analysis", inline="main")
+showVolIndicator = input(true, title="Show Volume Indicator", group="Volume Analysis", tooltip="Show the volume indicator for each bar. This is analysing the buy and sell volume and attempting to identify the trend directions. The triangle up or down indicates the cross of the volume, which is the start of the new trend. The circle indicates onesided volume. The cross indicates irregular volume (higher than the last period averaged). A square is the default state.")
+showVolDashboard = input(true, title="Show Volume Dashboard", group="Volume Analysis")
+volTopLimit = input(85, title="Volume Top Limit [%]", group="Volume Analysis", tooltip="This is the top limit used to decide is there is a significant volume imbalance.")
+volUpperLimit = input(75, title="Volume Upper Limit [%]", group="Volume Analysis", tooltip="This is the top limit used to decide is there is a significant volume imbalance.")
+volPumpGainLimit = input(10, title="Volume Pump Gain Limit [%]", group="Volume Analysis", tooltip="This is the gain limit to decide if volume is ramping. It is a percentage change of the buy or sell volume.")
+volIrregLimit = input(150, title="Irregular Volume Limit [%]", group="Volume Analysis", tooltip="This is the limit for irregular volume. This is a percentage change of  total volume from the last averaged period.")
+aveVolPeriod = input(5, title="Average Volume Period", group="Volume Analysis", tooltip="This is the period to average the volume for the volume analysis.")
 
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
@@ -128,7 +133,8 @@ confirmMASmoothPeriod = input(1, title="Confirm MA Smooth Period", group="Moving
 alertDirectionalBuySell = input(true, title="Buy/Sell", group="Alerts", inline="main")
 alertReversalBuySell = input(true, title="Buy/Sell (Reversal)", group="Alerts", inline="main")
 alertCrossBuySell = input(true, title="Buy/Sell (Cross)", group="Alerts", inline="main")
-alertATRArrow = input(false, title="ATR Arrow", group="Alerts", inline="ATR")
+alertATRArrow = input(false, title="ATR Arrow", group="Alerts", inline="main2")
+alertVolumeChange = input(false, title="Volume Change", group="Alerts", inline="main2")
 
 show_table      = input.bool(true,"Show Dashboard", group="Dashboard", inline="Table")
 tableLocation   = input.string(defval='Bottom right', options=['Top left', 'Top center', 'Top right', 'Bottom left', 'Bottom center', 'Bottom right'], title='| Location', group="Dashboard", inline="Table")
@@ -482,6 +488,7 @@ if ticker.standard() == sym1
     [bounceResult7, bounceResultLevel7] = check_levels_low(sym1IntraDayLevels, intraLabel, showIntraBounce)
     [bounceResult8, bounceResultLevel8] = check_levels_high(sym1IntraDayLevels, intraLabel, showIntraBounce)
     [bounceResult9, bounceResultLevel9] = check_calclevels_low(calcLevels, preCalcLabel, showPreCalcBounce)
+    // TODO: Don't check high and lows when they are being made
     [bounceResult10, bounceResultLevel10] = check_calclevels_high(calcLevels, preCalcLabel, showPreCalcBounce)
     anyPivotSym1BounceUp := bounceResult1
     anyPivotSym1BounceDown := bounceResult2
@@ -649,15 +656,11 @@ smoothNetVol      = smoothBuy - smoothSell
 
 netVolH = math.max(smoothBuy, smoothSell)
 netVolL = math.min(smoothBuy, smoothSell)
-
-
 risingVol      = ta.change(smoothNetVol) > 0
 
-upperVolLevel = 75
-topVolLevel = 85
-volPumpLevel = 0.1
-irregVolLevel = 1.5
-aveVolPeriod = 5
+volPumpLevel = volPumpGainLimit/100
+irregVolLevel = volIrregLimit/100
+regVolLevel = 60
 
 avgVolume = ta.sma(volume, aveVolPeriod)
 bullVolPump = risingVol and math.abs(smoothBuy - smoothBuy[1])/smoothBuy > volPumpLevel  and smoothBuy > smoothSell
@@ -677,18 +680,18 @@ else if smoothBuy > smoothSell and risingVol
     volColor := color.rgb(18, 170, 23)
 else if smoothBuy < smoothSell and not risingVol
     volColor := color.rgb(175, 24, 24)
-else if buy_percent > upperVolLevel
+else if buy_percent > volUpperLimit
     volColor := color.rgb(0, 102, 22)
-else if sell_percent > upperVolLevel
+else if sell_percent > volUpperLimit
     volColor := color.rgb(110, 3, 3)
 
 if volCrossBuy
     volIndStyle := shape.triangleup
 else if volCrossSell
     volIndStyle := shape.triangledown
-else if buy_percent > topVolLevel
+else if buy_percent > volTopLimit
     volIndStyle := shape.circle
-else if sell_percent > topVolLevel
+else if sell_percent > volTopLimit
     volIndStyle := shape.circle
 else if irregVol
     volIndStyle := shape.xcross
@@ -877,33 +880,39 @@ volumePercent = 0.0
 volumeColor = color.rgb(71, 71, 71)
 if buy_percent > sell_percent
     volumePercent := (buy_percent - 50)*2
-    if buy_percent > topVolLevel
+    if buy_percent > volTopLimit
         volumeColor := color.rgb(0, 255, 8)
-    else if buy_percent > upperVolLevel
+    else if buy_percent > volUpperLimit
         volumeColor := color.rgb(0, 114, 4)
-    else
+    else if buy_percent > regVolLevel
         volumeColor := color.rgb(0, 56, 2)
+    else
+        volumeColor := color.rgb(28, 0, 0)
 else
     volumePercent := (sell_percent - 50)*2
-    if sell_percent > topVolLevel
+    if sell_percent > volTopLimit
         volumeColor := color.rgb(255, 0, 0)
-    else if sell_percent > upperVolLevel
+    else if sell_percent > volUpperLimit
         volumeColor := color.rgb(116, 0, 0)
-    else
+    else if sell_percent > regVolLevel
         volumeColor := color.rgb(56, 0, 0)
+    else
+        volumeColor := color.rgb(28, 0, 0)
 
 if barstate.islast and show_table
     f_fillCell(0, 0, "Confirm","Status of price compared to the confirmation line. Ideally you want to be entering this is grey, so you are close to the confirm support. Caution taking shorts while green and longs while red as you are on the wrong side of the trend.\n\nIt will also show whether the trend is particularly volatile and risky or whether it is a chop zone")
     f_fillCell(1, 0, "Trend", "Shows the calculated trend index (0-10) and color. The brightest green/red indicates an aggresive up/down trend. Generally never look to short a bright green or long a bright red.")
-    f_fillCell(2,0,"Volume","Show breakdown of buyers vs sellers in the volume. Scale is 0-100% both directions, with the color indicating if its buy or sell volume")
-    f_fillCell(3, 0, extractSymbolName(sym1), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
-    f_fillCell(4, 0, extractSymbolName(sym2), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
+    if showVolDashboard
+        f_fillCell(2, 0,"Volume","Show breakdown of buyers vs sellers in the volume. Scale is 0-100% both directions, with the color indicating if its buy or sell volume. The bright the color the more aggressive the volume.")
+    f_fillCell(showVolDashboard ? 3 : 2, 0, extractSymbolName(sym1), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
+    f_fillCell(showVolDashboard ? 4 : 3, 0, extractSymbolName(sym2), "This shows the price of the ticker and the background highlight shows the trend of the ticker over the last 10.")
 
     f_fillCellColorText(0, 1, chopDetect ? 'CHOP' : (volatileMove ? 'WARN' : ''),confirmBoxColor, confirmToolTip)
     f_fillCellColorText(1, 1, str.tostring(math.round(trendDirection,1)), trendColor,"")
-    f_fillCellColorText(2, 1, str.tostring(math.round(volumePercent,1)) + "%", volumeColor, "")
-    f_fillCellColorText(3, 1, str.tostring(ticker1_price), ticker1_bgcolor, "")
-    f_fillCellColorText(4, 1, str.tostring(ticker2_price), ticker2_bgcolor, "")
+    if showVolDashboard
+        f_fillCellColorText(2, 1, str.tostring(math.round(volumePercent,1)) + "%", volumeColor, "")
+    f_fillCellColorText(showVolDashboard ? 3 : 2, 1, str.tostring(ticker1_price), ticker1_bgcolor, "")
+    f_fillCellColorText(showVolDashboard ? 4 : 3, 1, str.tostring(ticker2_price), ticker2_bgcolor, "")
 
 // ********** TRADING **********
 allowedTimes() =>
@@ -1084,22 +1093,28 @@ plotshape(series=close, title="Cross Short", style=shape.labeldown, location=loc
 
 // ********** ALERTS **********
 if (anyPivotSym1Bounce or anyPivotSym2Bounce) and alertPivotsBounce
-    alert("Bounce off pivot level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off pivot level at: " + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
 
 if (anyBuySym1Bounce or anyBuySym2Bounce) and alertBuyBounce
-    alert("Bounce off buy level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off buy level at: " + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
 
 if (anySellSym1Bounce or anySellSym2Bounce) and alertSellBounce
-    alert("Bounce off sell level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off sell level at: " + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
 
 if (anyIntraSym1Bounce or anyIntraSym2Bounce) and alertIntraBounce
-    alert("Bounce off intra level at"  + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off intra level at: "  + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
 
 if (anyCalcSym1Bounce or anyCalcSym2Bounce) and alertPreCalcBounce
-    alert("Bounce off calculated level at" + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
+    alert("Bounce off calculated level at: " + str.tostring(bounceLevel), alert.freq_once_per_bar_close)
 
 if alertATRArrow
     if buyATRSignal and not buyATRSignal[1]
         alert('ATR Trigger Long on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)
     else if sellATRSignal and not sellATRSignal[1]
         alert('ATR Trigger Short on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)
+
+if alertVolumeChange
+    if volCrossSell
+        alert('Volume Cross Sell on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)
+    else if volCrossBuy
+        alert('Volume Cross Buy on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)

@@ -3,6 +3,10 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
+// TODO: Reorganise inputs
+
+// TODO: Review all tooltips
+
 // FEATURE: Supertrend
 
 // FEATURE: DRSI and cross of UVXY

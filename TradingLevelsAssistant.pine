@@ -3,6 +3,10 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
+// BUG: Warn always showing on confirm
+
+// TODO: IMPROVE colors for 10m check on dashboard 
+
 // TODO: Reorganise inputs
 
 // TODO: Review all tooltips

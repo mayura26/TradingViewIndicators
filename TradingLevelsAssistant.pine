@@ -17,7 +17,6 @@
 
 // TODO: Add check for directional buy if vol and trend match
 
-
 // TODO: Show clashing lines with faded colour and option 
 
 // TODO: Add delay for checking high and lows when they are being set
@@ -131,7 +130,7 @@ volTopLimit = input(85, title="Volume Top Limit [%]", group="Volume Analysis", t
 volUpperLimit = input(75, title="Volume Upper Limit [%]", group="Volume Analysis", tooltip="This is the top limit used to decide is there is a significant volume imbalance.")
 volPumpGainLimit = input(5, title="Volume Pump Gain Limit [%]", group="Volume Analysis", tooltip="This is the gain limit to decide if volume is ramping. It is a percentage change of the buy or sell volume.")
 volIrregLimit = input(150, title="Irregular Volume Limit [%]", group="Volume Analysis", tooltip="This is the limit for irregular volume. This is a percentage change of  total volume from the last averaged period.")
-aveVolPeriod = input(5, title="Average Volume Period", group="Volume Analysis", tooltip="This is the period to average the volume for the volume analysis.")
+aveVolPeriod = input(14, title="Average Volume Period", group="Volume Analysis", tooltip="This is the period to average the volume for the volume analysis.")
 
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
@@ -685,10 +684,12 @@ irregVolLevel = volIrregLimit/100
 regVolLevel = 60
 
 avgVolume = ta.sma(volume, aveVolPeriod)
-avgBuyVol = ta.sma(smoothBuy,14)
-avgSellVol = ta.sma(smoothSell,14)
+avgBuyVol = ta.sma(smoothBuy,aveVolPeriod)
+avgSellVol = ta.sma(smoothSell,aveVolPeriod)
 bullVolPump = risingVol and math.abs(smoothBuy - smoothBuy[1])/avgBuyVol > volPumpLevel  and smoothBuy > smoothSell
 bullVolDump = not risingVol and (smoothSell - smoothSell[1])/avgSellVol > volPumpLevel and smoothBuy < smoothSell
+midVolPump = smoothBuy > smoothSell and risingVol
+midVolDump = smoothBuy < smoothSell and not risingVol
 volCrossBuy = ta.crossover(smoothBuy,smoothSell)
 volCrossSell = ta.crossover(smoothSell,smoothBuy)
 irregVol = volume/avgVolume > irregVolLevel
@@ -700,9 +701,9 @@ if (bullVolPump)
     volColor := color.rgb(0, 255, 8)
 else if (bullVolDump)
     volColor := color.rgb(255, 0, 0)
-else if smoothBuy > smoothSell and risingVol
+else if midVolPump
     volColor := color.rgb(18, 170, 23)
-else if smoothBuy < smoothSell and not risingVol
+else if midVolDump
     volColor := color.rgb(175, 24, 24)
 else if buy_percent > volUpperLimit
     volColor := color.rgb(0, 102, 22)
@@ -852,11 +853,33 @@ if fastCrossSlowUp
 if buyATRSignal
     for i = 0 to crossATRLookback
         if fastCrossSlowUp[i]
-            buyCrossSignal := true 
+            buyCrossSignal := true
 
-cancelSellCondition = anySym1BounceUp or fastCrossSlowUp or buyATRSignal
-cancelBuyCondition = anySym1BounceDown or fastCrossSlowDown or sellATRSignal
+// Volume Momentum Buy/Sell
+buyVolTrigger = false
+sellVolTrigger = false
+buyVolTrigger := (midVolPump or bullVolPump) and barstate.isconfirmed and not sellVolTrigger[1] and not chopDetect
+sellVolTrigger := (midVolDump or bullVolDump) and barstate.isconfirmed and not buyVolTrigger[1] and not chopDetect
+buyVolCloseTrigger = false
+sellVolCloseTrigger = false
+var bool buyVolSignal = na
+var bool sellVolSignal = na
+if (buyVolTrigger or buyVolSignal)
+    buyVolSignal := true
+    if barstate.isconfirmed and not (midVolPump or bullVolPump)
+        buyVolSignal := false
+        buyVolCloseTrigger := true
+        
 
+if (sellVolTrigger or sellVolSignal)
+    sellVolSignal := true
+    if barstate.isconfirmed and not (midVolDump or bullVolDump)
+        sellVolSignal := false
+        sellVolCloseTrigger := true
+
+
+cancelSellCondition = anySym1BounceUp or fastCrossSlowUp or buyATRSignal or buyVolTrigger
+cancelBuyCondition = anySym1BounceDown or fastCrossSlowDown or sellATRSignal or sellVolTrigger
 // ********** DASHBOARD **********
 ticker1_price  = request.security(sym1, str.tostring(lowerTF), math.round_to_mintick(close))
 ticker2_price  = request.security(sym2, str.tostring(lowerTF), math.round_to_mintick(close))
@@ -1058,6 +1081,14 @@ if showAllConditions
         draw_label(bar_index, close, 'Vol Sell', xloc.bar_index, yloc.abovebar,  color.rgb(251, 64, 136), label.style_arrowdown, color.white, size.small, text.align_center, '')
     if volCrossBuy 
         draw_label(bar_index, close, 'Vol Buy', xloc.bar_index, yloc.belowbar,  color.rgb(113, 212, 0), label.style_arrowup, color.white, size.small, text.align_center, '')
+
+if buyVolTrigger and not buyVolTrigger[1]
+    draw_label(bar_index, close, 'B', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
+if sellVolTrigger and not sellVolTrigger[1]
+    draw_label(bar_index, close, 'S', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
+if buyVolCloseTrigger or sellVolCloseTrigger
+    draw_label(bar_index, close, 'C', xloc.bar_index, buyVolCloseTrigger ? yloc.abovebar : yloc.belowbar,  color.rgb(110, 0, 137), buyVolCloseTrigger ? label.style_label_down: label.style_label_up, color.white, size.small, text.align_center, '')
+
 
 TP = tpLevel * syminfo.mintick
 SL = slLevel * syminfo.mintick

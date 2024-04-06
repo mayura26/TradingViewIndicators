@@ -125,7 +125,7 @@ showVolIndicator = input(true, title="Show Volume Indicator", group="Volume Anal
 showVolDashboard = input(true, title="Show Volume Dashboard", group="Volume Analysis")
 volTopLimit = input(85, title="Volume Top Limit [%]", group="Volume Analysis", tooltip="This is the top limit used to decide is there is a significant volume imbalance.")
 volUpperLimit = input(75, title="Volume Upper Limit [%]", group="Volume Analysis", tooltip="This is the top limit used to decide is there is a significant volume imbalance.")
-volPumpGainLimit = input(10, title="Volume Pump Gain Limit [%]", group="Volume Analysis", tooltip="This is the gain limit to decide if volume is ramping. It is a percentage change of the buy or sell volume.")
+volPumpGainLimit = input(5, title="Volume Pump Gain Limit [%]", group="Volume Analysis", tooltip="This is the gain limit to decide if volume is ramping. It is a percentage change of the buy or sell volume.")
 volIrregLimit = input(150, title="Irregular Volume Limit [%]", group="Volume Analysis", tooltip="This is the limit for irregular volume. This is a percentage change of  total volume from the last averaged period.")
 aveVolPeriod = input(5, title="Average Volume Period", group="Volume Analysis", tooltip="This is the period to average the volume for the volume analysis.")
 
@@ -667,7 +667,7 @@ SellVol     = volume - BuyVol
 buy_percent = (BuyVol / volume) * 100
 sell_percent = (SellVol / volume) * 100
 volLength   = 14
-volSmooth   = 3
+volSmooth   = 5
 smoothBuy      = ta.wma(ta.wma(BuyVol, volLength), volSmooth)
 smoothSell     = ta.wma(ta.wma(SellVol, volLength), volSmooth)
 smoothNetVol      = smoothBuy - smoothSell
@@ -681,8 +681,10 @@ irregVolLevel = volIrregLimit/100
 regVolLevel = 60
 
 avgVolume = ta.sma(volume, aveVolPeriod)
-bullVolPump = risingVol and math.abs(smoothBuy - smoothBuy[1])/smoothBuy > volPumpLevel  and smoothBuy > smoothSell
-bullVolDump = not risingVol and (smoothSell - smoothSell[1])/smoothSell > volPumpLevel and smoothBuy < smoothSell
+avgBuyVol = ta.sma(smoothBuy,14)
+avgSellVol = ta.sma(smoothSell,14)
+bullVolPump = risingVol and math.abs(smoothBuy - smoothBuy[1])/avgBuyVol > volPumpLevel  and smoothBuy > smoothSell
+bullVolDump = not risingVol and (smoothSell - smoothSell[1])/avgSellVol > volPumpLevel and smoothBuy < smoothSell
 volCrossBuy = ta.crossover(smoothBuy,smoothSell)
 volCrossSell = ta.crossover(smoothSell,smoothBuy)
 irregVol = volume/avgVolume > irregVolLevel
@@ -927,6 +929,7 @@ if barstate.islast and show_table
 
     f_fillCellColorText(0, 1, chopDetect ? 'CHOP' : (volatileMove ? 'WARN' : ''),confirmBoxColor, confirmToolTip)
     f_fillCellColorText(1, 1, str.tostring(math.round(trendDirection,1)), trendColor,"")
+    // TODO: Add vol direction
     if showVolDashboard
         f_fillCellColorText(2, 1, str.tostring(math.round(volumePercent,1)) + "%", volumeColor, "")
     f_fillCellColorText(showVolDashboard ? 3 : 2, 1, str.tostring(ticker1_price), ticker1_bgcolor, "")
@@ -1136,3 +1139,7 @@ if alertVolumeChange
         alert('Volume Cross Sell on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)
     else if volCrossBuy
         alert('Volume Cross Buy on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)
+
+if showAllConditions
+    debugText = "Hello"
+    draw_label(bar_index, hlcc4, '', xloc.bar_index, yloc.price,  color.rgb(0, 0, 0), label.style_xcross, color.white, size.tiny, text.align_center, debugText)

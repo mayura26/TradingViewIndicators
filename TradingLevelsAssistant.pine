@@ -5,6 +5,8 @@
 
 // TODO: Addd direction of bounce into alerts
 
+// TODO: Add predictive volume indicator for cross
+
 // TODO: Rework the triggers and alerts to be in line with volume analysis
 
 // TODO: Modifify Code so it checks timezone/confluences

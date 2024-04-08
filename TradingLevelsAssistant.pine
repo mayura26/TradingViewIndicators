@@ -3,6 +3,10 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
+// TODO: Addd direction of bounce into alerts
+
+// TODO: Add predictive volume indicator for cross
+
 // TODO: Rework the triggers and alerts to be in line with volume analysis
 
 // TODO: Modifify Code so it checks timezone/confluences

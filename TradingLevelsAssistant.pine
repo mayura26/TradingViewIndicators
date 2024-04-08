@@ -1174,7 +1174,7 @@ if buyVolTrigger and not buyVolTrigger[1] and showVolTrade
     draw_label(bar_index, close, 'B', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
 if sellVolTrigger and not sellVolTrigger[1] and showVolTrade
     draw_label(bar_index, close, 'S', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
-if buyVolCloseTrigger or sellVolCloseTrigger and showVolTradeClose
+if (buyVolCloseTrigger or sellVolCloseTrigger) and showVolTradeClose
     draw_label(bar_index, close, 'C', xloc.bar_index, buyVolCloseTrigger ? yloc.abovebar : yloc.belowbar,  color.rgb(110, 0, 137), buyVolCloseTrigger ? label.style_label_down: label.style_label_up, color.white, size.small, text.align_center, '')
 
 

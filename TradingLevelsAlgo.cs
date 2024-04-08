@@ -1,25 +1,14 @@
 #region Using declarations
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Input;
-using System.Windows.Media;
-using System.Xml.Serialization;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui;
-using NinjaTrader.Gui.Chart;
-using NinjaTrader.Gui.SuperDom;
-using NinjaTrader.Gui.Tools;
-using NinjaTrader.Data;
-using NinjaTrader.NinjaScript;
-using NinjaTrader.Core.FloatingPoint;
-using NinjaTrader.NinjaScript.Indicators;
 using NinjaTrader.NinjaScript.DrawingTools;
+using NinjaTrader.NinjaScript.Indicators;
+using NinjaTrader.NinjaScript.SuperDomColumns;
+using System;
+using System.Drawing;
+using System.Windows.Media;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.Tab;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.ToolTip;
 #endregion
 
 //This namespace holds Strategies in this folder and is required. Do not change it. 
@@ -32,15 +21,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double entryPrice = 0.0;
         private bool stopLossAdjusted = false;
         private int entryBar = -1;
-        private EMA ema5;
         private EMA ema8;
         private EMA ema13;
+        private EMA ema21;
 
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
-                Description = @"This is a strategy using pivot levels to enter long and short trades with confluence from EMA";
+                Description = @"This is a strategy using pivot levels to enter long and short trades with confluence from EMA, ATR & Volume";
                 Name = "TradingLevelsAlgo";
                 Calculate = Calculate.OnEachTick;
                 EntriesPerDirection = 5;
@@ -64,19 +53,48 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 // Initialize EMAs
-                ema5 = EMA(5);
                 ema8 = EMA(8);
                 ema13 = EMA(13);
+                ema21 = EMA(21);
 
                 // Add our EMAs to the chart for visualization
-                AddChartIndicator(ema5);
                 AddChartIndicator(ema8);
                 AddChartIndicator(ema13);
+                AddChartIndicator(ema21);
+
+                // Set colors for the EMAs and make them transparent
+                ema8.Plots[0].Brush = Brushes.Fuchsia;
+                ema13.Plots[0].Brush = Brushes.Green;
+                ema21.Plots[0].Brush = Brushes.Red;
+
             }
         }
 
         protected override void OnBarUpdate()
         {
+            // ********** VOLUME ANALYSIS **********
+            // calculate difference between current open and previous close
+            double gap = Open[0] - Close[1];
+
+            double bull_gap = math.max(gap, 0);
+            double bear_gap = math.abs(math.min(gap, 0));
+
+            double body = math.abs(Close[0] - Open[0])
+            double BarRange = high - low
+            wick = BarRange - body
+
+            up_bar = close > open
+
+            bull = wick + (up_bar ? body : 0) + bull_gap
+            bear = wick + (up_bar ? 0 : body) + bear_gap
+            VolRange = bull + bear
+            BScore = VolRange > 0 ? bull / VolRange : 0.5
+            BuyVol = BScore * volume
+            SellVol = volume - BuyVol
+            buy_percent = (BuyVol / volume) * 100
+            sell_percent = (SellVol / volume) * 100
+
+
             // Ensure we have enough data
             if (CurrentBar < 13) return;
 
@@ -87,6 +105,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (CurrentBar >= entryBar + 5)
                 {
                     CancelOrder(entryOrder);
+                    if (entryOrderRunner != null)
+                    {
+                        CancelOrder(entryOrderRunner);
+                    }
                     entryOrder = null; // Reset the entry order variable
                 }
                 return; // Skip the rest of the method if we're managing an open order
@@ -118,13 +140,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (entryOrder.OrderAction == OrderAction.Buy && Highs[0][0] - entryPrice >= 15)
                 {
-                    SetStopLoss("EMA_5_8_13_Long", CalculationMode.Price, entryPrice, false);
                     SetStopLoss("EMA_5_8_13_Long_Runner", CalculationMode.Price, entryPrice, false);
                     stopLossAdjusted = true;
                 }
                 else if (entryOrder.OrderAction == OrderAction.SellShort && entryPrice - Lows[0][0] >= 15)
                 {
-                    SetStopLoss("EMA_5_8_13_Short", CalculationMode.Price, entryPrice, false);
                     SetStopLoss("EMA_5_8_13_Short_Runner", CalculationMode.Price, entryPrice, false);
                     stopLossAdjusted = true;
                 }
@@ -138,7 +158,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (CrossBelow(ema5, ema13, 1))
             {
                 Draw.ArrowDown(this, "ArrowDown" + CurrentBar, true, 0, High[0] + 2 * TickSize, Brushes.Red);
-            }   
+            }
         }
         protected override void OnOrderUpdate(Cbi.Order order, double limitPrice, double stopPrice,
                                               int quantity, int filled, double averageFillPrice,

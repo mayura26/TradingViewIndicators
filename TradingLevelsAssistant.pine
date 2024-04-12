@@ -176,7 +176,7 @@ timePeriod1DirectionalTriggerEnabled = input(true, title="Directional Trades Ena
 timePeriod1DirectionalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Dir")
 timePeriod1ReversalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Rev")
 timePeriod1ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Rev")
-timePeriod2 = input.session("0600-0800", title="Trade Period 2", group="Trading Time (NY Time)")
+timePeriod2 = input.session("0600-000", title="Trade Period 2", group="Trading Time (NY Time)")
 timePeriod2VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod2CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Cross")
 timePeriod2CrossMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Cross")

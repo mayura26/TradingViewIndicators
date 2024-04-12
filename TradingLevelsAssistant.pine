@@ -3,6 +3,8 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
+// TODO: Add trade dashboard showing status of trades
+
 // TODO: Add volume trades as alerts
 
 // TODO: Add input as minutes for time till new line becomes solid

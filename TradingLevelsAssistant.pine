@@ -3,6 +3,8 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
+// TODO: Add volume trades as alerts
+
 // TODO: Add input as minutes for time till new line becomes solid
 
 // TODO: Add ability to keep volume trade going if missing one count etc. also ability to keep going if not red.

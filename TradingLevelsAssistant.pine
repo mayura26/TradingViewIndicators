@@ -9,8 +9,6 @@
 
 // TODO: Add input as minutes for time till new line becomes solid
 
-// TODO: Add ability to keep volume trade going if missing one count etc. also ability to keep going if not red.
-
 // TODO: Addd direction of bounce into alerts
 
 // TODO: Add predictive volume indicator for cross
@@ -25,7 +23,7 @@
 
 // TODO: Review all tooltips
 
-// TODO: Update buy/sell text t
+// TODO: Update buy/sell text to show levels from entry to close. Add buy/sell levels to be tooltip
 
 // FEATURE: Supertrend
 
@@ -121,7 +119,7 @@ alertIntraBounce = input(true, title="Alert on Intra Bounce", group="Level Bounc
 includeTrigIntra = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (Intra)", inline="Intra")
 includeRevIntra = input(true, title="Trigger Reversal", group="Level Bounce (Intra)", inline="Intra")
 
-showPreCalcBounce = input(true, title=" Show Calc Level Bounce Symbol   |   ", group="Level Bounce (PreCalc)", inline="alert")
+showPreCalcBounce = input(false, title=" Show Calc Level Bounce Symbol   |   ", group="Level Bounce (PreCalc)", inline="alert")
 alertPreCalcBounce = input(true, title="Alert on Calc Bounce", group="Level Bounce (PreCalc)",inline="alert")
 includeTrigPreCalc = input(true, title="Trigger Buy/Sell   |   ", group="Level Bounce (PreCalc)", inline="PreCalc")
 includeRevPreCalc = input(true, title="Trigger Reversal", group="Level Bounce (PreCalc)", inline="PreCalc")
@@ -145,6 +143,8 @@ volPumpGainLimit = input(5, title="Volume Pump Gain Limit [%]", group="Volume An
 volIrregLimit = input(150, title="Irregular Volume Limit [%]", group="Volume Analysis", tooltip="This is the limit for irregular volume. This is a percentage change of  total volume from the last averaged period.")
 aveVolPeriod = input(14, title="Average Volume Period", group="Volume Analysis", tooltip="This is the period to average the volume for the volume analysis.")
 volSmooth = input(5, title="Volume Smooth Period", group="Volume Analysis", tooltip="This is the smooth period for the volume. This will smooth the volume to reduce noise. Keep this low for faster response but less smooth trends.")
+volBarsToMissTrade = input(2, title="Non-directional Bars to Close", group="Volume Analysis", tooltip="Number of bars where the volume profile is not in the direction of the trade to close the trade. The higher this is, the smoother your trade buy/sells will be, but you risk letting a good trade go bad. This does not effect reversals which will close the trade.")
+volCloseOnReversalOnly = input(false, title="Close on Reversal Only", group="Volume Analysis", tooltip="Close the volume trade only on a reversal. This will stop trade only on the reverse direction triggering. Don't recommend this on any volatile instruments.")
 
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
@@ -186,7 +186,7 @@ timePeriod1DirectionalTriggerEnabled = input(true, title="Directional Trades Ena
 timePeriod1DirectionalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Dir")
 timePeriod1ReversalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Rev")
 timePeriod1ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Rev")
-timePeriod2 = input.session("0600-000", title="Trade Period 2", group="Trading Time (NY Time)")
+timePeriod2 = input.session("0600-0800", title="Trade Period 2", group="Trading Time (NY Time)")
 timePeriod2VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod2CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Cross")
 timePeriod2CrossMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Cross")
@@ -890,6 +890,12 @@ crossSignalLookback = math.floor(crossLookbackTime / getTimeframeInMinutes())
 bufferBuySellLookback = math.floor(bounceLookbackTime / getTimeframeInMinutes())
 crossATRLookback = math.floor(crossATRLookbackTime / getTimeframeInMinutes())
 
+allowedTimes() =>
+    not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod2, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod3, timezone = "America/New_York"))
+
+bool validTriggerPeriod = allowedTimes()
+bool allConfluencesEnabled = not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York"))
+
 // If trend is up and we get a bounce up we have a buy directional else its reversal
 if ticker.standard() == sym1
     // Uptrend
@@ -942,41 +948,71 @@ if buyATRSignal
             buyCrossSignal := true
 
 // Volume Momentum Buy/Sell
-buyVolTrigger = false
-sellVolTrigger = false
-buyVolTrigger := (midVolPump or bullVolPump) and barstate.isconfirmed and not sellVolTrigger[1] and not chopDetect
-sellVolTrigger := (midVolDump or bullVolDump) and barstate.isconfirmed and not buyVolTrigger[1] and not chopDetect
-buyVolCloseTrigger = false
-sellVolCloseTrigger = false
+var bool buyVolTrigger = na
+var bool sellVolTrigger = na
+if not chopDetect
+    buyVolTrigger := (midVolPump[0] or bullVolPump[0]) and not sellVolTrigger[1]
+    sellVolTrigger := (midVolDump[0] or bullVolDump[0]) and not buyVolTrigger[1]
+else
+    buyVolTrigger := false
+    sellVolTrigger := false
+
+bool buyTrigger = buyVolTrigger[0] and not buyVolTrigger[1] and validTriggerPeriod
+bool sellTrigger = sellVolTrigger[0] and not sellVolTrigger[1] and validTriggerPeriod
+bool buyVolCloseTrigger = false
+bool sellVolCloseTrigger = false
 var int volTradeLength = na
 var bool buyVolSignal = na
 var bool sellVolSignal = na
-if (buyVolTrigger or buyVolSignal)
-    buyVolSignal := true
-    
-    if barstate.isconfirmed and not (midVolPump or bullVolPump)
-        buyVolSignal := false
+var int barsMissed = na
+
+if (validTriggerPeriod[1] and not validTriggerPeriod[0])
+    if buyVolSignal
         buyVolCloseTrigger := true
-        volTradeLength := 0
-    else if barstate.isconfirmed 
+    if sellVolSignal 
+        sellVolCloseTrigger := true
+
+if (buyTrigger or buyVolSignal)
+    buyVolSignal := true
+
+    if barstate.isconfirmed
         volTradeLength := volTradeLength + 1
+        if (midVolDump or bullVolDump) or not validTriggerPeriod
+            buyVolSignal := false
+            buyVolCloseTrigger := true
+            volTradeLength := 0
+            barsMissed := 0
+        else if not (midVolPump or bullVolPump) and not volCloseOnReversalOnly
+            if (barsMissed < volBarsToMissTrade)
+                barsMissed := barsMissed + 1
+            else
+                buyVolSignal := false
+                buyVolCloseTrigger := true
+                volTradeLength := 0
+                barsMissed := 0 
+        else
+            barsMissed := 0    
 
-    if buyVolTrigger and not buyVolTrigger[1]
-        volTradeLength := 1
-        
-
-if (sellVolTrigger or sellVolSignal)
+if (sellTrigger or sellVolSignal)
     sellVolSignal := true
     
-    if barstate.isconfirmed and not (midVolDump or bullVolDump)
-        sellVolSignal := false
-        sellVolCloseTrigger := true
-        volTradeLength := 0
-    else if barstate.isconfirmed 
+    if barstate.isconfirmed
         volTradeLength := volTradeLength + 1
-
-    if sellVolTrigger and not sellVolTrigger[1]
-        volTradeLength := 1
+        if (midVolPump or bullVolPump) or not validTriggerPeriod
+            sellVolSignal := false
+            sellVolCloseTrigger := true
+            volTradeLength := 0
+            barsMissed := 0
+        else if not (midVolDump or bullVolDump) and not volCloseOnReversalOnly
+            if (barsMissed < volBarsToMissTrade)
+                barsMissed := barsMissed + 1
+            else
+                sellVolSignal := false
+                sellVolCloseTrigger := true
+                volTradeLength := 0
+                barsMissed := 0
+        else
+            barsMissed := 0 
 
 cancelSellCondition = anySym1BounceUp or fastCrossSlowUp or buyATRSignal or buyVolTrigger
 cancelBuyCondition = anySym1BounceDown or fastCrossSlowDown or sellATRSignal or sellVolTrigger
@@ -1073,12 +1109,6 @@ if barstate.islast and show_table
     f_fillCellColorText(showVolDashboard ? 3 : 2, 1, str.tostring(math.round(ticker2_price,1)), ticker2_bgcolor, "HLCC4: " + str.tostring(math.round_to_mintick(ticker2_hlcc4[1])) + "\nClose: " + str.tostring(ticker2_TrendClose[1]) + "\nHigh: " + str.tostring(ticker2_TrendHigh[1]) + "\nLow: " + str.tostring(ticker2_TrendLow[1]))
 
 // ********** TRADING **********
-allowedTimes() =>
-    not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod2, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod3, timezone = "America/New_York"))
-
-
-bool validTriggerPeriod = allowedTimes()
-bool allConfluencesEnabled = not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York"))
 var float limitLevel = na
 
 buyTriggeredInLookback = false
@@ -1184,12 +1214,12 @@ if showAllConditions
     if chopDetect
         box.new(bar_index, high, bar_index - 1, low, border_color=color.rgb(120, 120, 122, 35), border_width=1, bgcolor=color.rgb(120, 120, 122, 35), border_style=line.style_dashed)
 
-if buyVolTrigger and not buyVolTrigger[1] and showVolTrade
-    draw_label(bar_index, close, 'B', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
-if sellVolTrigger and not sellVolTrigger[1] and showVolTrade
-    draw_label(bar_index, close, 'S', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
 if (buyVolCloseTrigger or sellVolCloseTrigger) and showVolTradeClose
     draw_label(bar_index, close, 'C', xloc.bar_index, buyVolCloseTrigger ? yloc.abovebar : yloc.belowbar,  color.rgb(110, 0, 137), buyVolCloseTrigger ? label.style_label_down: label.style_label_up, color.white, size.small, text.align_center, '')
+if buyTrigger and not buyVolSignal[1] and showVolTrade
+    draw_label(bar_index, close, 'B', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
+if sellTrigger and not sellVolSignal[1] and showVolTrade
+    draw_label(bar_index, close, 'S', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
 
 
 TP = tpLevel * syminfo.mintick

@@ -1,27 +1,31 @@
 #region Using declarations
+using System;
+using System.Drawing;
+using System.Windows.Documents;
+using System.Windows.Media;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui;
 using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.NinjaScript.Indicators;
 using NinjaTrader.NinjaScript.SuperDomColumns;
 using SharpDX;
-using System;
-using System.Drawing;
-using System.Windows.Documents;
-using System.Windows.Media;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Tab;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.ToolTip;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 #endregion
 
-//This namespace holds Strategies in this folder and is required. Do not change it. 
+//This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
+    // TODO: Review how it handles closing a trade on the reversal
     // TODO: Create standalone volume indicator
     // TODO: Create chop indicator with trend chop detection
-    // TODO: Create inputs for indicator
+    // TODO: Create inputs for indicator including: Disable trading times, close on reversal only and number of bars to leave vol trade open, TP SL and vol trade length
     // TODO: Add timeout after three bad trades
+    // TODO: Add logging for what candle after the order was placed we were filled
+    // TODO: Add max day loss and gain
+    // TODO: Add max number of losses in a row check for a day
     public class TradingLevelsAlgo : Strategy
     {
         private Order entryOrder = null;
@@ -112,23 +116,25 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool showVolTrade = true;
         private bool showVolTradeClose = true;
 
-        private double tpLevel = 60;
+        private double tpLevel = 90;
         private double slLevel = 15;
         private double buySellBuffer = 2;
-        private int barsToHoldTrade = 3;
-        private int barsToMissTrade = 2;
+        private int barsToHoldTrade = 4;
+        private int barsToMissTrade = 3;
         private bool onlyCloseOnReversal = false;
-        private bool disableTradingTimes = false;
+        private bool disableTradingTimes = true;
 
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
-                Description = @"This is a strategy using pivot levels to enter long and short trades with confluence from EMA, ATR & Volume";
+                Description =
+                    @"This is a strategy using pivot levels to enter long and short trades with confluence from EMA, ATR & Volume";
                 Name = "TradingLevelsAlgo";
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 5;
                 EntryHandling = EntryHandling.AllEntries;
+                IncludeCommission = true;
                 IsExitOnSessionCloseStrategy = false;
                 ExitOnSessionCloseSeconds = 30;
                 IsFillLimitOnTouch = false;
@@ -144,7 +150,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Disable this property for performance gains in Strategy Analyzer optimizations
                 // See the Help Guide for additional information
                 IsInstantiatedOnEachOptimizationIteration = true;
-
             }
             else if (State == State.DataLoaded)
             {
@@ -180,19 +185,26 @@ namespace NinjaTrader.NinjaScript.Strategies
         protected override void OnBarUpdate()
         {
             // Ensure we have enough data
-            if (CurrentBar < 14) return;
+            if (CurrentBar < 14)
+                return;
 
             // ********** TREND CALCULATION **********
             // Generate momentum signals
             momentum[0] = 0;
             for (int i = 0; i < dataLength; i++)
-                momentum[0] += (Close[0] > Open[i] ? 1 : Close[0] < Open[i] ? -1 : 0);
+                momentum[0] += (
+                    Close[0] > Open[i]
+                        ? 1
+                        : Close[0] < Open[i]
+                            ? -1
+                            : 0
+                );
 
             momentumMA = EMA(momentum, atrMALength);
             momentumMain = EMA(momentumMA, atrSmoothLength);
             momentumSignal = EMA(momentumMain, atrSmoothLength);
 
-            // Chop calculation      
+            // Chop calculation
             chopIndex = ChoppinessIndex(chopCalcLength);
             chopIndexDetect[0] = chopIndex[0] > 61.8;
 
@@ -200,8 +212,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             trendDirection[0] = momentumMain[0] + (momentumMain[0] - momentumSignal[0]);
             deltaMomentum[0] = Math.Abs((momentumMA[0] - momentumMA[1]) / momentumMA[0]);
 
-            chopDetect[0] = (Math.Abs(trendDirection[0]) < chopLimit && deltaMomentum[0] < deltaMomentumChopLimt) || chopIndexDetect[0];
-            volatileMove[0] = Math.Abs(trendDirection[0]) > volatileLimit || deltaMomentum[0] > deltaMomentumVolLimt;
+            chopDetect[0] =
+                (
+                    Math.Abs(trendDirection[0]) < chopLimit
+                    && deltaMomentum[0] < deltaMomentumChopLimt
+                ) || chopIndexDetect[0];
+            volatileMove[0] =
+                Math.Abs(trendDirection[0]) > volatileLimit
+                || deltaMomentum[0] > deltaMomentumVolLimt;
 
             // ********** VOLUME ANALYSIS **********
             // calculate difference between current open and previous close
@@ -239,8 +257,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             avgVolume = SMA(Volume, aveVolPeriod);
             avgBuyVol = SMA(smoothBuy, aveVolPeriod);
             avgSellVol = SMA(smoothSell, aveVolPeriod);
-            bullVolPump[0] = risingVol && Math.Abs(smoothBuy[0] - smoothBuy[1]) / avgBuyVol[0] > volPumpLevel && smoothBuy[0] > smoothSell[0];
-            bullVolDump[0] = !risingVol && Math.Abs(smoothSell[0] - smoothSell[1]) / avgSellVol[0] > volPumpLevel && smoothBuy[0] < smoothSell[0];
+            bullVolPump[0] =
+                risingVol
+                && Math.Abs(smoothBuy[0] - smoothBuy[1]) / avgBuyVol[0] > volPumpLevel
+                && smoothBuy[0] > smoothSell[0];
+            bullVolDump[0] =
+                !risingVol
+                && Math.Abs(smoothSell[0] - smoothSell[1]) / avgSellVol[0] > volPumpLevel
+                && smoothBuy[0] < smoothSell[0];
             midVolPump[0] = smoothBuy[0] > smoothSell[0] && risingVol;
             midVolDump[0] = smoothBuy[0] < smoothSell[0] && !risingVol;
             volCrossBuy[0] = CrossAbove(smoothBuy, smoothSell, 1);
@@ -277,27 +301,69 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (volCrossBuy[0])
             {
-                Draw.TriangleUp(this, "volCrossBuy" + CurrentBar, true, 0, Low[0] - TickSize * symbolOffset, volColor);
+                Draw.TriangleUp(
+                    this,
+                    "volCrossBuy" + CurrentBar,
+                    true,
+                    0,
+                    Low[0] - TickSize * symbolOffset,
+                    volColor
+                );
             }
             else if (volCrossSell[0])
             {
-                Draw.TriangleDown(this, "volCrossSell" + CurrentBar, true, 0, High[0] + TickSize * symbolOffset, volColor);
+                Draw.TriangleDown(
+                    this,
+                    "volCrossSell" + CurrentBar,
+                    true,
+                    0,
+                    High[0] + TickSize * symbolOffset,
+                    volColor
+                );
             }
             else if (bullVolPump[0])
             {
-                Draw.Square(this, "bullVolPump" + CurrentBar, true, 0, Low[0] - TickSize * symbolOffset, volColor);
+                Draw.Square(
+                    this,
+                    "bullVolPump" + CurrentBar,
+                    true,
+                    0,
+                    Low[0] - TickSize * symbolOffset,
+                    volColor
+                );
             }
             else if (bullVolDump[0])
             {
-                Draw.Square(this, "bullVolDump" + CurrentBar, true, 0, High[0] + TickSize * symbolOffset, volColor);
+                Draw.Square(
+                    this,
+                    "bullVolDump" + CurrentBar,
+                    true,
+                    0,
+                    High[0] + TickSize * symbolOffset,
+                    volColor
+                );
             }
             else if (midVolPump[0])
             {
-                Draw.Square(this, "midVolPump" + CurrentBar, true, 0, Low[0] - TickSize * symbolOffset, volColor);
+                Draw.Square(
+                    this,
+                    "midVolPump" + CurrentBar,
+                    true,
+                    0,
+                    Low[0] - TickSize * symbolOffset,
+                    volColor
+                );
             }
             else if (midVolDump[0])
             {
-                Draw.Square(this, "midVolDump" + CurrentBar, true, 0, High[0] + TickSize * symbolOffset, volColor);
+                Draw.Square(
+                    this,
+                    "midVolDump" + CurrentBar,
+                    true,
+                    0,
+                    High[0] + TickSize * symbolOffset,
+                    volColor
+                );
             }
 
             if (irregVol[0])
@@ -326,24 +392,25 @@ namespace NinjaTrader.NinjaScript.Strategies
                 sellVolTrigger[0] = false;
             }
 
-
             bool buyTrigger = buyVolTrigger[0] && !buyVolTrigger[1] && validTriggerPeriod;
             bool sellTrigger = sellVolTrigger[0] && !sellVolTrigger[1] && validTriggerPeriod;
             bool buyVolCloseTrigger = false;
             bool sellVolCloseTrigger = false;
-
-            if (validTriggerPeriod && !IsAllowedTime())
-            {
-                buyVolCloseTrigger = true;
-                sellVolCloseTrigger = true;
-            }
 
             validTriggerPeriod = IsAllowedTime();
 
             if (buyTrigger || buyVolSignal)
             {
                 buyVolSignal = true;
-                if (!(midVolPump[0] || bullVolPump[0]))
+                volTradeLength += 1;
+                if (midVolDump[0] || bullVolDump[0] || !validTriggerPeriod)
+                {
+                    buyVolSignal = false;
+                    buyVolCloseTrigger = true;
+                    volTradeLength = 0;
+                    barsMissed = 0;
+                }
+                else if (!(midVolPump[0] || bullVolPump[0]))
                 {
                     if (barsMissed < barsToMissTrade)
                     {
@@ -359,14 +426,22 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else
                 {
-                    volTradeLength += 1;
+                    barsMissed = 0;           
                 }
-            } 
+            }
 
             if (sellTrigger || sellVolSignal)
             {
                 sellVolSignal = true;
-                if (!(midVolDump[0] || bullVolDump[0]))
+                volTradeLength += 1;
+                if (midVolPump[0] || bullVolPump[0] || !validTriggerPeriod)
+                {
+                    sellVolSignal = false;
+                    sellVolCloseTrigger = true;
+                    volTradeLength = 0;
+                    barsMissed = 0;
+                }
+                else if (!(midVolDump[0] || bullVolDump[0]))
                 {
                     if (barsMissed < barsToMissTrade)
                     {
@@ -383,29 +458,56 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else
                 {
                     barsMissed = 0;
-                    volTradeLength += 1;
                 }
             }
 
             if (buyTrigger && showVolTrade)
             {
-                Draw.ArrowUp(this, "buyTrigger" + CurrentBar, true, 0, Low[0] - TickSize * (symbolOffset + 35), Brushes.Green);
+                Draw.ArrowUp(
+                    this,
+                    "buyTrigger" + CurrentBar,
+                    true,
+                    0,
+                    Low[0] - TickSize * (symbolOffset + 35),
+                    Brushes.Green
+                );
             }
 
             if (sellTrigger && showVolTrade)
             {
-                Draw.ArrowDown(this, "sellTrigger" + CurrentBar, true, 0, High[0] + TickSize * (symbolOffset + 35), Brushes.Red);
+                Draw.ArrowDown(
+                    this,
+                    "sellTrigger" + CurrentBar,
+                    true,
+                    0,
+                    High[0] + TickSize * (symbolOffset + 35),
+                    Brushes.Red
+                );
             }
 
             if ((buyVolCloseTrigger || sellVolCloseTrigger) && showVolTradeClose)
             {
                 if (buyVolCloseTrigger)
                 {
-                    Draw.ArrowDown(this, "buyCloseTrigger" + CurrentBar, true, 0, High[0] + TickSize * (symbolOffset + 35), Brushes.Purple);
+                    Draw.ArrowDown(
+                        this,
+                        "buyCloseTrigger" + CurrentBar,
+                        true,
+                        0,
+                        High[0] + TickSize * (symbolOffset + 35),
+                        Brushes.Purple
+                    );
                 }
                 else if (sellVolCloseTrigger)
                 {
-                    Draw.ArrowUp(this, "sellCloseTrigger" + CurrentBar, true, 0, Low[0] - TickSize * (symbolOffset + 35), Brushes.Purple);
+                    Draw.ArrowUp(
+                        this,
+                        "sellCloseTrigger" + CurrentBar,
+                        true,
+                        0,
+                        Low[0] - TickSize * (symbolOffset + 35),
+                        Brushes.Purple
+                    );
                 }
             }
 
@@ -413,22 +515,28 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (entryOrder != null)
             {
                 // Manage open orders here, e.g., check if it's time to exit based on bar count
-                if (((CurrentBar >= entryBar + barsToHoldTrade) || buyVolCloseTrigger) && entryOrder.OrderState == OrderState.Working)
+                if (
+                    ((CurrentBar >= entryBar + barsToHoldTrade) || buyVolCloseTrigger)
+                    && entryOrder.OrderState == OrderState.Working
+                )
                 {
-                    Print(Time[0] + " Order cancelled: " + Close[0] +  " Long");
-                    CancelOrder(entryOrder); 
-                    entryOrder = null; // Reset the entry order variable                
+                    Print(Time[0] + " Order cancelled: " + Close[0] + " Long");
+                    CancelOrder(entryOrder);
+                    entryOrder = null; // Reset the entry order variable
                 }
             }
 
             if (entryOrderShort != null)
             {
                 // Manage open orders here, e.g., check if it's time to exit based on bar count
-                if (((CurrentBar >= entryBarShort + barsToHoldTrade) || sellVolCloseTrigger)  && entryOrderShort.OrderState == OrderState.Working)
+                if (
+                    ((CurrentBar >= entryBarShort + barsToHoldTrade) || sellVolCloseTrigger)
+                    && entryOrderShort.OrderState == OrderState.Working
+                )
                 {
                     Print(Time[0] + " Order cancelled: " + Close[0] + " Short");
                     CancelOrder(entryOrderShort);
-                    entryOrderShort = null; // Reset the entry order variable                
+                    entryOrderShort = null; // Reset the entry order variable
                 }
             }
 
@@ -441,20 +549,60 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (buyTrigger && entryOrder == null)
                 {
-                    double limitLevel = GetLimitLevel(smoothConfirmMA[0] + buySellBuffer, Close[0], true);
+                    double limitLevel = GetLimitLevel(
+                        smoothConfirmMA[0] + buySellBuffer,
+                        Close[0],
+                        true
+                    );
                     Print(Time[0] + " Long triggered: " + limitLevel);
                     entryOrder = EnterLongLimit(0, true, 5, limitLevel, "Long");
                     entryBar = CurrentBar; // Remember the bar at which we entered
                     entryPrice = limitLevel; // Assuming immediate execution at the close price
-                    Draw.Line(this, "entryLine" + CurrentBar, true, 1, limitLevel, -1, limitLevel, Brushes.Green, DashStyleHelper.Solid, 2);
+                    Draw.Line(
+                        this,
+                        "entryLine" + CurrentBar,
+                        true,
+                        1,
+                        limitLevel,
+                        -1,
+                        limitLevel,
+                        Brushes.Green,
+                        DashStyleHelper.Solid,
+                        2
+                    );
                 }
-                else if (buyVolSignal && entryOrder != null)
+                else if (
+                    buyVolSignal
+                    && entryOrder != null
+                    && entryOrder.OrderState != OrderState.Filled
+                )
                 {
-                    double limitLevel = GetLimitLevel(smoothConfirmMA[0] + buySellBuffer, Close[0], true);
+                    double limitLevel = GetLimitLevel(
+                        smoothConfirmMA[0] + buySellBuffer,
+                        Close[0],
+                        true
+                    );
                     entryOrder.LimitPrice = limitLevel;
                     entryPrice = limitLevel; // Assuming immediate execution at the close price
-                    Draw.Line(this, "entryLine" + CurrentBar, true, 1, limitLevel, -1, limitLevel, Brushes.Green, DashStyleHelper.Solid, 2);
-                    Print(Time[0] + " Long updated: " + limitLevel + " Vol Trade Length: " + volTradeLength);
+                    Draw.Line(
+                        this,
+                        "entryLine" + CurrentBar,
+                        true,
+                        1,
+                        limitLevel,
+                        -1,
+                        limitLevel,
+                        Brushes.Green,
+                        DashStyleHelper.Solid,
+                        2
+                    );
+                    Print(
+                        Time[0]
+                            + " Long updated: "
+                            + limitLevel
+                            + " Vol Trade Length: "
+                            + volTradeLength
+                    );
                 }
             }
 
@@ -467,26 +615,76 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (sellTrigger && entryOrderShort == null)
                 {
-                    double limitLevel = GetLimitLevel(smoothConfirmMA[0] - buySellBuffer, Close[0], false);
+                    double limitLevel = GetLimitLevel(
+                        smoothConfirmMA[0] - buySellBuffer,
+                        Close[0],
+                        false
+                    );
                     Print(Time[0] + " Short triggered: " + limitLevel);
                     entryOrderShort = EnterShortLimit(0, true, 5, limitLevel, "Short");
                     entryBarShort = CurrentBar; // Remember the bar at which we entered
                     entryPriceShort = limitLevel; // Assuming immediate execution at the close price
-                    Draw.Line(this, "entryLineShort" + CurrentBar, true, 1, limitLevel, -1, limitLevel, Brushes.Red, DashStyleHelper.Solid, 2);
+                    Draw.Line(
+                        this,
+                        "entryLineShort" + CurrentBar,
+                        true,
+                        1,
+                        limitLevel,
+                        -1,
+                        limitLevel,
+                        Brushes.Red,
+                        DashStyleHelper.Solid,
+                        2
+                    );
                 }
-                else if (sellVolSignal && entryOrderShort != null)
+                else if (
+                    sellVolSignal
+                    && entryOrderShort != null
+                    && entryOrderShort.OrderState != OrderState.Filled
+                )
                 {
-                    double limitLevel = GetLimitLevel(smoothConfirmMA[0] - buySellBuffer, Close[0], false);
+                    double limitLevel = GetLimitLevel(
+                        smoothConfirmMA[0] - buySellBuffer,
+                        Close[0],
+                        false
+                    );
                     entryOrderShort.LimitPrice = limitLevel;
                     entryPriceShort = limitLevel; // Assuming immediate execution at the close price
-                    Draw.Line(this, "entryLineShort" + CurrentBar, true, 1, limitLevel, -1, limitLevel, Brushes.Red, DashStyleHelper.Solid, 2);
-                    Print(Time[0] + " Short updated: " + limitLevel + " Vol Trade Length: " + volTradeLength);
+                    Draw.Line(
+                        this,
+                        "entryLineShort" + CurrentBar,
+                        true,
+                        1,
+                        limitLevel,
+                        -1,
+                        limitLevel,
+                        Brushes.Red,
+                        DashStyleHelper.Solid,
+                        2
+                    );
+                    Print(
+                        Time[0]
+                            + " Short updated: "
+                            + limitLevel
+                            + " Vol Trade Length: "
+                            + volTradeLength
+                    );
                 }
             }
         }
-        protected override void OnOrderUpdate(Cbi.Order order, double limitPrice, double stopPrice,
-                                              int quantity, int filled, double averageFillPrice,
-                                              Cbi.OrderState orderState, DateTime time, Cbi.ErrorCode error, string comment)
+
+        protected override void OnOrderUpdate(
+            Cbi.Order order,
+            double limitPrice,
+            double stopPrice,
+            int quantity,
+            int filled,
+            double averageFillPrice,
+            Cbi.OrderState orderState,
+            DateTime time,
+            Cbi.ErrorCode error,
+            string comment
+        )
         {
             if (order.Name == "Long")
             {
@@ -527,10 +725,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             return isInSession1 || isInSession2 || isInSession3 || disableTradingTimes;
         }
+
         private double GetLimitLevel(double priceTarget, double close, bool buyDir)
         {
             // Calculate limit level based on direction
-            double limitLevel = buyDir ? Math.Min(priceTarget, close) : Math.Max(priceTarget, close);
+            double limitLevel = buyDir
+                ? Math.Min(priceTarget, close)
+                : Math.Max(priceTarget, close);
 
             // Round to nearest tick size (if necessary for display or calculation purposes)
             // Note: When actually placing orders, NinjaTrader handles rounding based on tick size.

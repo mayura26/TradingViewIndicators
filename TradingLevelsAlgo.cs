@@ -20,7 +20,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     // TODO: Create standalone volume indicator
     // TODO: Create chop indicator with trend chop detection
-    // TODO: Create inputs for indicator including: Disable trading times, close on reversal only and number of bars to leave vol trade open, TP SL and vol trade length
+    // TODO: Create inputs for indicator
     // TODO: Add timeout after three bad trades
     public class TradingLevelsAlgo : Strategy
     {

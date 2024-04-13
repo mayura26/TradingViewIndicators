@@ -3,27 +3,23 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
-// TODO: Add trade dashboard showing status of trades
-
-// TODO: Add volume trades as alerts
-
 // TODO: Add input as minutes for time till new line becomes solid
 
-// TODO: Addd direction of bounce into alerts
+// TODO: Rework the triggers and alerts to be in line with volume analysis
 
 // TODO: Add predictive volume indicator for cross
-
-// TODO: Rework the triggers and alerts to be in line with volume analysis
 
 // TODO: Modifify Code so it checks timezone/confluences
 
 // TODO: create min number of confluences for a cross auto buy
 
+// TODO: Update buy/sell text to show levels from entry to close. Add buy/sell levels to be tooltip
+
+// TODO: Add trade dashboard showing status of trades
+
 // TODO: Reorganise inputs
 
 // TODO: Review all tooltips
-
-// TODO: Update buy/sell text to show levels from entry to close. Add buy/sell levels to be tooltip
 
 // FEATURE: Supertrend
 
@@ -146,6 +142,7 @@ volSmooth = input(5, title="Volume Smooth Period", group="Volume Analysis", tool
 volBarsToMissTrade = input(2, title="Non-directional Bars to Close", group="Volume Analysis", tooltip="Number of bars where the volume profile is not in the direction of the trade to close the trade. The higher this is, the smoother your trade buy/sells will be, but you risk letting a good trade go bad. This does not effect reversals which will close the trade.")
 volCloseOnReversalOnly = input(false, title="Close on Reversal Only", group="Volume Analysis", tooltip="Close the volume trade only on a reversal. This will stop trade only on the reverse direction triggering. Don't recommend this on any volatile instruments.")
 
+
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
 colorFastMA = input.color(color.new(color.fuchsia,80), title="Fast MA Color", group="Moving Averages", inline="fast")
@@ -169,7 +166,9 @@ alertDirectionalBuySell = input(true, title="Buy/Sell", group="Alerts", inline="
 alertReversalBuySell = input(true, title="Buy/Sell (Reversal)", group="Alerts", inline="main")
 alertCrossBuySell = input(true, title="Buy/Sell (Cross)", group="Alerts", inline="main")
 alertATRArrow = input(false, title="ATR Arrow", group="Alerts", inline="main2")
-alertVolumeChange = input(false, title="Volume Change", group="Alerts", inline="main2")
+alertVolumeChange = input(false, title="Volume Direction Change", group="Alerts", inline="main2")
+alertVolTrade = input(true, title="Alert on Volume Trade", group="Alerts", tooltip="Alert when a volume trade is triggered.", inline="main3")
+alertVolTradeClose = input(true, title="Alert on Volume Trade Close", group="Alerts", tooltip="Alert when a volume trade is triggered.", inline="main3")
 
 show_table      = input.bool(true,"Show Dashboard", group="Dashboard", inline="Table")
 tableLocation   = input.string(defval='Bottom right', options=['Top left', 'Top center', 'Top right', 'Bottom left', 'Bottom center', 'Bottom right'], title='| Location', group="Dashboard", inline="Table")
@@ -877,9 +876,9 @@ bounceDownConfirm = check_bounce_high(smoothConfirmMA)
 priceOptimalBufferEntry =  buySellBuffer * syminfo.mintick
 priceOptimalReversalEntry = reversalOffset * syminfo.mintick
 priceOptimalEntryConfirm = math.abs(close - smoothConfirmMA) < priceOptimalBufferEntry
-priceOptimalEntryLevel = math.abs(close- bounceLevel) < priceOptimalBufferEntry
 
 // ********** SIGNALS **********
+var float limitLevel = na
 buySignal = false
 buyReversalSignal = false
 sellSignal = false
@@ -974,7 +973,7 @@ if (validTriggerPeriod[1] and not validTriggerPeriod[0])
 
 if (buyTrigger or buyVolSignal)
     buyVolSignal := true
-
+    limitLevel := getLimitLevel(smoothConfirmMA + priceOptimalBufferEntry, close, true)
     if barstate.isconfirmed
         volTradeLength := volTradeLength + 1
         if (midVolDump or bullVolDump) or not validTriggerPeriod
@@ -995,7 +994,7 @@ if (buyTrigger or buyVolSignal)
 
 if (sellTrigger or sellVolSignal)
     sellVolSignal := true
-    
+    limitLevel := getLimitLevel(smoothConfirmMA - priceOptimalBufferEntry, close, true)
     if barstate.isconfirmed
         volTradeLength := volTradeLength + 1
         if (midVolPump or bullVolPump) or not validTriggerPeriod
@@ -1109,8 +1108,6 @@ if barstate.islast and show_table
     f_fillCellColorText(showVolDashboard ? 3 : 2, 1, str.tostring(math.round(ticker2_price,1)), ticker2_bgcolor, "HLCC4: " + str.tostring(math.round_to_mintick(ticker2_hlcc4[1])) + "\nClose: " + str.tostring(ticker2_TrendClose[1]) + "\nHigh: " + str.tostring(ticker2_TrendHigh[1]) + "\nLow: " + str.tostring(ticker2_TrendLow[1]))
 
 // ********** TRADING **********
-var float limitLevel = na
-
 buyTriggeredInLookback = false
 sellTriggeredInLookback = false
 systemState := 0
@@ -1214,12 +1211,21 @@ if showAllConditions
     if chopDetect
         box.new(bar_index, high, bar_index - 1, low, border_color=color.rgb(120, 120, 122, 35), border_width=1, bgcolor=color.rgb(120, 120, 122, 35), border_style=line.style_dashed)
 
-if (buyVolCloseTrigger or sellVolCloseTrigger) and showVolTradeClose
-    draw_label(bar_index, close, 'C', xloc.bar_index, buyVolCloseTrigger ? yloc.abovebar : yloc.belowbar,  color.rgb(110, 0, 137), buyVolCloseTrigger ? label.style_label_down: label.style_label_up, color.white, size.small, text.align_center, '')
-if buyTrigger and not buyVolSignal[1] and showVolTrade
-    draw_label(bar_index, close, 'B', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
-if sellTrigger and not sellVolSignal[1] and showVolTrade
-    draw_label(bar_index, close, 'S', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
+if (buyVolCloseTrigger or sellVolCloseTrigger)
+    if showVolTradeClose
+        draw_label(bar_index, close, 'C', xloc.bar_index, buyVolCloseTrigger ? yloc.abovebar : yloc.belowbar,  color.rgb(110, 0, 137), buyVolCloseTrigger ? label.style_label_down: label.style_label_up, color.white, size.small, text.align_center, '')
+    if alertVolTradeClose
+        alert("Close Volume Trade at: " + str.tostring(limitLevel) , alert.freq_once_per_bar)
+if buyTrigger and not buyVolSignal[1]
+    if showVolTrade
+        draw_label(bar_index, close, 'B', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
+    if alertVolTrade
+        alert("Volume Buy Trade at:" + str.tostring(limitLevel), alert.freq_once_per_bar)
+if sellTrigger and not sellVolSignal[1]
+    if showVolTrade
+        draw_label(bar_index, close, 'S', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
+    if alertVolTrade
+        alert("Volume Sell Trade at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
 
 TP = tpLevel * syminfo.mintick
@@ -1238,37 +1244,37 @@ if validTriggerPeriod
             draw_buymarker(limitLevel, TP, SL)
 
         if alertDirectionalBuySell and not buyLong[1]
-            alert("Directional Buy @ " + str.tostring(limitLevel), alert.freq_once_per_bar)
+            alert("Directional Buy at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
     if buyCross
         if showBuySellLevels
             draw_buymarker(limitLevel, TP, SL)
         if alertCrossBuySell and not buyCross[1]
-            alert("Cross Buy @ " + str.tostring(limitLevel), alert.freq_once_per_bar)
+            alert("Cross Buy at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
     if buyReversalTrigger
         if showBuySellLevels
             draw_buymarker(limitLevel, TP, SL)
         if alertCrossBuySell and not buyReversalTrigger[1]
-            alert("Reversal Buy @ " + str.tostring(limitLevel), alert.freq_once_per_bar)
+            alert("Reversal Buy at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
     if sellShort
         if showBuySellLevels
             draw_sellmarker(limitLevel, TP, SL)
         if alertDirectionalBuySell and not buyCross[1]
-            alert("Directional Sell @ " + str.tostring(limitLevel), alert.freq_once_per_bar)
+            alert("Directional Sell at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
     if sellCross
         if showBuySellLevels
             draw_sellmarker(limitLevel, TP, SL)
         if alertCrossBuySell and not sellCross[1]
-            alert("Cross Sell @ " + str.tostring(limitLevel), alert.freq_once_per_bar)
+            alert("Cross Sell at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
     if sellReversalTrigger
         if showBuySellLevels
             draw_sellmarker(limitLevel, TP, SL)
         if alertReversalBuySell and not sellReversalTrigger[1]
-            alert("Reversal Sell @ " + str.tostring(limitLevel), alert.freq_once_per_bar)
+            alert("Reversal Sell at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
 
 // ***** PLOT SHAPES *****
@@ -1281,19 +1287,19 @@ plotshape(series=close, title="Cross Short", style=shape.labeldown, location=loc
 
 // ********** ALERTS **********
 if (anyPivotSym1Bounce or anyPivotSym2Bounce) and alertPivotsBounce
-    alert("Bounce off pivot level at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
+    alert("Bounce off pivot level" + (anyPivotSym1BounceUp ? " up " : " down ") + "at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if (anyBuySym1Bounce or anyBuySym2Bounce) and alertBuyBounce
-    alert("Bounce off buy level at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
+    alert("Bounce off buy level" + (anyBuySym1BounceUp ? " up " : " down ") + " at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if (anySellSym1Bounce or anySellSym2Bounce) and alertSellBounce
-    alert("Bounce off sell level at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
+    alert("Bounce off sell level" + (anySellSym1BounceUp ? " up " : " down ") + " at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if (anyIntraSym1Bounce or anyIntraSym2Bounce) and alertIntraBounce
-    alert("Bounce off intra level at: "  + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
+    alert("Bounce off intra level" + (anyIntraSym1BounceUp ? " up " : " down ") + " at: "  + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if (anyCalcSym1Bounce or anyCalcSym2Bounce) and alertPreCalcBounce
-    alert("Bounce off calculated level at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
+    alert("Bounce off calculated level" + (anyCalcSym1BounceUp ? " up " : " down ") + " at: " + str.tostring(math.round_to_mintick(bounceLevel)), alert.freq_once_per_bar_close)
 
 if alertATRArrow
     if buyATRSignal and not buyATRSignal[1]

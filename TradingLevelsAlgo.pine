@@ -3,8 +3,6 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
-// TODO: Add input as minutes for time till new line becomes solid
-
 // TODO: Rework the triggers and alerts to be in line with volume analysis
 
 // TODO: Add predictive volume indicator for cross
@@ -76,6 +74,7 @@ showYesterdayLevels = input(true, title="Show Yesterday Levels", group="Calculat
 showATRLevels = input(true, title="Show ATR Levels", group="Calculated Levels", tooltip = "This will show the ATR levels on the chart. These are calculated from the ATR and show the bearish and bullish levels, as well ATR(-1/-0.618) and ATR(1/0.618).")
 showCamLevels = input(true, title="Show Camarilla Levels", group="Calculated Levels", tooltip = "This will show the Camarilla levels on the chart. This is the S4, S6, R4, R6 levels")
 showORBLevels = input(true, title="Show ORB Levels", group="Calculated Levels", tooltip = "This will show the Opening Range Breakout levels on the chart. This is the high and low of the first (15/30/60) minutes of the trading day.")
+timeBeforeLevelLive = input(15, title="Time Before Level Live [min]", group="Calculated Levels", tooltip = "Time before level becomes live and is used in triggers. This is to prevent the level from being used too early while still being set (e.g. high of day).")
 
 labelOffset = input(5, title="Label Offset", group="General", tooltip = "This is the offset of the labels for the lines. Caution can sometimes end up in the wrong place and will move when this is adjusted. Seems to be a function of TradingView repainting.")
 clashLineTransp = input(50,title="Clashing Line Transparency", group="General", tooltip = "The transparency  of lines when they are clashing")
@@ -432,6 +431,14 @@ retrieveBounceLevel(newLevel, oldLevel) =>
         returnLevel := newLevel
     returnLevel
 
+levelLookBackCheck(level, localLevel, lookBack) =>
+    isSame = true
+    for i = 1 to lookBack
+        if level <= localLevel[i]
+            isSame := false
+            break
+    isSame
+
 // ********** LEVEL RENDERING **********
 // Check if symbol matches the selected ticker
 if ticker.standard() == sym1
@@ -491,9 +498,10 @@ if high > orb_high and orbSessionActive
 if low < orb_low and orbSessionActive
     orb_low := low
 
-
 // ********** Draw Calculated Levels **********
 // Historical levels
+levelLiveLookback = math.floor(timeBeforeLevelLive / getTimeframeInMinutes())
+
 if(showWeeklyLevels)
     draw_levels_calculated(lastWeekHigh, preCalcColor, preCalcWidth, "Previous Week High", labelOffset, startOfWeekIndex)
     draw_levels_calculated(lastWeekLow, preCalcColor, preCalcWidth, "Previous Week Low", labelOffset, startOfWeekIndex)
@@ -521,11 +529,11 @@ if (showCamLevels)
 
 // Daily levels
 if (showDailyLevels)
-    if (todayHigh == todayHigh[1] and todayHigh == todayHigh[2])
+    if (levelLookBackCheck(todayHigh, high, levelLiveLookback))
         draw_levels_calculated(todayHigh, preCalcColor, preCalcWidth, "Day High", labelOffset, startOfDayIndex)
     else
         draw_levels_showonly(todayHigh, preCalcColor, preCalcWidth, "Day High", labelOffset, startOfDayIndex)
-    if (todayLow == todayLow[1] and todayLow == todayLow[2])
+    if (levelLookBackCheck(todayLow, low, levelLiveLookback))
         draw_levels_calculated(todayLow, preCalcColor, preCalcWidth, "Day Low", labelOffset, startOfDayIndex)
     else
         draw_levels_showonly(todayLow, preCalcColor, preCalcWidth, "Day Low", labelOffset, startOfDayIndex)
@@ -533,13 +541,13 @@ if (showDailyLevels)
 // ORB levels
 if not orbSessionActive and showORBLevels
     if not na(orb_high)
-        if (orb_high == orb_high[1] and orb_high == orb_high[2])
+        if (levelLookBackCheck(orb_high, high, levelLiveLookback))
             draw_levels_calculated(orb_high, preCalcColor, preCalcWidth, "ORB High", labelOffset, startOfDayIndex)
         else
             draw_levels_showonly(orb_high, preCalcColor, preCalcWidth, "ORB High", labelOffset, startOfDayIndex)
 
     if not na(orb_low)
-        if (orb_low == orb_low[1] and orb_low == orb_low[2])
+        if (levelLookBackCheck(orb_low, low, levelLiveLookback))
             draw_levels_calculated(orb_low, preCalcColor, preCalcWidth, "ORB Low", labelOffset, startOfDayIndex)
         else
             draw_levels_showonly(orb_low, preCalcColor, preCalcWidth, "ORB Low", labelOffset, startOfDayIndex)

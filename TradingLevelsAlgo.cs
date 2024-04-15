@@ -22,8 +22,8 @@ namespace NinjaTrader.NinjaScript.Strategies
     // TODO: Create chop indicator with trend chop detection and momentum and delta momentum
     // TODO: Create inputs for indicator including: Disable trading times, close on reversal only and number of bars to leave vol trade open, TP SL and vol trade length
     // TODO: Add timeout after three bad trades
-	// TODO: Add pre calculated levels
-	// TODO: Add code to close trade on pre calculated level
+    // TODO: Add pre calculated levels
+    // TODO: Add code to close trade on pre calculated level
     public class TradingLevelsAlgo : Strategy
     {
         private Order entryOrder = null;
@@ -407,9 +407,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             // if in a position and the realized day's PnL plus the position PnL is greater than the loss limit then exit the order
-            if ((((currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])) <= MaxLoss) || (currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])) >= MaxGain) && EnableTrading)
+            if (
+                (
+                    (
+                        (
+                            currentPnL
+                            + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                        ) <= MaxLoss
+                    )
+                    || (
+                        currentPnL
+                        + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
+                    ) >= MaxGain
+                ) && EnableTrading
+            )
             {
-
                 EnableTrading = false;
                 Print(Time[0] + " ******** TRADING DISABLED (mid-trade) ******** : " + currentPnL);
             }
@@ -448,13 +460,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                     buyVolCloseTrigger = true;
                     volTradeLength = 0;
                     barsMissed = 0;
-                } 
+                }
                 else if (!(midVolPump[0] || bullVolPump[0]))
                 {
                     if (barsMissed < barsToMissTrade)
                     {
                         barsMissed += 1;
-                        Print(Time[0] + " Long Trade - Bars Missed: " + barsMissed + " of " + barsToMissTrade);
+                        Print(
+                            Time[0]
+                                + " Long Trade - Bars Missed: "
+                                + barsMissed
+                                + " of "
+                                + barsToMissTrade
+                        );
                     }
                     else
                     {
@@ -486,7 +504,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (barsMissed < barsToMissTrade)
                     {
                         barsMissed += 1;
-                        Print(Time[0] + " Short Trade - Bars Missed: " + barsMissed + " of " + barsToMissTrade);
+                        Print(
+                            Time[0]
+                                + " Short Trade - Bars Missed: "
+                                + barsMissed
+                                + " of "
+                                + barsToMissTrade
+                        );
                     }
                     else
                     {
@@ -739,7 +763,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // Set stop loss and profit target for the filled order
                     SetStopLoss("Long", CalculationMode.Price, averageFillPrice - slLevel, false);
                     SetProfitTarget("Long", CalculationMode.Price, averageFillPrice + tpLevel);
-                    Print(Time[0] + " LONG FILLED: " + averageFillPrice + " Vol Trade Length: " + volTradeLength);
+                    Print(
+                        Time[0]
+                            + " LONG FILLED: "
+                            + averageFillPrice
+                            + " Vol Trade Length: "
+                            + volTradeLength
+                    );
                 }
             }
 
@@ -750,7 +780,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // Set stop loss and profit target for the filled order
                     SetStopLoss("Short", CalculationMode.Price, averageFillPrice + slLevel, false);
                     SetProfitTarget("Short", CalculationMode.Price, averageFillPrice - tpLevel);
-                    Print(Time[0] + " SHORT FILLED: " + averageFillPrice + " Vol Trade Length: " + volTradeLength);
+                    Print(
+                        Time[0]
+                            + " SHORT FILLED: "
+                            + averageFillPrice
+                            + " Vol Trade Length: "
+                            + volTradeLength
+                    );
                 }
             }
 
@@ -779,11 +815,33 @@ namespace NinjaTrader.NinjaScript.Strategies
                     .ProfitCurrency;
             }
         }
-        protected override void OnExecutionUpdate(Cbi.Execution execution, string executionId, double price, int quantity, Cbi.MarketPosition marketPosition, string orderId, DateTime time)
+
+        protected override void OnExecutionUpdate(
+            Cbi.Execution execution,
+            string executionId,
+            double price,
+            int quantity,
+            Cbi.MarketPosition marketPosition,
+            string orderId,
+            DateTime time
+        )
         {
-            if (execution.Order.OrderState == OrderState.Filled && (execution.Order.Name.Contains("Stop loss") || execution.Order.Name.Contains("Profit target") || execution.Order.Name.Contains("to cover")))
+            if (
+                execution.Order.OrderState == OrderState.Filled
+                && (
+                    execution.Order.Name.Contains("Stop loss")
+                    || execution.Order.Name.Contains("Profit target")
+                    || execution.Order.Name.Contains("to cover")
+                )
+            )
             {
-                Print(time.ToString() + " TRADE CLOSED: " + execution.Order.Name + " at Price: " + price);
+                Print(
+                    time.ToString()
+                        + " TRADE CLOSED: "
+                        + execution.Order.Name
+                        + " at Price: "
+                        + price
+                );
             }
         }
 

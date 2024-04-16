@@ -18,6 +18,7 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
+    // TODO: Create set of inputs for core parameters pre time
     // TODO: Create standalone volume indicator
     // TODO: Create chop indicator with trend chop detection and momentum and delta momentum
     // TODO: Create inputs for indicator including: Disable trading times, close on reversal only and number of bars to leave vol trade open, TP SL and vol trade length
@@ -108,8 +109,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private TimeSpan sessionEnd1 = new TimeSpan(16, 15, 00);
         private TimeSpan sessionStart2 = new TimeSpan(17, 00, 00);
         private TimeSpan sessionEnd2 = new TimeSpan(17, 15, 00);
-        private TimeSpan sessionStart3 = new TimeSpan(06, 00, 00);
-        private TimeSpan sessionEnd3 = new TimeSpan(09, 00, 00);
+        private TimeSpan sessionStart3 = new TimeSpan(17, 30, 00);
+        private TimeSpan sessionEnd3 = new TimeSpan(17, 45, 00);
 
         private bool showVolTrade = true;
         private bool showVolTradeClose = true;
@@ -122,10 +123,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double tpLevel = 90;
         private double slLevel = 15;
         private double buySellBuffer = 2;
-        private int barsToHoldTrade = 5;
+        private int barsToHoldTrade = 4;
         private int barsToMissTrade = 3;
+        private bool realTimePnlOnly = false;
         private bool disableTradingTimes = false;
-        private double MaxLoss = -500;
+        private bool disablePNLLimits = false;
+        private double MaxLoss = -300;
         private double MaxGain = 20000;
 
         protected override void OnStateChange()
@@ -147,7 +150,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Slippage = 0;
                 StartBehavior = StartBehavior.WaitUntilFlatSynchronizeAccount;
                 TimeInForce = TimeInForce.Gtc;
-                TraceOrders = false;
+                TraceOrders = true;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
@@ -158,7 +161,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v1.0 ******** ");
+                Print(Time[0] + " ******** TRADING ALGO v1.1 ******** ");
                 // Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
@@ -197,6 +200,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
             }
+
+            string dashBoard = $"PnL({(realTimePnlOnly ? "RT" : "RT/HT")}): " + currentPnL.ToString() + " | Trading: " + (EnableTrading || disablePNLLimits ? "Active" : "Off") + " | Times: " + (IsAllowedTime() || disableTradingTimes ? "Active" : "Off") + " | Bars Missed: " + barsMissed + " of " + barsToMissTrade + " | Bars Held: " + volTradeLength + " of " + barsToHoldTrade;
+            Draw.TextFixed(this, "Dashboard", dashBoard, TextPosition.TopRight);
 
             // Ensure we have enough data
             if (CurrentBar < 14)
@@ -400,28 +406,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             // PnL Check
-            if ((currentPnL < MaxLoss || currentPnL > MaxGain) && EnableTrading)
+            if ((currentPnL < MaxLoss || currentPnL > MaxGain) && EnableTrading && !disablePNLLimits)
             {
                 EnableTrading = false;
                 Print(Time[0] + " ******** TRADING DISABLED ******** : " + currentPnL);
             }
 
             // if in a position and the realized day's PnL plus the position PnL is greater than the loss limit then exit the order
-            if (
-                (
-                    (
-                        (
-                            currentPnL
-                            + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
-                        ) <= MaxLoss
-                    )
-                    || (
-                        currentPnL
-                        + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
-                    ) >= MaxGain
-                ) && EnableTrading
-            )
+            if ((((currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])) <= MaxLoss) || (currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])) >= MaxGain) && EnableTrading && !disablePNLLimits)
             {
+
                 EnableTrading = false;
                 Print(Time[0] + " ******** TRADING DISABLED (mid-trade) ******** : " + currentPnL);
             }
@@ -460,19 +454,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     buyVolCloseTrigger = true;
                     volTradeLength = 0;
                     barsMissed = 0;
-                }
+                } 
                 else if (!(midVolPump[0] || bullVolPump[0]))
                 {
                     if (barsMissed < barsToMissTrade)
                     {
                         barsMissed += 1;
-                        Print(
-                            Time[0]
-                                + " Long Trade - Bars Missed: "
-                                + barsMissed
-                                + " of "
-                                + barsToMissTrade
-                        );
+                        Print(Time[0] + " Long Trade - Bars Missed: " + barsMissed + " of " + barsToMissTrade);
                     }
                     else
                     {
@@ -504,13 +492,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (barsMissed < barsToMissTrade)
                     {
                         barsMissed += 1;
-                        Print(
-                            Time[0]
-                                + " Short Trade - Bars Missed: "
-                                + barsMissed
-                                + " of "
-                                + barsToMissTrade
-                        );
+                        Print(Time[0] + " Short Trade - Bars Missed: " + barsMissed + " of " + barsToMissTrade);
                     }
                     else
                     {
@@ -610,7 +592,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (buyVolCloseTrigger)
             {
-                ExitLong();
+                if (entryOrder != null && entryOrder.OrderState == OrderState.Filled)
+                {
+                    Print(Time[0] + " Long Order Closed: " + Close[0]);
+                    ExitLong();
+                }
             }
             else
             {
@@ -677,7 +663,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (sellVolCloseTrigger)
             {
-                ExitShort();
+                if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Filled)
+                {
+                    ExitShort();
+                    Print(Time[0] + " Short Order Closed: " + Close[0]);
+                }           
             }
             else
             {
@@ -756,6 +746,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             string comment
         )
         {
+            // One time only, as we transition from historical
+            // Convert any old historical order object references to the live order submitted to the real-time account
+            if (entryOrder != null && entryOrder.IsBacktestOrder && State == State.Realtime)
+                entryOrder = GetRealtimeOrder(entryOrder);
+
+            if (entryOrderShort != null && entryOrderShort.IsBacktestOrder && State == State.Realtime)
+                entryOrderShort = GetRealtimeOrder(entryOrderShort);
+
             if (order.Name == "Long")
             {
                 if (orderState == OrderState.Filled)
@@ -763,13 +761,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // Set stop loss and profit target for the filled order
                     SetStopLoss("Long", CalculationMode.Price, averageFillPrice - slLevel, false);
                     SetProfitTarget("Long", CalculationMode.Price, averageFillPrice + tpLevel);
-                    Print(
-                        Time[0]
-                            + " LONG FILLED: "
-                            + averageFillPrice
-                            + " Vol Trade Length: "
-                            + volTradeLength
-                    );
+                    Print(Time[0] + " LONG FILLED: " + averageFillPrice + " Vol Trade Length: " + volTradeLength);
                 }
             }
 
@@ -780,13 +772,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // Set stop loss and profit target for the filled order
                     SetStopLoss("Short", CalculationMode.Price, averageFillPrice + slLevel, false);
                     SetProfitTarget("Short", CalculationMode.Price, averageFillPrice - tpLevel);
-                    Print(
-                        Time[0]
-                            + " SHORT FILLED: "
-                            + averageFillPrice
-                            + " Vol Trade Length: "
-                            + volTradeLength
-                    );
+                    Print(Time[0] + " SHORT FILLED: " + averageFillPrice + " Vol Trade Length: " + volTradeLength);
                 }
             }
 
@@ -809,39 +795,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                 && SystemPerformance.AllTrades.Count > 0
             )
             {
-                // when a position is closed, add the last trade's Profit to the currentPnL
-                currentPnL += SystemPerformance
-                    .AllTrades[SystemPerformance.AllTrades.Count - 1]
-                    .ProfitCurrency;
+                if (realTimePnlOnly && State == State.Realtime || !realTimePnlOnly)
+                {
+                    // when a position is closed, add the last trade's Profit to the currentPnL
+                    currentPnL += SystemPerformance
+                        .AllTrades[SystemPerformance.AllTrades.Count - 1]
+                        .ProfitCurrency;
+                }
             }
         }
-
-        protected override void OnExecutionUpdate(
-            Cbi.Execution execution,
-            string executionId,
-            double price,
-            int quantity,
-            Cbi.MarketPosition marketPosition,
-            string orderId,
-            DateTime time
-        )
+        protected override void OnExecutionUpdate(Cbi.Execution execution, string executionId, double price, int quantity, Cbi.MarketPosition marketPosition, string orderId, DateTime time)
         {
-            if (
-                execution.Order.OrderState == OrderState.Filled
-                && (
-                    execution.Order.Name.Contains("Stop loss")
-                    || execution.Order.Name.Contains("Profit target")
-                    || execution.Order.Name.Contains("to cover")
-                )
-            )
+            if (execution.Order.OrderState == OrderState.Filled && (execution.Order.Name.Contains("Stop loss") || execution.Order.Name.Contains("Profit target") || execution.Order.Name.Contains("to cover")))
             {
-                Print(
-                    time.ToString()
-                        + " TRADE CLOSED: "
-                        + execution.Order.Name
-                        + " at Price: "
-                        + price
-                );
+                Print(time.ToString() + " TRADE CLOSED: " + execution.Order.Name + " at Price: " + price);
             }
         }
 

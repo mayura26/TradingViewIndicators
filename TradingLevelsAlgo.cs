@@ -920,10 +920,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (lastTrade.ProfitCurrency < lossCutOff)
                     {
                         consecutiveLosses++;
+                        Print(Time[0] + " ******** CONSECUTIVE LOSSES: " + consecutiveLosses);
                     }
                     else if (lastTrade.ProfitCurrency >= 0)
                     {
                         consecutiveLosses = 0; // Reset the count on a non-loss trade
+                        Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
                     }
 
                     // Check if there have been three consecutive losing trades

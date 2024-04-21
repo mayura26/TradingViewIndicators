@@ -1,5 +1,6 @@
 #region Using declarations
 using System;
+using System.ComponentModel.DataAnnotations;
 using System.Drawing;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -19,16 +20,12 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    // TODO: Add a check to see if we are in a chopzone and if so , disable trading
-    // TODO: If price moves too far from entry, we need to cancel the order.
-    // TODO: Create set of inputs for core parameters pre time
-    // TODO: Create split exit with two triggers and pull up SL
-    // TODO: Create standalone volume indicator
-    // TODO: Create chop indicator with trend chop detection and momentum and delta momentum
-    // TODO: Create inputs for indicator including: Disable trading times, close on reversal only and number of bars to leave vol trade open, TP SL and vol trade length
-    // TODO: Add timeout after three bad trades
-    // TODO: Add pre calculated levels
-    // TODO: Add code to close trade on pre calculated level
+    // FEATURE: Add a check to see if we are in a chopzone and if so , disable trading
+    // FEATURE: Create standalone volume indicator
+    // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
+    // FEATURE: Add timeout after two bad trades in succession
+    // FEATURE: Add pre calculated levels
+    // FEATURE: Add code to close trade on pre calculated level
     public class TradingLevelsAlgo : Strategy
     {
         private Cbi.Order entryOrder = null;
@@ -78,8 +75,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         // Trade Variables
         private Series<bool> buyVolTrigger;
         private Series<bool> sellVolTrigger;
-        private bool buyVolCloseTrigger;
-        private bool sellVolCloseTrigger;
         private int volTradeLength;
         private bool buyVolSignal = false;
         private bool sellVolSignal = false;
@@ -110,14 +105,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double deltaMomentumChopLimt = 0.5;
         private double deltaMomentumVolLimt = 2.5;
 
-        // Trading Times
-        private TimeSpan sessionStart1 = new TimeSpan(10, 00, 00);
-        private TimeSpan sessionEnd1 = new TimeSpan(16, 15, 00);
-        private TimeSpan sessionStart2 = new TimeSpan(17, 15, 00);
-        private TimeSpan sessionEnd2 = new TimeSpan(17, 16, 00);
-        private TimeSpan sessionStart3 = new TimeSpan(17, 30, 00);
-        private TimeSpan sessionEnd3 = new TimeSpan(17, 45, 00);
-
+        // Display Symbol Variables
         private bool showVolTrade = true;
         private bool showVolTradeClose = true;
 
@@ -125,20 +113,17 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool EnableTrading = true;
         private double currentPnL;
 
-        // Inputs
-        private double tpLevel = 90;
+        // Time Specific Trade Variables
+        private double tpLevel = 150;
         private double slLevel = 15;
         private double buySellBuffer = 4;
         private int barsToHoldTrade = 5;
         private int barsToMissTrade = 3;
-        private bool realTimePnlOnly = false;
-        private bool disableTradingTimes = false;
-        private bool disablePNLLimits = false;
-        private double MaxLoss = -500;
-        private double MaxGain = 5000;
-        private double lossCutOff = -140;
-        private int maxLossConsec = 3;
         private double offsetFromEntryToCancel = 50;
+        private int maxLossConsec = 3;
+        private int lastTimeSession = 0;
+        private bool resetBarsMissedOnLong = false;
+        private bool resetBarsMissedOnShort = true;
 
         protected override void OnStateChange()
         {
@@ -166,11 +151,57 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Disable this property for performance gains in Strategy Analyzer optimizations
                 // See the Help Guide for additional information
                 IsInstantiatedOnEachOptimizationIteration = true;
+                RealTimePnlOnly = true;
+                DisableTradingTimes = false;
+                DisablePNLLimits = false;
+                MaxLoss = -500;
+                MaxGain = 2000;
+                LossCutOff = -140;
+                ResetConsecOnTime = true;
+                EnableTradingTS1 = true;
+                EnableTradingTS2 = true;
+                EnableTradingTS3 = false;
+                TS1Start = DateTime.Parse("10:00", System.Globalization.CultureInfo.InvariantCulture);
+                TS1End = DateTime.Parse("16:15", System.Globalization.CultureInfo.InvariantCulture);
+                TS2Start = DateTime.Parse("08:00", System.Globalization.CultureInfo.InvariantCulture);
+                TS2End = DateTime.Parse("10:00", System.Globalization.CultureInfo.InvariantCulture);
+                TS3Start = DateTime.Parse("17:00", System.Globalization.CultureInfo.InvariantCulture);
+                TS3End = DateTime.Parse("17:15", System.Globalization.CultureInfo.InvariantCulture);
+
+                TPLevelTS1 = 150;
+                SLLevelTS1 = 15;
+                BuySellBufferTS1 = 4;
+                BarsToHoldTradeTS1 = 5;
+                BarsToMissTradeTS1 = 3;
+                OffsetFromEntryToCancelTS1 = 50;
+                MaxLossConsecTS1 = 3;
+                ResetBarsMissedOnLongTS1 = false;
+                ResetBarsMissedOnShortTS1 = true;
+
+                TPLevelTS2 = 150;
+                SLLevelTS2 = 15;
+                BuySellBufferTS2 = 4;
+                BarsToHoldTradeTS2 = 5;
+                BarsToMissTradeTS2 = 3;
+                OffsetFromEntryToCancelTS2 = 50;
+                MaxLossConsecTS2 = 2;
+                ResetBarsMissedOnLongTS2 = false;
+                ResetBarsMissedOnShortTS2 = true;
+
+                TPLevelTS3 = 150;
+                SLLevelTS3 = 15;
+                BuySellBufferTS3 = 4;
+                BarsToHoldTradeTS3 = 5;
+                BarsToMissTradeTS3 = 3;
+                OffsetFromEntryToCancelTS3 = 50;
+                MaxLossConsecTS3 = 2;
+                ResetBarsMissedOnLongTS3 = false;
+                ResetBarsMissedOnShortTS3 = true;
             }
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v1.3 ******** ");
+                Print(Time[0] + " ******** TRADING ALGO v1.4 ******** ");
                 // Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
@@ -197,6 +228,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 // Add our EMAs to the chart for visualization
                 AddChartIndicator(smoothConfirmMA);
+
+                // SL/TP
+                SetStopLoss("Long", CalculationMode.Ticks, slLevel / TickSize, false);
+                SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
+                SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
+                SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
             }
         }
 
@@ -210,6 +247,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
             }
+
+            // Load variables
+            GetTimeSessionVariables();
 
             // Ensure we have enough data
             if (CurrentBar < 14)
@@ -416,33 +456,22 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (
                 (currentPnL < MaxLoss || currentPnL > MaxGain)
                 && EnableTrading
-                && !disablePNLLimits
+                && !DisablePNLLimits
             )
             {
                 EnableTrading = false;
                 Print(Time[0] + " ******** TRADING DISABLED ******** : $" + currentPnL);
             }
 
+            double realtimPnL = currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
             // if in a position and the realized day's PnL plus the position PnL is greater than the loss limit then exit the order
-            if (
-                (
-                    (
-                        (
-                            currentPnL
-                            + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
-                        ) <= MaxLoss
-                    )
-                    || (
-                        currentPnL
-                        + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0])
-                    ) >= MaxGain
-                )
+            if ((((realtimPnL) <= MaxLoss) || (realtimPnL) >= MaxGain)
                 && EnableTrading
-                && !disablePNLLimits
+                && !DisablePNLLimits
             )
             {
                 EnableTrading = false;
-                Print(Time[0] + " ******** TRADING DISABLED (mid-trade) ******** : $" + currentPnL);
+                Print(Time[0] + " ******** TRADING DISABLED (mid-trade) ******** : $" + realtimPnL);
             }
 
             // Trading Logic
@@ -504,7 +533,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else
                 {
                     volTradeLength += 1;
-                    //barsMissed = 0;
+                    if (resetBarsMissedOnLong)
+                        barsMissed = 0;
                 }
             }
 
@@ -542,7 +572,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else
                 {
                     volTradeLength += 1;
-                    barsMissed = 0;
+                    if (resetBarsMissedOnShort)
+                        barsMissed = 0;
                 }
             }
 
@@ -794,24 +825,24 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             string dashBoard =
-                $"PnL ({(realTimePnlOnly ? "RT" : "ALL")}): $"
-                + currentPnL.ToString()
+                $"PnL ({(RealTimePnlOnly ? "RT" : "ALL")}): $"
+                + realtimPnL.ToString()
                 + " | Trading: "
-                + (EnableTrading || disablePNLLimits ? "Active" : "Off")
+                + (EnableTrading || DisablePNLLimits ? "Active" : "Off")
                 + " | Times: "
-                + (IsAllowedTime() || disableTradingTimes ? "Active" : "Off");
+                + (IsAllowedTime() || DisableTradingTimes ? "Active" : "Off");
             if (buyVolSignal || sellVolSignal)
                 dashBoard += "\nBars Missed: " + barsMissed + " of " + barsToMissTrade;
             if (entryOrder != null)
             {
-                string barHeld = "";
+                string barHeld = "0";
                 if (entryOrder.OrderState == OrderState.Working)
                     barHeld = (CurrentBar - entryBar).ToString();
                 dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
             }
             else if (entryOrderShort != null)
             {
-                string barHeld = "";
+                string barHeld = "0";
                 if (entryOrderShort.OrderState == OrderState.Working)
                     barHeld = (CurrentBar - entryBarShort).ToString();
                 dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
@@ -848,9 +879,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (orderState == OrderState.Filled)
                 {
-                    // Set stop loss and profit target for the filled order
-                    SetStopLoss("Long", CalculationMode.Price, averageFillPrice - slLevel, false);
-                    SetProfitTarget("Long", CalculationMode.Price, averageFillPrice + tpLevel);
                     Print(
                         Time[0]
                             + " LONG FILLED: "
@@ -865,9 +893,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (orderState == OrderState.Filled)
                 {
-                    // Set stop loss and profit target for the filled order
-                    SetStopLoss("Short", CalculationMode.Price, averageFillPrice + slLevel, false);
-                    SetProfitTarget("Short", CalculationMode.Price, averageFillPrice - tpLevel);
                     Print(
                         Time[0]
                             + " SHORT FILLED: "
@@ -880,10 +905,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
             {
-                ExitLong();
-                ExitShort();
                 entryOrder = null;
                 entryOrderShort = null;
+                if (order.Name == "Stop loss" && order.OrderState == OrderState.Rejected)
+                {
+                    ExitLong();
+                    ExitShort();
+                }
             }
         }
 
@@ -899,37 +927,47 @@ namespace NinjaTrader.NinjaScript.Strategies
                 && SystemPerformance.AllTrades.Count > 0
             )
             {
-                if (realTimePnlOnly && State == State.Realtime || !realTimePnlOnly)
-                {
-                    // when a position is closed, add the last trade's Profit to the currentPnL
-                    currentPnL += SystemPerformance
-                        .AllTrades[SystemPerformance.AllTrades.Count - 1]
-                        .ProfitCurrency;
-                }
-            }
-
-            if (State == State.Realtime || !realTimePnlOnly)
-            {
-                // Access system performance and check the last trade's performance
-                if (SystemPerformance.AllTrades.Count > 0)
+                if (RealTimePnlOnly && State == State.Realtime || !RealTimePnlOnly)
                 {
                     Cbi.Trade lastTrade = SystemPerformance.AllTrades[
                         SystemPerformance.AllTrades.Count - 1
                     ];
 
-                    if (lastTrade.ProfitCurrency < lossCutOff)
+                    // Sum the profits of trades with similar exit times
+                    double totalTradePnL = lastTrade.ProfitCurrency;
+                    DateTime exitTime = lastTrade.Exit.Time;
+                    for (int i = SystemPerformance.AllTrades.Count - 2; i >= 0; i--)
+                    {
+                        Cbi.Trade trade = SystemPerformance.AllTrades[i];
+                        if (Math.Abs((trade.Exit.Time - exitTime).TotalSeconds) <= 5)
+                        {
+                            totalTradePnL += trade.ProfitCurrency;
+                        }
+                        else
+                        {
+                            break; // Exit the loop if the exit time is different
+                        }
+                    }
+
+
+                    currentPnL += totalTradePnL;
+
+                    Print(Time[0] + "Trade PnL: $" + totalTradePnL);
+                    Print(Time[0] + "Current PnL: $" + currentPnL);
+
+                    if (totalTradePnL < LossCutOff)
                     {
                         consecutiveLosses++;
                         Print(Time[0] + " ******** CONSECUTIVE LOSSES: " + consecutiveLosses);
                     }
-                    else if (lastTrade.ProfitCurrency >= 0)
+                    else if (totalTradePnL >= 0)
                     {
                         consecutiveLosses = 0; // Reset the count on a non-loss trade
                         Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
                     }
 
                     // Check if there have been three consecutive losing trades
-                    if (consecutiveLosses >= maxLossConsec)
+                    if (consecutiveLosses >= maxLossConsec && !DisablePNLLimits)
                     {
                         EnableTrading = false;
                         Print(
@@ -977,11 +1015,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             TimeSpan barTime = Time[0].TimeOfDay;
 
             // Check if bar time is within session 1
-            bool isInSession1 = barTime >= sessionStart1 && barTime <= sessionEnd1;
-            bool isInSession2 = barTime >= sessionStart2 && barTime <= sessionEnd2;
-            bool isInSession3 = barTime >= sessionStart3 && barTime <= sessionEnd3;
+            bool isInSession1 = barTime >= TS1Start.TimeOfDay && barTime < TS1End.TimeOfDay;
+            bool isInSession2 = barTime >= TS2Start.TimeOfDay && barTime < TS2End.TimeOfDay;
+            bool isInSession3 = barTime >= TS3Start.TimeOfDay && barTime < TS3End.TimeOfDay;
 
-            return isInSession1 || isInSession2 || isInSession3 || disableTradingTimes;
+            return isInSession1 || isInSession2 || isInSession3 || DisableTradingTimes;
         }
 
         private double GetLimitLevel(double priceTarget, double close, bool buyDir)
@@ -1000,12 +1038,355 @@ namespace NinjaTrader.NinjaScript.Strategies
             return limitLevel;
         }
 
-        // NinjaTrader doesn't have a built-in RoundToNearestTick method, so we define one.
-        // This rounds a price to the nearest tick size defined for the instrument.
         private double RoundToNearestTick(double price)
         {
             double tickSize = Instrument.MasterInstrument.TickSize;
             return Math.Round(price / tickSize) * tickSize;
         }
+
+        private void GetTimeSessionVariables()
+        {
+
+            TimeSpan barTime = Time[0].TimeOfDay;
+            if (barTime >= TS1Start.TimeOfDay && barTime < TS1End.TimeOfDay)
+            {
+                tpLevel = TPLevelTS1;
+                slLevel = SLLevelTS1;
+                buySellBuffer = BuySellBufferTS1;
+                barsToHoldTrade = BarsToHoldTradeTS1;
+                barsToMissTrade = BarsToMissTradeTS1;
+                offsetFromEntryToCancel = OffsetFromEntryToCancelTS1;
+                maxLossConsec = MaxLossConsecTS1;
+                resetBarsMissedOnLong = ResetBarsMissedOnLongTS1;
+                resetBarsMissedOnShort = ResetBarsMissedOnShortTS1;
+
+                if (lastTimeSession != 1)
+                {
+                    lastTimeSession = 1;
+                    if (EnableTradingTS1)
+                    {
+                        Print(Time[0] + " ******** TRADING SESSION 1 ******** ");
+                        Draw.VerticalLine(this, "Session1", 0, Brushes.Aquamarine, DashStyleHelper.Dash, 2);
+                        if (ResetConsecOnTime)
+                        {
+                            consecutiveLosses = 0;
+                            EnableTrading = true;
+                            Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ON SESSION CHANGE ******** ");
+                        }
+                    }
+                }
+                if (!EnableTradingTS1)
+                {
+                    EnableTrading = false;
+                }
+            }
+            else if (barTime >= TS2Start.TimeOfDay && barTime < TS2End.TimeOfDay)
+            {
+                tpLevel = TPLevelTS2;
+                slLevel = SLLevelTS2;
+                buySellBuffer = BuySellBufferTS2;
+                barsToHoldTrade = BarsToHoldTradeTS2;
+                barsToMissTrade = BarsToMissTradeTS2;
+                offsetFromEntryToCancel = OffsetFromEntryToCancelTS2;
+                maxLossConsec = MaxLossConsecTS2;
+                resetBarsMissedOnLong = ResetBarsMissedOnLongTS2;
+                resetBarsMissedOnShort = ResetBarsMissedOnShortTS2;
+
+
+                if (lastTimeSession != 2)
+                {
+                    lastTimeSession = 2;
+                    if (EnableTradingTS2)
+                    {
+                        Print(Time[0] + " ******** TRADING SESSION 2 ******** ");
+                        Draw.VerticalLine(this, "Session2", 0, Brushes.Aquamarine, DashStyleHelper.Dash, 2);
+                        if (ResetConsecOnTime)
+                        {
+                            consecutiveLosses = 0;
+                            EnableTrading = true;
+                            Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ON SESSION CHANGE ******** ");
+                        }
+                    }
+                }
+                if (!EnableTradingTS2)
+                {
+                    EnableTrading = false;
+                }
+            }
+            else if (barTime >= TS3Start.TimeOfDay && barTime < TS3End.TimeOfDay)
+            {
+                tpLevel = TPLevelTS3;
+                slLevel = SLLevelTS3;
+                buySellBuffer = BuySellBufferTS3;
+                barsToHoldTrade = BarsToHoldTradeTS3;
+                barsToMissTrade = BarsToMissTradeTS3;
+                offsetFromEntryToCancel = OffsetFromEntryToCancelTS3;
+                maxLossConsec = MaxLossConsecTS3;
+                resetBarsMissedOnLong = ResetBarsMissedOnLongTS3;
+                resetBarsMissedOnShort = ResetBarsMissedOnShortTS3;
+
+                if (lastTimeSession != 3)
+                {
+                    lastTimeSession = 3;
+                    if (EnableTradingTS3)
+                    {
+                        Print(Time[0] + " ******** TRADING SESSION 3 ******** ");
+                        Draw.VerticalLine(this, "Session3", 0, Brushes.Aquamarine, DashStyleHelper.Dash, 2);
+                        if (ResetConsecOnTime && EnableTradingTS3)
+                        {
+                            consecutiveLosses = 0;
+                            EnableTrading = true;
+                            Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ON SESSION CHANGE ******** ");
+                        }
+                    }
+                }
+                if (!EnableTradingTS3)
+                {
+                    EnableTrading = false;
+                }
+            }
+
+            if (EnableTradingTS1 && barTime == TS1End.TimeOfDay)
+            {
+                Print(Time[0] + " ******** TRADING SESSION 1 ENDED ********");
+                Draw.VerticalLine(this, "Session1End", 0, Brushes.Orange, DashStyleHelper.Dot, 2);
+            }
+            if (EnableTradingTS2 && barTime == TS2End.TimeOfDay)
+            {
+                Print(Time[0] + " ******** TRADING SESSION 2 ENDED ********");
+                Draw.VerticalLine(this, "Session2End", 0, Brushes.Orange, DashStyleHelper.Dot, 2);
+            }
+            if (EnableTradingTS3 && barTime == TS3End.TimeOfDay)
+            {
+                Print(Time[0] + " ******** TRADING SESSION 3 ENDED ********");
+                Draw.VerticalLine(this, "Session3End", 0, Brushes.Orange, DashStyleHelper.Dot, 2);
+            }
+        }
+
+        #region Properties
+        [NinjaScriptProperty]
+        [Display(Name = "RealTimePnlOnly", Description = "Track PnL only during realtime trading", Order = 1, GroupName = "Main Parameters")]
+        public bool RealTimePnlOnly
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "DisableTradingTimes", Description = "Disable preset trading times", Order = 2, GroupName = "Main Parameters")]
+        public bool DisableTradingTimes
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "DisablePNLLimits", Description = "Disable PnL limits for the day", Order = 3, GroupName = "Main Parameters")]
+        public bool DisablePNLLimits
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-10000, double.MaxValue)]
+        [Display(Name = "MaxLoss", Description = "Maximum loss before trading stops", Order = 4, GroupName = "Main Parameters")]
+        public double MaxLoss
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(100, double.MaxValue)]
+        [Display(Name = "MaxGain", Description = "Maximum daily gain before trading stops", Order = 5, GroupName = "Main Parameters")]
+        public double MaxGain
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100000, double.MaxValue)]
+        [Display(Name = "LossCutOff", Description = "Price to be considered a loss for consec. losses check", Order = 6, GroupName = "Main Parameters")]
+        public double LossCutOff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 7, GroupName = "Main Parameters")]
+        public bool ResetConsecOnTime
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTradingTS1", Description = "Enable trading for time session 1", Order = 8, GroupName = "Sessions")]
+        public bool EnableTradingTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTradingTS2", Description = "Enable trading for time session 2", Order = 11, GroupName = "Sessions")]
+        public bool EnableTradingTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTradingTS3", Description = "Enable trading for time session 3", Order = 14, GroupName = "Sessions")]
+        public bool EnableTradingTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS1Start", Description = "Time session 1 start", Order = 9, GroupName = "Sessions")]
+        public DateTime TS1Start
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS1End", Description = "Time session 1 end", Order = 10, GroupName = "Sessions")]
+        public DateTime TS1End
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS2Start", Description = "Time session 2 start", Order = 12, GroupName = "Sessions")]
+        public DateTime TS2Start
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS2End", Description = "Time session 2 end", Order = 13, GroupName = "Sessions")]
+        public DateTime TS2End
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS3Start", Description = "Time session 3 start", Order = 15, GroupName = "Sessions")]
+        public DateTime TS3Start
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS3End", Description = "Time session 3 end", Order = 16, GroupName = "Sessions")]
+        public DateTime TS3End
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TPLevelTS1", Description = "Take profit level", Order = 15, GroupName = "Time Session 1")]
+        public double TPLevelTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "SLLevelTS1", Description = "Stop loss level", Order = 16, GroupName = "Time Session 1")]
+        public double SLLevelTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BuySellBufferTS1", Description = "Buffer for buy/sell limit levels", Order = 17, GroupName = "Time Session 1")]
+        public double BuySellBufferTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BarsToHoldTradeTS1", Description = "Bars to hold trade", Order = 18, GroupName = "Time Session 1")]
+        public int BarsToHoldTradeTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BarsToMissTradeTS1", Description = "Bars to miss trade", Order = 19, GroupName = "Time Session 1")]
+        public int BarsToMissTradeTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "OffsetFromEntryToCancelTS1", Description = "Offset from entry to cancel", Order = 20, GroupName = "Time Session 1")]
+        public double OffsetFromEntryToCancelTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "MaxLossConsecTS1", Description = "Max consecutive losses", Order = 21, GroupName = "Time Session 1")]
+        public int MaxLossConsecTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnLongTS1", Description = "Reset bars missed on long", Order = 22, GroupName = "Time Session 1")]
+        public bool ResetBarsMissedOnLongTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnShortTS1", Description = "Reset bars missed on short", Order = 23, GroupName = "Time Session 1")]
+        public bool ResetBarsMissedOnShortTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TPLevelTS2", Description = "Take profit level", Order = 24, GroupName = "Time Session 2")]
+        public double TPLevelTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "SLLevelTS2", Description = "Stop loss level", Order = 25, GroupName = "Time Session 2")]
+        public double SLLevelTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BuySellBufferTS2", Description = "Buffer for buy/sell limit levels", Order = 26, GroupName = "Time Session 2")]
+        public double BuySellBufferTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BarsToHoldTradeTS2", Description = "Bars to hold trade", Order = 27, GroupName = "Time Session 2")]
+        public int BarsToHoldTradeTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BarsToMissTradeTS2", Description = "Bars to miss trade", Order = 28, GroupName = "Time Session 2")]
+        public int BarsToMissTradeTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "OffsetFromEntryToCancelTS2", Description = "Offset from entry to cancel", Order = 29, GroupName = "Time Session 2")]
+        public double OffsetFromEntryToCancelTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "MaxLossConsecTS2", Description = "Max consecutive losses", Order = 30, GroupName = "Time Session 2")]
+        public int MaxLossConsecTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnLongTS2", Description = "Reset bars missed on long", Order = 31, GroupName = "Time Session 2")]
+        public bool ResetBarsMissedOnLongTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnShortTS2", Description = "Reset bars missed on short", Order = 32, GroupName = "Time Session 2")]
+        public bool ResetBarsMissedOnShortTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TPLevelTS3", Description = "Take profit level", Order = 33, GroupName = "Time Session 3")]
+        public double TPLevelTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "SLLevelTS3", Description = "Stop loss level", Order = 34, GroupName = "Time Session 3")]
+        public double SLLevelTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BuySellBufferTS3", Description = "Buffer for buy/sell limit levels", Order = 35, GroupName = "Time Session 3")]
+        public double BuySellBufferTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BarsToHoldTradeTS3", Description = "Bars to hold trade", Order = 36, GroupName = "Time Session 3")]
+        public int BarsToHoldTradeTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "BarsToMissTradeTS3", Description = "Bars to miss trade", Order = 37, GroupName = "Time Session 3")]
+        public int BarsToMissTradeTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "OffsetFromEntryToCancelTS3", Description = "Offset from entry to cancel", Order = 38, GroupName = "Time Session 3")]
+        public double OffsetFromEntryToCancelTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "MaxLossConsecTS3", Description = "Max consecutive losses", Order = 39, GroupName = "Time Session 3")]
+        public int MaxLossConsecTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnLongTS3", Description = "Reset bars missed on long", Order = 40, GroupName = "Time Session 3")]
+        public bool ResetBarsMissedOnLongTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnShortTS3", Description = "Reset bars missed on short", Order = 41, GroupName = "Time Session 3")]
+        public bool ResetBarsMissedOnShortTS3
+        { get; set; }
+        #endregion
     }
 }

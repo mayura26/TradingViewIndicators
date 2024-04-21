@@ -1087,8 +1087,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 buySellBuffer = BuySellBufferTS2;
                 barsToHoldTrade = BarsToHoldTradeTS2;
                 barsToMissTrade = BarsToMissTradeTS2;
-                offsetFromEntryToCancel = OffsetFromEntryToCancelTS2;  
-                maxLossConsec = MaxLossConsecTS2;    
+                offsetFromEntryToCancel = OffsetFromEntryToCancelTS2;
+                maxLossConsec = MaxLossConsecTS2;
                 resetBarsMissedOnLong = ResetBarsMissedOnLongTS2;
                 resetBarsMissedOnShort = ResetBarsMissedOnShortTS2;
 
@@ -1180,7 +1180,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(double.MinValue, 0)]
+        [Range(double.MinValue, -100)]
         [Display(Name = "MaxLoss", Description = "Maximum loss before trading stops", Order = 4, GroupName = "Main Parameters")]
         public double MaxLoss
         { get; set; }
@@ -1272,13 +1272,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "BarsToHoldTradeTS1", Description = "Bars to hold trade", Order = 18, GroupName = "Time Session 1")]
         public int BarsToHoldTradeTS1
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "BarsToMissTradeTS1", Description = "Bars to miss trade", Order = 19, GroupName = "Time Session 1")]
         public int BarsToMissTradeTS1
         { get; set; }
@@ -1290,7 +1290,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "MaxLossConsecTS1", Description = "Max consecutive losses", Order = 21, GroupName = "Time Session 1")]
         public int MaxLossConsecTS1
         { get; set; }
@@ -1324,13 +1324,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "BarsToHoldTradeTS2", Description = "Bars to hold trade", Order = 27, GroupName = "Time Session 2")]
         public int BarsToHoldTradeTS2
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "BarsToMissTradeTS2", Description = "Bars to miss trade", Order = 28, GroupName = "Time Session 2")]
         public int BarsToMissTradeTS2
         { get; set; }
@@ -1342,19 +1342,17 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "MaxLossConsecTS2", Description = "Max consecutive losses", Order = 30, GroupName = "Time Session 2")]
         public int MaxLossConsecTS2
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
         [Display(Name = "ResetBarsMissedOnLongTS2", Description = "Reset bars missed on long", Order = 31, GroupName = "Time Session 2")]
         public bool ResetBarsMissedOnLongTS2
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
         [Display(Name = "ResetBarsMissedOnShortTS2", Description = "Reset bars missed on short", Order = 32, GroupName = "Time Session 2")]
         public bool ResetBarsMissedOnShortTS2
         { get; set; }
@@ -1378,37 +1376,35 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "BarsToHoldTradeTS3", Description = "Bars to hold trade", Order = 36, GroupName = "Time Session 3")]
         public int BarsToHoldTradeTS3
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "BarsToMissTradeTS3", Description = "Bars to miss trade", Order = 37, GroupName = "Time Session 3")]
         public int BarsToMissTradeTS3
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
+        [Range(1, double.MaxValue)]
         [Display(Name = "OffsetFromEntryToCancelTS3", Description = "Offset from entry to cancel", Order = 38, GroupName = "Time Session 3")]
         public double OffsetFromEntryToCancelTS3
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
+        [Range(1, 100)]
         [Display(Name = "MaxLossConsecTS3", Description = "Max consecutive losses", Order = 39, GroupName = "Time Session 3")]
         public int MaxLossConsecTS3
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
         [Display(Name = "ResetBarsMissedOnLongTS3", Description = "Reset bars missed on long", Order = 40, GroupName = "Time Session 3")]
         public bool ResetBarsMissedOnLongTS3
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, int.MaxValue)]
         [Display(Name = "ResetBarsMissedOnShortTS3", Description = "Reset bars missed on short", Order = 41, GroupName = "Time Session 3")]
         public bool ResetBarsMissedOnShortTS3
         { get; set; }

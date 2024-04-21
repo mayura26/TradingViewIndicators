@@ -139,6 +139,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 IsExitOnSessionCloseStrategy = false;
                 ExitOnSessionCloseSeconds = 30;
                 IsFillLimitOnTouch = false;
+				IncludeTradeHistoryInBacktest = true;
                 MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
                 OrderFillResolution = OrderFillResolution.Standard;
                 Slippage = 0;
@@ -154,9 +155,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RealTimePnlOnly = true;
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
-                MaxLoss = -500;
-                MaxGain = 2000;
-                LossCutOff = -140;
+                MaxLoss = -600;
+                MaxGain = 1300;
+                LossCutOff = -120;
                 ResetConsecOnTime = true;
                 EnableTradingTS1 = true;
                 EnableTradingTS2 = true;
@@ -168,34 +169,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TS3Start = DateTime.Parse("17:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS3End = DateTime.Parse("17:15", System.Globalization.CultureInfo.InvariantCulture);
 
-                TPLevelTS1 = 150;
+                TPLevelTS1 = 60;
                 SLLevelTS1 = 15;
-                BuySellBufferTS1 = 4;
+                BuySellBufferTS1 = 2.5;
                 BarsToHoldTradeTS1 = 5;
-                BarsToMissTradeTS1 = 3;
+                BarsToMissTradeTS1 = 4;
                 OffsetFromEntryToCancelTS1 = 50;
                 MaxLossConsecTS1 = 3;
                 ResetBarsMissedOnLongTS1 = false;
                 ResetBarsMissedOnShortTS1 = true;
 
-                TPLevelTS2 = 150;
+                TPLevelTS2 = 45;
                 SLLevelTS2 = 15;
-                BuySellBufferTS2 = 4;
-                BarsToHoldTradeTS2 = 5;
+                BuySellBufferTS2 = 2;
+                BarsToHoldTradeTS2 = 3;
                 BarsToMissTradeTS2 = 3;
                 OffsetFromEntryToCancelTS2 = 50;
                 MaxLossConsecTS2 = 2;
-                ResetBarsMissedOnLongTS2 = false;
+                ResetBarsMissedOnLongTS2 = true;
                 ResetBarsMissedOnShortTS2 = true;
 
-                TPLevelTS3 = 150;
+                TPLevelTS3 = 45;
                 SLLevelTS3 = 15;
-                BuySellBufferTS3 = 4;
-                BarsToHoldTradeTS3 = 5;
+                BuySellBufferTS3 = 2;
+                BarsToHoldTradeTS3 = 3;
                 BarsToMissTradeTS3 = 3;
                 OffsetFromEntryToCancelTS3 = 50;
                 MaxLossConsecTS3 = 2;
-                ResetBarsMissedOnLongTS3 = false;
+                ResetBarsMissedOnLongTS3 = true;
                 ResetBarsMissedOnShortTS3 = true;
             }
             else if (State == State.DataLoaded)
@@ -847,7 +848,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     barHeld = (CurrentBar - entryBarShort).ToString();
                 dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
             }
-            Draw.TextFixed(this, "Dashboard", dashBoard, TextPosition.TopRight);
+            Draw.TextFixed(this, "Dashboard", dashBoard, TextPosition.BottomRight);
         }
 
         protected override void OnOrderUpdate(

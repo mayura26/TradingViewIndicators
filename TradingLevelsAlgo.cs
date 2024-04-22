@@ -139,7 +139,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 IsExitOnSessionCloseStrategy = false;
                 ExitOnSessionCloseSeconds = 30;
                 IsFillLimitOnTouch = false;
-				IncludeTradeHistoryInBacktest = true;
+                IncludeTradeHistoryInBacktest = true;
                 MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
                 OrderFillResolution = OrderFillResolution.Standard;
                 Slippage = 0;
@@ -155,8 +155,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RealTimePnlOnly = true;
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
-                MaxLoss = -600;
-                MaxGain = 1300;
+                MaxLoss = -500;
+                MaxGain = 2000;
                 LossCutOff = -120;
                 ResetConsecOnTime = true;
                 EnableTradingTS1 = true;
@@ -169,17 +169,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TS3Start = DateTime.Parse("17:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS3End = DateTime.Parse("17:15", System.Globalization.CultureInfo.InvariantCulture);
 
-                TPLevelTS1 = 60;
+                TPLevelTS1 = 150;
                 SLLevelTS1 = 15;
-                BuySellBufferTS1 = 2.5;
-                BarsToHoldTradeTS1 = 5;
+                BuySellBufferTS1 = 5;
+                BarsToHoldTradeTS1 = 6;
                 BarsToMissTradeTS1 = 4;
                 OffsetFromEntryToCancelTS1 = 50;
                 MaxLossConsecTS1 = 3;
                 ResetBarsMissedOnLongTS1 = false;
                 ResetBarsMissedOnShortTS1 = true;
 
-                TPLevelTS2 = 45;
+                TPLevelTS2 = 60;
                 SLLevelTS2 = 15;
                 BuySellBufferTS2 = 2;
                 BarsToHoldTradeTS2 = 3;
@@ -953,8 +953,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                     currentPnL += totalTradePnL;
 
-                    Print(Time[0] + "Trade PnL: $" + totalTradePnL);
-                    Print(Time[0] + "Current PnL: $" + currentPnL);
+                    Print(Time[0] + " Trade PnL: $" + totalTradePnL);
+                    Print(Time[0] + " Current PnL: $" + currentPnL);
 
                     if (totalTradePnL < LossCutOff)
                     {
@@ -1074,6 +1074,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                             EnableTrading = true;
                             Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ON SESSION CHANGE ******** ");
                         }
+                        SetStopLoss("Long", CalculationMode.Ticks, slLevel / TickSize, false);
+                        SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
+                        SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
+                        SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
                     }
                 }
                 if (!EnableTradingTS1)
@@ -1107,6 +1111,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                             EnableTrading = true;
                             Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ON SESSION CHANGE ******** ");
                         }
+                        SetStopLoss("Long", CalculationMode.Ticks, slLevel / TickSize, false);
+                        SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
+                        SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
+                        SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
                     }
                 }
                 if (!EnableTradingTS2)
@@ -1139,6 +1147,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                             EnableTrading = true;
                             Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ON SESSION CHANGE ******** ");
                         }
+                        SetStopLoss("Long", CalculationMode.Ticks, slLevel / TickSize, false);
+                        SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
+                        SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
+                        SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
                     }
                 }
                 if (!EnableTradingTS3)

@@ -20,6 +20,13 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
+    // TODO: Change to process on tick and have trading on first tick
+    // TODO: Close trade if long,short on disabled trading
+    // TODO: Look at moving SL after trade is in profit
+    // TODO: Look at split TP
+    // TODO: Look at what executing on each tick means
+	// TODO: Consider TP to be from initial entry level
+	// TODO: Close trade if over x in so many candles/volatile move?
     // FEATURE: Add a check to see if we are in a chopzone and if so , disable trading
     // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
@@ -79,6 +86,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool buyVolSignal = false;
         private bool sellVolSignal = false;
         bool validTriggerPeriod = false;
+        bool reverseSellTrade = false;
+        bool reverseBuyTrade = false;
 
         // Momentum Constants
         private int dataLength = 8;
@@ -93,8 +102,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double volUpperLimit = 75;
         private double volPumpGainLimit = 5;
         private double volIrregLimit = 150;
-        private int aveVolPeriod = 14;
-        private int volSmooth = 5;
         private double regVolLevel = 60;
 
         // Trend/Chop Constants
@@ -114,7 +121,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double currentPnL;
 
         // Time Specific Trade Variables
-        private double tpLevel = 150;
+        private double tpLevel = 90;
         private double slLevel = 15;
         private double buySellBuffer = 4;
         private int barsToHoldTrade = 5;
@@ -124,6 +131,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int lastTimeSession = 0;
         private bool resetBarsMissedOnLong = false;
         private bool resetBarsMissedOnShort = true;
+		private int tradeQuantity = 3;
 
         protected override void OnStateChange()
         {
@@ -133,7 +141,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     @"This is a strategy using pivot levels to enter long and short trades with confluence from EMA, ATR & Volume";
                 Name = "TradingLevelsAlgo";
                 Calculate = Calculate.OnBarClose;
-                EntriesPerDirection = 5;
+                EntriesPerDirection = tradeQuantity;
                 EntryHandling = EntryHandling.AllEntries;
                 IncludeCommission = true;
                 IsExitOnSessionCloseStrategy = false;
@@ -149,32 +157,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelCloseIgnoreRejects;
                 StopTargetHandling = StopTargetHandling.ByStrategyPosition;
                 BarsRequiredToTrade = 20;
+				IsExitOnSessionCloseStrategy = true;
+        		ExitOnSessionCloseSeconds = 30;
                 // Disable this property for performance gains in Strategy Analyzer optimizations
                 // See the Help Guide for additional information
                 IsInstantiatedOnEachOptimizationIteration = true;
                 RealTimePnlOnly = true;
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
-                MaxLoss = -500;
-                MaxGain = 2000;
-                LossCutOff = -120;
+                MaxLoss = -300;
+                MaxGain = 1000;
+                LossCutOff = -70;
                 ResetConsecOnTime = true;
                 EnableTradingTS1 = true;
                 EnableTradingTS2 = true;
                 EnableTradingTS3 = false;
                 TS1Start = DateTime.Parse("10:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS1End = DateTime.Parse("16:15", System.Globalization.CultureInfo.InvariantCulture);
-                TS2Start = DateTime.Parse("08:00", System.Globalization.CultureInfo.InvariantCulture);
+                TS2Start = DateTime.Parse("09:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS2End = DateTime.Parse("10:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS3Start = DateTime.Parse("17:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS3End = DateTime.Parse("17:15", System.Globalization.CultureInfo.InvariantCulture);
 
-                TPLevelTS1 = 150;
+                TPLevelTS1 = 90;
                 SLLevelTS1 = 15;
-                BuySellBufferTS1 = 5;
+                BuySellBufferTS1 = 3;
                 BarsToHoldTradeTS1 = 6;
-                BarsToMissTradeTS1 = 4;
-                OffsetFromEntryToCancelTS1 = 50;
+                BarsToMissTradeTS1 = 3;
+                OffsetFromEntryToCancelTS1 = 40;
                 MaxLossConsecTS1 = 3;
                 ResetBarsMissedOnLongTS1 = false;
                 ResetBarsMissedOnShortTS1 = true;
@@ -184,7 +194,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BuySellBufferTS2 = 2;
                 BarsToHoldTradeTS2 = 3;
                 BarsToMissTradeTS2 = 3;
-                OffsetFromEntryToCancelTS2 = 50;
+                OffsetFromEntryToCancelTS2 = 30;
                 MaxLossConsecTS2 = 2;
                 ResetBarsMissedOnLongTS2 = true;
                 ResetBarsMissedOnShortTS2 = true;
@@ -198,6 +208,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 MaxLossConsecTS3 = 2;
                 ResetBarsMissedOnLongTS3 = true;
                 ResetBarsMissedOnShortTS3 = true;
+
+                AveVolPeriod = 16;
+                VolSmooth = 6;
             }
             else if (State == State.DataLoaded)
             {
@@ -312,8 +325,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             double buy_percent = (BuyVol[0] / Volume[0]) * 100;
             double sell_percent = (SellVol[0] / Volume[0]) * 100;
 
-            smoothBuy = WMA(WMA(BuyVol, aveVolPeriod), volSmooth);
-            smoothSell = WMA(WMA(SellVol, aveVolPeriod), volSmooth);
+            smoothBuy = WMA(WMA(BuyVol, AveVolPeriod), VolSmooth);
+            smoothSell = WMA(WMA(SellVol, AveVolPeriod), VolSmooth);
             smoothNetVol[0] = smoothBuy[0] - smoothSell[0];
 
             double netVolH = Math.Max(smoothBuy[0], smoothSell[0]);
@@ -323,9 +336,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             double volPumpLevel = volPumpGainLimit / 100;
             double irregVolLevel = volIrregLimit / 100;
 
-            avgVolume = SMA(Volume, aveVolPeriod);
-            avgBuyVol = SMA(smoothBuy, aveVolPeriod);
-            avgSellVol = SMA(smoothSell, aveVolPeriod);
+            avgVolume = SMA(Volume, AveVolPeriod);
+            avgBuyVol = SMA(smoothBuy, AveVolPeriod);
+            avgSellVol = SMA(smoothSell, AveVolPeriod);
 
             bullVolPump[0] =
                 risingVol
@@ -535,7 +548,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     volTradeLength += 1;
                     if (resetBarsMissedOnLong)
+                    {
+                        Print(Time[0] + " Bars Missed Reset on Long");
                         barsMissed = 0;
+                    }
                 }
             }
 
@@ -574,7 +590,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     volTradeLength += 1;
                     if (resetBarsMissedOnShort)
+                    {
+                        Print(Time[0] + " Bars Missed Reset on Short");
                         barsMissed = 0;
+                    }
                 }
             }
 
@@ -688,9 +707,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                     ExitLong("Long");
                 }
             }
-            else
+
+            if (sellVolCloseTrigger)
             {
-                if (buyTrigger && entryOrder == null)
+                if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Filled)
+                {
+                    Print(Time[0] + " Short Order Closed: " + Close[0]);
+                }
+                if (Position.MarketPosition == MarketPosition.Short)
+                {
+                    ExitShort("Short");
+                }
+            }
+
+            if (!EnableTrading)
+            {
+                if (Position.MarketPosition == MarketPosition.Long)
+                {
+                    ExitLong();
+                }
+                else if (Position.MarketPosition == MarketPosition.Short)
+                {
+                    ExitShort();
+                }
+            }
+
+            if (!buyVolCloseTrigger && !sellVolCloseTrigger)
+            {
+                if ((buyTrigger || reverseBuyTrade) && entryOrder == null)
                 {
                     double limitLevel = GetLimitLevel(
                         smoothConfirmMA[0] + buySellBuffer,
@@ -699,7 +743,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     );
 
                     Print(Time[0] + " Long triggered: " + limitLevel);
-                    entryOrder = EnterLongLimit(0, true, 5, limitLevel, "Long");
+                    entryOrder = EnterLongLimit(0, true, tradeQuantity, limitLevel, "Long");
                     entryBar = CurrentBar; // Remember the bar at which we entered
                     entryPrice = limitLevel; // Assuming immediate execution at the close price
                     Draw.Line(
@@ -726,8 +770,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Close[0],
                         true
                     );
-
-                    entryOrder.LimitPrice = limitLevel;
+                    ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
                     entryPrice = limitLevel; // Assuming immediate execution at the close price
                     Draw.Line(
                         this,
@@ -751,20 +794,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
-            if (sellVolCloseTrigger)
+            if (!sellVolCloseTrigger && !buyVolCloseTrigger)
             {
-                if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Filled)
-                {
-                    Print(Time[0] + " Short Order Closed: " + Close[0]);
-                }
-                if (Position.MarketPosition == MarketPosition.Short)
-                {
-                    ExitShort("Short");
-                }
-            }
-            else
-            {
-                if (sellTrigger && entryOrderShort == null)
+                if ((sellTrigger || reverseSellTrade) && entryOrderShort == null)
                 {
                     double limitLevel = GetLimitLevel(
                         smoothConfirmMA[0] - buySellBuffer,
@@ -773,7 +805,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     );
 
                     Print(Time[0] + " Short triggered: " + limitLevel);
-                    entryOrderShort = EnterShortLimit(0, true, 5, limitLevel, "Short");
+                    entryOrderShort = EnterShortLimit(0, true, tradeQuantity, limitLevel, "Short");
                     entryBarShort = CurrentBar; // Remember the bar at which we entered
                     entryPriceShort = limitLevel; // Assuming immediate execution at the close price
                     Draw.Line(
@@ -801,7 +833,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         false
                     );
 
-                    entryOrderShort.LimitPrice = limitLevel;
+                    ChangeOrder(entryOrderShort, entryOrderShort.Quantity, limitLevel, 0);
                     entryPriceShort = limitLevel; // Assuming immediate execution at the close price
                     Draw.Line(
                         this,
@@ -825,13 +857,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
+            reverseBuyTrade = sellVolCloseTrigger && buyTrigger;
+            reverseSellTrade = buyVolCloseTrigger && sellTrigger;
+
             string dashBoard =
                 $"PnL ({(RealTimePnlOnly ? "RT" : "ALL")}): $"
                 + realtimPnL.ToString()
-                + " | Trading: "
-                + (EnableTrading || DisablePNLLimits ? "Active" : "Off")
-                + " | Times: "
-                + (IsAllowedTime() || DisableTradingTimes ? "Active" : "Off");
+                + " | Consec: " + consecutiveLosses + " of " + maxLossConsec
+                + "\nTrading: "
+                + (EnableTrading || DisablePNLLimits ? "Active" : "Off");
             if (buyVolSignal || sellVolSignal)
                 dashBoard += "\nBars Missed: " + barsMissed + " of " + barsToMissTrade;
             if (entryOrder != null)
@@ -916,13 +950,34 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
 
-        protected override void OnPositionUpdate(
-            Position position,
-            double averagePrice,
+        protected override void OnExecutionUpdate(
+            Cbi.Execution execution,
+            string executionId,
+            double price,
             int quantity,
-            MarketPosition marketPosition
+            Cbi.MarketPosition marketPosition,
+            string orderId,
+            DateTime time
         )
         {
+            if (
+                execution.Order.OrderState == OrderState.Filled
+                && (
+                    execution.Order.Name.Contains("Stop loss")
+                    || execution.Order.Name.Contains("Profit target")
+                    || execution.Order.Name.Contains("to cover")
+                )
+            )
+            {
+                Print(
+                    time.ToString()
+                        + " TRADE CLOSED: "
+                        + execution.Order.Name
+                        + " at Price: "
+                        + price
+                );
+            }
+
             if (
                 Position.MarketPosition == MarketPosition.Flat
                 && SystemPerformance.AllTrades.Count > 0
@@ -940,7 +995,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     for (int i = SystemPerformance.AllTrades.Count - 2; i >= 0; i--)
                     {
                         Cbi.Trade trade = SystemPerformance.AllTrades[i];
-                        if (Math.Abs((trade.Exit.Time - exitTime).TotalSeconds) <= 5)
+                        if (Math.Abs((trade.Exit.Time - exitTime).TotalSeconds) <= 10)
                         {
                             totalTradePnL += trade.ProfitCurrency;
                         }
@@ -978,35 +1033,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                         );
                     }
                 }
-            }
-        }
-
-        protected override void OnExecutionUpdate(
-            Cbi.Execution execution,
-            string executionId,
-            double price,
-            int quantity,
-            Cbi.MarketPosition marketPosition,
-            string orderId,
-            DateTime time
-        )
-        {
-            if (
-                execution.Order.OrderState == OrderState.Filled
-                && (
-                    execution.Order.Name.Contains("Stop loss")
-                    || execution.Order.Name.Contains("Profit target")
-                    || execution.Order.Name.Contains("to cover")
-                )
-            )
-            {
-                Print(
-                    time.ToString()
-                        + " TRADE CLOSED: "
-                        + execution.Order.Name
-                        + " at Price: "
-                        + price
-                );
             }
         }
 
@@ -1420,6 +1446,18 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "ResetBarsMissedOnShortTS3", Description = "Reset bars missed on short", Order = 41, GroupName = "Time Session 3")]
         public bool ResetBarsMissedOnShortTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "AveVolPeriod", Description = "Average Volume Period", Order = 42, GroupName = "Volume")]
+        public int AveVolPeriod
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "VolSmooth", Description = "Volume smoothing period", Order = 43, GroupName = "Volume")]
+        public int VolSmooth
         { get; set; }
         #endregion
     }

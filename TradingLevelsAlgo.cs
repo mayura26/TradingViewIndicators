@@ -24,9 +24,9 @@ namespace NinjaTrader.NinjaScript.Strategies
     // TODO: Close trade if long,short on disabled trading
     // TODO: Look at moving SL after trade is in profit
     // TODO: Look at split TP
-    // TODO: Look at what executing on each tick means
 	// TODO: Consider TP to be from initial entry level
 	// TODO: Close trade if over x in so many candles/volatile move?
+    // TODO: Look at vol slope direction to know whether to chase trade. if volume going up then allow bar missed, if its going down then close on amiss?
     // FEATURE: Add a check to see if we are in a chopzone and if so , disable trading
     // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
@@ -44,6 +44,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int entryBarShort = -1;
 
         int consecutiveLosses = 0;
+        private double triggerPrice = 0.0;
 
         private DynamicTrendLine smoothConfirmMA;
 
@@ -706,9 +707,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     ExitLong("Long");
                 }
-            }
-
-            if (sellVolCloseTrigger)
+            } else if (sellVolCloseTrigger)
             {
                 if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Filled)
                 {
@@ -718,9 +717,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     ExitShort("Short");
                 }
-            }
-
-            if (!EnableTrading)
+            } else if (!EnableTrading)
             {
                 if (Position.MarketPosition == MarketPosition.Long)
                 {
@@ -729,6 +726,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else if (Position.MarketPosition == MarketPosition.Short)
                 {
                     ExitShort();
+                }
+            } else if (Position.MarketPosition == MarketPosition.Long)
+            {
+                if (Close[0] > triggerPrice + tpLevel)
+                {
+                    ExitLong("Long");
+                }
+            } else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                if (Close[0] < triggerPrice - tpLevel)
+                {
+                    ExitShort("Short");
                 }
             }
 
@@ -746,6 +755,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     entryOrder = EnterLongLimit(0, true, tradeQuantity, limitLevel, "Long");
                     entryBar = CurrentBar; // Remember the bar at which we entered
                     entryPrice = limitLevel; // Assuming immediate execution at the close price
+                    triggerPrice = limitLevel;
                     Draw.Line(
                         this,
                         "entryLine" + CurrentBar,
@@ -808,6 +818,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     entryOrderShort = EnterShortLimit(0, true, tradeQuantity, limitLevel, "Short");
                     entryBarShort = CurrentBar; // Remember the bar at which we entered
                     entryPriceShort = limitLevel; // Assuming immediate execution at the close price
+                    triggerPrice = limitLevel;
                     Draw.Line(
                         this,
                         "entryLineShort" + CurrentBar,

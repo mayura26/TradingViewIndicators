@@ -1,5 +1,6 @@
 #region Using declarations
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Drawing;
 using System.Windows.Documents;
@@ -25,7 +26,9 @@ namespace NinjaTrader.NinjaScript.Strategies
     // TODO: Look at moving SL after trade is in profit
     // TODO: Look at split TP
 	// TODO: Consider TP to be from initial entry level
+    // TODO: Add days to ignore
 	// TODO: Close trade if over x in so many candles/volatile move?
+    // TODO: Add regions and organise
     // TODO: Look at vol slope direction to know whether to chase trade. if volume going up then allow bar missed, if its going down then close on amiss?
     // FEATURE: Add a check to see if we are in a chopzone and if so , disable trading
     // FEATURE: Create standalone volume indicator
@@ -89,6 +92,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         bool validTriggerPeriod = false;
         bool reverseSellTrade = false;
         bool reverseBuyTrade = false;
+        private int localBarsToMissTrade = 0;
 
         // Momentum Constants
         private int dataLength = 8;
@@ -120,6 +124,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         // Trading PnL
         private bool EnableTrading = true;
         private double currentPnL;
+        private List<DateTime> TradingBanDays;
 
         // Time Specific Trade Variables
         private double tpLevel = 90;
@@ -212,6 +217,20 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 AveVolPeriod = 16;
                 VolSmooth = 6;
+
+                EnableDynamicSettings = true;
+                BarsToMissNegDelta = 1;
+                BarsToMissPosDelta = 3;
+
+                #region Banned Trading Days
+                TradingBanDays = new List<DateTime>
+                {
+                    DateTime.Parse("2024-05-03", System.Globalization.CultureInfo.InvariantCulture),
+                    DateTime.Parse("2024-04-09", System.Globalization.CultureInfo.InvariantCulture),
+                    DateTime.Parse("2024-04-10", System.Globalization.CultureInfo.InvariantCulture),
+                    DateTime.Parse("2024-04-11", System.Globalization.CultureInfo.InvariantCulture)
+                };
+                #endregion
             }
             else if (State == State.DataLoaded)
             {
@@ -261,6 +280,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 consecutiveLosses = 0;
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
+            }
+
+            if (TradingBanDays.Contains(Time[0].Date))
+            {
+                EnableTrading = false;
+                Print(Time[0] + " ******** TRADING DISABLED ******** : Banned Trading Day");
             }
 
             // Load variables
@@ -356,6 +381,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             volCrossBuy[0] = CrossAbove(smoothBuy, smoothSell, 1);
             volCrossSell[0] = CrossAbove(smoothSell, smoothBuy, 1);
             irregVol[0] = Volume[0] / avgVolume[0] > irregVolLevel;
+
+            double deltaBuyVol = (smoothBuy[0] - smoothBuy[1]) / smoothBuy[1];
+            double deltaSellVol = (smoothSell[0] - smoothSell[1]) / smoothSell[1];
 
             // Volume Momentum Buy/Sell
             double symbolOffset = 50;
@@ -514,6 +542,32 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             validTriggerPeriod = IsAllowedTime() && EnableTrading;
 
+            // Load in new variables if delta volume is weak
+            if (EnableDynamicSettings)
+            {
+                if (midVolPump[0] || midVolDump[0] || bullVolPump[0] || bullVolDump[0])
+                {
+                    if (deltaBuyVol < 0.0 && deltaSellVol < 0.0)
+                    {
+                        localBarsToMissTrade = BarsToMissNegDelta;
+                    }
+                    else if (deltaBuyVol < 0.0 || deltaSellVol < 0.0)
+                    {
+                        localBarsToMissTrade = BarsToMissPosDelta;
+                    }
+                    else
+                    {
+                        localBarsToMissTrade = barsToMissTrade;
+                    }
+                }
+            } 
+            else
+            {
+                localBarsToMissTrade = barsToMissTrade;
+            }
+
+
+
             if (buyTrigger || buyVolSignal)
             {
                 buyVolSignal = true;
@@ -526,7 +580,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (!(midVolPump[0] || bullVolPump[0]))
                 {
-                    if (barsMissed < barsToMissTrade)
+                    if (barsMissed < localBarsToMissTrade)
                     {
                         barsMissed += 1;
                         Print(
@@ -568,7 +622,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (!(midVolDump[0] || bullVolDump[0]))
                 {
-                    if (barsMissed < barsToMissTrade)
+                    if (barsMissed < localBarsToMissTrade)
                     {
                         barsMissed += 1;
                         Print(
@@ -1469,6 +1523,23 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(1, 100)]
         [Display(Name = "VolSmooth", Description = "Volume smoothing period", Order = 43, GroupName = "Volume")]
         public int VolSmooth
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableDynamicSettings", Description = "Use Dynamic Parameters based on delta volume", Order = 44, GroupName = "Dynamic Trades")]
+        public bool EnableDynamicSettings
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToMissNegDelta", Description = "Number of bars to miss when in negative delta volume", Order = 45, GroupName = "Dynamic Trades")]
+        public int BarsToMissNegDelta
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToMissPosDelta", Description = "Number of bars to miss when in positive delta volume", Order = 46, GroupName = "Dynamic Trades")]
+        public int BarsToMissPosDelta
         { get; set; }
         #endregion
     }

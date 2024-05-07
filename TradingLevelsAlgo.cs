@@ -171,8 +171,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RealTimePnlOnly = true;
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
-                MaxLoss = -300;
-                MaxGain = 1000;
+                MaxLoss = -500;
+                MaxGain = 1200;
                 LossCutOff = -70;
                 ResetConsecOnTime = true;
                 EnableTradingTS1 = true;
@@ -187,9 +187,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 TPLevelTS1 = 90;
                 SLLevelTS1 = 15;
-                BuySellBufferTS1 = 3;
-                BarsToHoldTradeTS1 = 6;
-                BarsToMissTradeTS1 = 3;
+                BuySellBufferTS1 = 6;
+                BarsToHoldTradeTS1 = 5;
+                BarsToMissTradeTS1 = 4;
                 OffsetFromEntryToCancelTS1 = 40;
                 MaxLossConsecTS1 = 3;
                 ResetBarsMissedOnLongTS1 = false;
@@ -197,8 +197,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 TPLevelTS2 = 60;
                 SLLevelTS2 = 15;
-                BuySellBufferTS2 = 2;
-                BarsToHoldTradeTS2 = 3;
+                BuySellBufferTS2 = 5;
+                BarsToHoldTradeTS2 = 4;
                 BarsToMissTradeTS2 = 3;
                 OffsetFromEntryToCancelTS2 = 30;
                 MaxLossConsecTS2 = 2;

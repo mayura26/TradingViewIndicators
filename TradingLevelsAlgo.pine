@@ -5,8 +5,6 @@
 
 // TODO: Create flashing sign for big trend.
 
-// TODO: Create central chop zone
-
 // TODO: Rework the triggers and alerts to be in line with volume analysis
 
 // TODO: Add predictive volume indicator for cross
@@ -88,6 +86,8 @@ reversalOffset = input.float(5, title="Reversal Offset [ticks]", group="General"
 levelClashOffset = input.float(60, title="Level Clash Buffer [ticks]", group="General",minval=0, tooltip = "This the level clash offset. This is in ticks and will be used to determine if levels are too close to each other. If levels are within this buffer, they will not be drawn.")
 lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the MA. This is in minutes and will be used to calculate the MA.") 
 trendTF = input.int(10, title="Trend Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the trend on the dashboard.")
+enableCentralChopZone = input(true, title="Enable Central Chop Zone", group="General", tooltip = "Enable the central chop zone. This is when the last 10m 5 candles, at least 3 of them are flipping and range less than 30. Then that range is consider a chop range. Trades won't be taken in this range.")
+chopZoneMaxRange = input(30, title="Chop Zone Max Range", group="General", tooltip = "This is the max range for the chop zone. This is in points and will be used to determine if the range is a chop zone.")
 
 crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time after a crossover/ATR trigger to check for bounces off levels.")
 bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time to look for a bounce off a level to trigger a buy/sell.")
@@ -148,6 +148,13 @@ volBarsToMissNegDelta = input(1, title="Non-directional Bars to Close (Negative 
 volBarsToMissPosDelta = input(3, title="Non-directional Bars to Close (Positive Delta Trade)", group="Volume Analysis", tooltip="Number of bars used when the trade is a positive delta volume trade (so buy positive volume, sell negative volume). This can be a bit higher as these trades are more stable but can be reduced to increase profits vs risk of reversal.")
 resetBarsMissedOnLong = input(false, title="Reset Bars Missed on Long", group="Volume Analysis", tooltip="Reset the bars missed when the trade is a long trade. Have this on when long trades are more likely to be profitable and not reverse.")
 resetBarsMissedOnShort = input(true, title="Reset Bars Missed on Short", group="Volume Analysis", tooltip="Reset the bars missed when the trade is a short trade. Have this on when short trades are more likely to be profitable and not reverse.")
+deltaVolPosCutoff = input(2.5, title="Positive Delta Volume Cutoff [%]", group="Volume Analysis", tooltip="Positive cutoff in delta volume for candle highlighting.")
+deltaVolNegCutoff = input(2.5, title="Negative Delta Volume Cutoff [%]", group="Volume Analysis", tooltip="Negative cutoff in delta volume for candle highlighting.")
+enableDeltaVolShadow = input(true, title="Enable Delta Volume Shadow", group="Volume Analysis", tooltip="Enable the delta volume shadow. This will show the delta volume as a shadow on the candle.")
+deltaVolTrendVolColor = input(color.rgb(33,181,212,85), title="Trend Volume Color", group="Volume Analysis", tooltip="Color for the delta trend volume. (Both buy and sell volume moving upwards)")
+deltaVolBuyVolColor = input(color.rgb(32,192,93,85), title="Buy Volume Color", group="Volume Analysis", tooltip="Color for the buy volume. (Only buy volume positive)")
+deltaVolSellVolColor = input(color.rgb(255,32,93,85), title="Sell Volume Color", group="Volume Analysis", tooltip="Color for the sell volume. (Only sell volume positive)")
+deltaVolNegVolColor = input(color.rgb(255,222,32,85), title="Negative Volume Color", group="Volume Analysis", tooltip="Color for the negative volume. (Both buy and sell volume moving downwards)")
 
 // Define EMA/SMA settings
 periodFastMA = input(8, title="Fast MA Period", group="Moving Averages", inline="fast")
@@ -445,6 +452,12 @@ levelLookBackCheck(level, localLevel, lookBack) =>
             isSame := false
             break
     isSame
+
+// *********** VALID TIMES *************
+allowedTimes() =>
+    not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod2, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod3, timezone = "America/New_York"))
+
+bool validTriggerPeriod = allowedTimes()
 
 // ********** LEVEL RENDERING **********
 // Check if symbol matches the selected ticker
@@ -776,14 +789,24 @@ deltaBuyVol = (smoothBuy - smoothBuy[1])/smoothBuy[1]
 deltaSellVol = (smoothSell - smoothSell[1])/smoothSell[1]
 
 var color volBGColor = na
-if (deltaBuyVol >= 0 and deltaSellVol >= 0 and (midVolDump or midVolPump))
-    volBGColor := color.rgb(33,181,212,85)
-else if (deltaBuyVol >= 0 and deltaSellVol < 0 and midVolPump)
-    volBGColor := color.rgb(32,192,93,85)
-else if (deltaBuyVol < 0 and deltaSellVol >= 0 and midVolDump)
-    volBGColor := color.rgb(255,32,93,85)
-else if (deltaBuyVol < 0 and deltaSellVol < 0 and (midVolDump or midVolPump))
-    volBGColor := color.rgb(255,222,32,85)
+posVolCutoff = deltaVolPosCutoff / 100
+negVolCutoff = -1 * deltaVolNegCutoff / 100
+if midVolPump and enableDeltaVolShadow
+    if deltaBuyVol >= posVolCutoff
+        if deltaSellVol >= negVolCutoff
+            volBGColor := deltaVolTrendVolColor
+        else
+            volBGColor := deltaVolBuyVolColor
+    else
+        volBGColor := deltaVolNegVolColor
+else if midVolDump and enableDeltaVolShadow
+    if deltaSellVol >= posVolCutoff
+        if deltaBuyVol >= negVolCutoff
+            volBGColor := deltaVolTrendVolColor
+        else
+            volBGColor := deltaVolSellVolColor
+    else
+        volBGColor := deltaVolNegVolColor
 else
     volBGColor := na
 
@@ -833,6 +856,62 @@ plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == s
 plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.circle, title="Volume Indication", style=shape.circle, color=volColor, location=location.bottom, size=size.tiny)
 plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == shape.xcross, title="Volume Indication", style=shape.xcross, color=volColor, location=location.bottom, size=size.tiny)
 
+// ********** Central Chop Indicator **********
+[ChopO, ChopC, ChopH, ChopL] = request.security(syminfo.tickerid, str.tostring(trendTF), [open, close, high, low])
+
+// Direction consistency check
+var bool inChopZone = false
+var float upperChopZone = na
+var float lowerChopZone = na
+chopRangeTop = ChopH
+chopRangeBot = ChopL
+directionChange = 0
+trendUp = ChopC > ChopO
+chopZoneFound = false
+var int tfMulti = math.max(1, math.floor(trendTF/getTimeframeInMinutes()))
+
+for j = 1 to 5
+    i = j*tfMulti
+    if (trendUp)
+        if (ChopC[i] < ChopO[i])
+            directionChange := directionChange + 1   
+    else
+        if (ChopC[i] > ChopO[i])
+            directionChange := directionChange + 1
+            
+    if (ChopC[i] < ChopO[i])
+        trendUp := false
+    else
+        trendUp := true
+
+    if (ChopH[i] > chopRangeTop )
+        chopRangeTop := ChopH[i]
+    if (ChopL[i] < chopRangeBot)
+        chopRangeBot := ChopL[i]
+    
+    //log.info(str.tostring(ChopO[i]) + " ," + str.tostring(ChopC[i]) + " ," + str.tostring(ChopH[i]) + " ," + str.tostring(ChopL[i]) + " ," + str.tostring(directionChange) + " ," + str.tostring(tfMulti))
+
+if (directionChange >= 3 and ChopH < chopRangeTop and ChopL > chopRangeBot and chopRangeTop - chopRangeBot < chopZoneMaxRange)
+    chopZoneFound := true
+
+if chopZoneFound and enableCentralChopZone and validTriggerPeriod
+    if inChopZone == false
+        inChopZone := true
+        upperChopZone := chopRangeTop
+        lowerChopZone := chopRangeBot
+
+if inChopZone
+    if high[1] > upperChopZone or low[1] < lowerChopZone
+        inChopZone := false
+else if enableCentralChopZone and validTriggerPeriod
+    if close > lowerChopZone and close < upperChopZone
+        inChopZone := true
+
+plot(upperChopZone, "Upper Chopzone", inChopZone ? color.blue : na, 2,style = plot.style_circles)
+plot(lowerChopZone, "Lower Chopzone", inChopZone ? color.orange : na, 2,style = plot.style_circles)
+
+plotshape(series=inChopZone, location=location.belowbar, color=color.rgb(187, 243, 33), style=shape.xcross, title="Chop Zone Indicator")
+
 // ********** EMA RENDERING **********
 fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), imd(close, periodFastMA))
 slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), imd(close, periodSlowMA))
@@ -872,7 +951,7 @@ else if trendDirection < (-1 * trendLimit)
 else if trendDirection < (-1 * chopLimit)
     trendColor := color.rgb(94, 0, 0)
 
-chopDetect = (math.abs(trendDirection) < chopLimit and deltaMomentum < deltaMomentumChopLimt) or chopIndexDetect
+chopDetect = (math.abs(trendDirection) < chopLimit and deltaMomentum < deltaMomentumChopLimt) or chopIndexDetect or inChopZone or inChopZone[1]
 volatileMove = math.abs(trendDirection) > volatileLimit or deltaMomentum > deltaMomentumVolLimt
 
 // Calculate adaptive line
@@ -921,10 +1000,7 @@ crossSignalLookback = math.floor(crossLookbackTime / getTimeframeInMinutes())
 bufferBuySellLookback = math.floor(bounceLookbackTime / getTimeframeInMinutes())
 crossATRLookback = math.floor(crossATRLookbackTime / getTimeframeInMinutes())
 
-allowedTimes() =>
-    not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod2, timezone = "America/New_York")) or not na(time(timeframe = timeframe.period, session = timePeriod3, timezone = "America/New_York"))
 
-bool validTriggerPeriod = allowedTimes()
 bool allConfluencesEnabled = not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York"))
 
 // If trend is up and we get a bounce up we have a buy directional else its reversal

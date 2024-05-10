@@ -3,8 +3,6 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
-// TODO: Create flashing sign for big trend.
-
 // TODO: Rework the triggers and alerts to be in line with volume analysis
 
 // TODO: Add predictive volume indicator for cross
@@ -1237,6 +1235,7 @@ else if buyVolCloseTrigger or sellVolCloseTrigger
 
 bgcolor(volBGColor)
 
+// DASHBOARD
 if barstate.islast and show_table
     // Trend information
     f_fillCellColorText(0, 0, "T: " + str.tostring(math.round(trendDirection,1)), trendColor,"Shows the calculated trend index (0-10) and color. The brightest green/red indicates an aggresive up/down trend. Generally never look to short a bright green or long a bright red.")

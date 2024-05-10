@@ -78,7 +78,7 @@ showCamLevels = input(true, title="Show Camarilla Levels", group="Calculated Lev
 showORBLevels = input(true, title="Show ORB Levels", group="Calculated Levels", tooltip = "This will show the Opening Range Breakout levels on the chart. This is the high and low of the first (15/30/60) minutes of the trading day.")
 timeBeforeLevelLive = input(15, title="Time Before Level Live [min]", group="Calculated Levels", tooltip = "Time before level becomes live and is used in triggers. This is to prevent the level from being used too early while still being set (e.g. high of day).")
 
-labelOffset = input(5, title="Label Offset", group="General", tooltip = "This is the offset of the labels for the lines. Caution can sometimes end up in the wrong place and will move when this is adjusted. Seems to be a function of TradingView repainting.")
+labelOffset = input(-1, title="Label Offset", group="General", tooltip = "This is the offset of the labels for the lines. Caution can sometimes end up in the wrong place and will move when this is adjusted. Seems to be a function of TradingView repainting.")
 clashLineTransp = input(50,title="Clashing Line Transparency", group="General", tooltip = "The transparency  of lines when they are clashing")
 levelBounceBuffer = input.float(15.0, title="Level Bounce Buffer [H-L] (%)", group="General", minval=0, maxval=100, tooltip = "This is the offset for the level bounce. This is a percentage of the high/low range of the bar. If the close/open is within this buffer of the level, it will be considered a bounce.")
 buySellBuffer = input.float(10, title="Buy/Sell Offset [ticks]", group="General",minval=0, tooltip = "This is the offset for the buy/sell levels. This is in ticks and will be used to determine the optimal level for the buy/sell.")
@@ -87,7 +87,8 @@ levelClashOffset = input.float(60, title="Level Clash Buffer [ticks]", group="Ge
 lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the MA. This is in minutes and will be used to calculate the MA.") 
 trendTF = input.int(10, title="Trend Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the trend on the dashboard.")
 enableCentralChopZone = input(true, title="Enable Central Chop Zone", group="General", tooltip = "Enable the central chop zone. This is when the last 10m 5 candles, at least 3 of them are flipping and range less than 30. Then that range is consider a chop range. Trades won't be taken in this range.")
-chopZoneMaxRange = input(30, title="Chop Zone Max Range", group="General", tooltip = "This is the max range for the chop zone. This is in points and will be used to determine if the range is a chop zone.")
+chopZoneMaxRange = input(40, title="Chop Zone Max Range", group="General", tooltip = "This is the max range for the chop zone. This is in points and will be used to determine if the range is a chop zone.")
+resetChopZoneTime = input(120,title="Chop Zone Time To Show Zone [min]", group="General", tooltip = "This is the amount of time in minutes that the chopzone will be shown after being identified.")
 
 crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time after a crossover/ATR trigger to check for bounces off levels.")
 bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time to look for a bounce off a level to trigger a buy/sell.")
@@ -198,7 +199,7 @@ timePeriod1DirectionalTriggerEnabled = input(true, title="Directional Trades Ena
 timePeriod1DirectionalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Dir")
 timePeriod1ReversalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Rev")
 timePeriod1ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Rev")
-timePeriod2 = input.session("0600-0900", title="Trade Period 2", group="Trading Time (NY Time)")
+timePeriod2 = input.session("0600-1000", title="Trade Period 2", group="Trading Time (NY Time)")
 timePeriod2VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod2CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Cross")
 timePeriod2CrossMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Cross")
@@ -788,30 +789,6 @@ irregVol = volume/avgVolume > irregVolLevel
 deltaBuyVol = (smoothBuy - smoothBuy[1])/smoothBuy[1]
 deltaSellVol = (smoothSell - smoothSell[1])/smoothSell[1]
 
-var color volBGColor = na
-posVolCutoff = deltaVolPosCutoff / 100
-negVolCutoff = -1 * deltaVolNegCutoff / 100
-if midVolPump and enableDeltaVolShadow
-    if deltaBuyVol >= posVolCutoff
-        if deltaSellVol >= negVolCutoff
-            volBGColor := deltaVolTrendVolColor
-        else
-            volBGColor := deltaVolBuyVolColor
-    else
-        volBGColor := deltaVolNegVolColor
-else if midVolDump and enableDeltaVolShadow
-    if deltaSellVol >= posVolCutoff
-        if deltaBuyVol >= negVolCutoff
-            volBGColor := deltaVolTrendVolColor
-        else
-            volBGColor := deltaVolSellVolColor
-    else
-        volBGColor := deltaVolNegVolColor
-else
-    volBGColor := na
-
-bgcolor(volBGColor)
-
 // ********** VOLUME RENDERING **********
 volColor = color.rgb(0,0,0)
 volIndStyle = shape.square
@@ -863,6 +840,11 @@ plotshape(showVolIndicator and volColor != color.rgb(0,0,0) and volIndStyle == s
 var bool inChopZone = false
 var float upperChopZone = na
 var float lowerChopZone = na
+var int timeSinceChopZone = na
+var bool showChopZone = false
+var bool reenterChopZone = false
+var bool reenterChopZoneTop = false
+var bool reenterChopZoneBot = false
 chopRangeTop = ChopH
 chopRangeBot = ChopL
 directionChange = 0
@@ -899,16 +881,36 @@ if chopZoneFound and enableCentralChopZone and validTriggerPeriod
         inChopZone := true
         upperChopZone := chopRangeTop
         lowerChopZone := chopRangeBot
+        timeSinceChopZone := 0
+        showChopZone := true
+        reenterChopZone := false
+        reenterChopZoneTop := false
+        reenterChopZoneBot := false
 
 if inChopZone
     if high[1] > upperChopZone or low[1] < lowerChopZone
         inChopZone := false
 else if enableCentralChopZone and validTriggerPeriod
+    if barstate.isconfirmed
+        timeSinceChopZone := timeSinceChopZone + 1
     if close > lowerChopZone and close < upperChopZone
         inChopZone := true
+        reenterChopZone := true
 
-plot(upperChopZone, "Upper Chopzone", inChopZone ? color.blue : na, 2,style = plot.style_circles)
-plot(lowerChopZone, "Lower Chopzone", inChopZone ? color.orange : na, 2,style = plot.style_circles)
+if reenterChopZone
+    if close < lowerChopZone
+        reenterChopZoneBot := true
+    if close > upperChopZone
+        reenterChopZoneTop := true
+
+if timeSinceChopZone > math.floor(resetChopZoneTime/getTimeframeInMinutes()) or (reenterChopZone and reenterChopZoneBot and reenterChopZoneTop)
+    showChopZone := false
+    reenterChopZone := false
+    reenterChopZoneTop := false
+    reenterChopZoneBot := false
+
+plot(upperChopZone, "Upper Chopzone", showChopZone ? #008cff : na, 2,style = plot.style_circles)
+plot(lowerChopZone, "Lower Chopzone", showChopZone ? #00ffc8 : na, 2,style = plot.style_circles)
 
 plotshape(series=inChopZone, location=location.belowbar, color=color.rgb(187, 243, 33), style=shape.xcross, title="Chop Zone Indicator")
 
@@ -1209,6 +1211,31 @@ else if buyVolSignal
     volumeTradeColor := color.rgb(0, 114, 4)
 else if sellVolSignal
     volumeTradeColor := color.rgb(116, 0, 0)
+
+// Volume Delta Shadow
+var color volBGColor = na
+posVolCutoff = deltaVolPosCutoff / 100
+negVolCutoff = -1 * deltaVolNegCutoff / 100
+if midVolPump and enableDeltaVolShadow and buyVolSignal
+    if deltaBuyVol >= posVolCutoff
+        if deltaSellVol >= negVolCutoff
+            volBGColor := deltaVolTrendVolColor
+        else
+            volBGColor := deltaVolBuyVolColor
+    else
+        volBGColor := deltaVolNegVolColor
+else if midVolDump and enableDeltaVolShadow and sellVolSignal
+    if deltaSellVol >= posVolCutoff
+        if deltaBuyVol >= negVolCutoff
+            volBGColor := deltaVolTrendVolColor
+        else
+            volBGColor := deltaVolSellVolColor
+    else
+        volBGColor := deltaVolNegVolColor
+else if buyVolCloseTrigger or sellVolCloseTrigger
+    volBGColor := na
+
+bgcolor(volBGColor)
 
 if barstate.islast and show_table
     // Trend information

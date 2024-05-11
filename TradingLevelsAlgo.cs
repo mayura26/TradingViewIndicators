@@ -22,13 +22,9 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     // TODO: Change to process on tick and have trading on first tick
-    // TODO: Look at moving SL after trade is in profit
     // TODO: Look at split TP
 	// TODO: Consider TP to be from initial entry level
-    // TODO: Add days to ignore
 	// TODO: Close trade if over x in so many candles/volatile move?
-    // TODO: Add regions and organise
-    // TODO: Look at vol slope direction to know whether to chase trade. if volume going up then allow bar missed, if its going down then close on amiss?
     // FEATURE: Add a check to see if we are in a chopzone and if so , disable trading
     // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
@@ -232,6 +228,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BarsToMissPosDelta = 3;
                 DeltaNegCutOff = 1.0;
 
+                EnableDynamicSL = true;
+                ProfitToMoveSL = 29;
+                SLNewLevel = -2;
+
                 #region Banned Trading Days
                 TradingBanDays = new List<DateTime>
                 {
@@ -245,7 +245,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v1.4 ******** ");
+                Print(Time[0] + " ******** TRADING ALGO v1.5 ******** ");
                 // Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
@@ -758,7 +758,30 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Trade Management
-            // Close Trades that are too far away from entry
+            #region Stoploss management
+            // Resets the stop loss to the original value when all positions are closed
+            if (Position.MarketPosition == MarketPosition.Flat)
+            {
+                SetStopLoss("Long", CalculationMode.Ticks, slLevel / TickSize, false);
+                SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
+            }
+            else if (Position.MarketPosition == MarketPosition.Long && EnableDynamicSL)
+            {
+                if (High[0] > Position.AveragePrice + ProfitToMoveSL)
+                {
+                    SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
+                }
+            }
+            else if (Position.MarketPosition == MarketPosition.Short && EnableDynamicSL)
+            {
+                if (Low[0] < Position.AveragePrice - ProfitToMoveSL)
+                {
+                    SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
+                }
+            }
+            #endregion
+
+            #region Close Trades that are too far away from entry
             if (entryOrder != null)
             {
                 // Manage open orders here, e.g., check if it's time to exit based on bar count
@@ -806,8 +829,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     entryOrderShort = null; // Reset the entry order variable
                 }
             }
+            #endregion
 
-            // Close trades on close signal
+            #region Close trades on close signal
             if (buyVolCloseTrigger)
             {
                 if (entryOrder != null && entryOrder.OrderState == OrderState.Filled)
@@ -851,7 +875,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     ExitShort("Short");
                 }
             }
+            #endregion
 
+            #region Buy/Sell Orders
             if (!buyVolCloseTrigger && !sellVolCloseTrigger)
             {
                 if ((buyTrigger || reverseBuyTrade) && entryOrder == null)
@@ -981,6 +1007,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             reverseBuyTrade = sellVolCloseTrigger && buyTrigger;
             reverseSellTrade = buyVolCloseTrigger && sellTrigger;
+            #endregion
             #endregion
 
             #region Dashboard
@@ -1611,6 +1638,23 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0, 100)]
         [Display(Name = "DeltaNegCutOff", Description = "Delta volume cutoff for negative delta trades (%)", Order = 47, GroupName = "Dynamic Trades")]
         public double DeltaNegCutOff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableDynamicSL", Description = "Enable SL move on profit", Order = 48, GroupName = "Dynamic Stoploss")]
+        public bool EnableDynamicSL
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "ProfitToMoveSL", Description = "Profit level to move SL", Order = 49, GroupName = "Dynamic Stoploss")]
+        public double ProfitToMoveSL
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-10, double.MaxValue)]
+        [Display(Name = "SLNewLevel", Description = "New SL level after profit", Order = 50, GroupName = "Dynamic Stoploss")]
+        public double SLNewLevel
         { get; set; }
         #endregion
     }

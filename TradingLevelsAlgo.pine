@@ -840,7 +840,6 @@ var float upperChopZone = na
 var float lowerChopZone = na
 var int timeSinceChopZone = na
 var bool showChopZone = false
-var bool reenterChopZone = false
 var bool reenterChopZoneTop = false
 var bool reenterChopZoneBot = false
 chopRangeTop = ChopH
@@ -881,29 +880,32 @@ if chopZoneFound and enableCentralChopZone and validTriggerPeriod
         lowerChopZone := chopRangeBot
         timeSinceChopZone := 0
         showChopZone := true
-        reenterChopZone := false
         reenterChopZoneTop := false
         reenterChopZoneBot := false
 
+if not validTriggerPeriod
+    inChopZone := false
+    timeSinceChopZone := 0
+    showChopZone := false
+    reenterChopZoneTop := false
+    reenterChopZoneBot := false
+
 if inChopZone
-    if high[1] > upperChopZone or low[1] < lowerChopZone
+    if low[1] > upperChopZone or high[1] < lowerChopZone
         inChopZone := false
 else if enableCentralChopZone and validTriggerPeriod
     if barstate.isconfirmed
         timeSinceChopZone := timeSinceChopZone + 1
-    if close > lowerChopZone and close < upperChopZone
+    if close > lowerChopZone and close < upperChopZone and high < upperChopZone and low > lowerChopZone
         inChopZone := true
-        reenterChopZone := true
 
-if reenterChopZone
-    if close < lowerChopZone
-        reenterChopZoneBot := true
-    if close > upperChopZone
-        reenterChopZoneTop := true
+if close < lowerChopZone
+    reenterChopZoneBot := true
+if close > upperChopZone
+    reenterChopZoneTop := true
 
-if timeSinceChopZone > math.floor(resetChopZoneTime/getTimeframeInMinutes()) or (reenterChopZone and reenterChopZoneBot and reenterChopZoneTop)
+if timeSinceChopZone > math.floor(resetChopZoneTime/getTimeframeInMinutes()) or (reenterChopZoneBot and reenterChopZoneTop) or (high > upperChopZone and low < lowerChopZone)
     showChopZone := false
-    reenterChopZone := false
     reenterChopZoneTop := false
     reenterChopZoneBot := false
 

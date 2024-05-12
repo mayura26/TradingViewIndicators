@@ -85,8 +85,10 @@ levelClashOffset = input.float(60, title="Level Clash Buffer [ticks]", group="Ge
 lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the MA. This is in minutes and will be used to calculate the MA.") 
 trendTF = input.int(10, title="Trend Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the trend on the dashboard.")
 enableCentralChopZone = input(true, title="Enable Central Chop Zone", group="General", tooltip = "Enable the central chop zone. This is when the last 10m 5 candles, at least 3 of them are flipping and range less than 30. Then that range is consider a chop range. Trades won't be taken in this range.")
-chopZoneMaxRange = input(40, title="Chop Zone Max Range", group="General", tooltip = "This is the max range for the chop zone. This is in points and will be used to determine if the range is a chop zone.")
+chopZoneMaxRange = input(30, title="Chop Zone Max Range", group="General", tooltip = "This is the max range for the chop zone. This is in points and will be used to determine if the range is a chop zone.")
 resetChopZoneTime = input(120,title="Chop Zone Time To Show Zone [min]", group="General", tooltip = "This is the amount of time in minutes that the chopzone will be shown after being identified.")
+chopZoneLookback = input.int(9, title="Chop Zone Lookback Bars [min]", group="General",minval=3, maxval=30, tooltip = "Amount of time to lookback before we can take trades when in a chopzone. This is in minutes.")
+chopZoneMinDirChange = input.int(2, title="Chop Zone Min Direction Change", group="General",minval=1, maxval=5, tooltip = "Minimum number of direction changes in the chop zone to consider it a chop zone.")
 
 crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time after a crossover/ATR trigger to check for bounces off levels.")
 bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", group="General",minval=3, maxval=30, tooltip="Lookback time to look for a bounce off a level to trigger a buy/sell.")
@@ -870,7 +872,7 @@ for j = 1 to 5
     
     //log.info(str.tostring(ChopO[i]) + " ," + str.tostring(ChopC[i]) + " ," + str.tostring(ChopH[i]) + " ," + str.tostring(ChopL[i]) + " ," + str.tostring(directionChange) + " ," + str.tostring(tfMulti))
 
-if (directionChange >= 3 and ChopH < chopRangeTop and ChopL > chopRangeBot and chopRangeTop - chopRangeBot < chopZoneMaxRange)
+if (directionChange >= chopZoneMinDirChange and ChopH < chopRangeTop and ChopL > chopRangeBot and chopRangeTop - chopRangeBot < chopZoneMaxRange)
     chopZoneFound := true
 
 if chopZoneFound and enableCentralChopZone and validTriggerPeriod
@@ -914,6 +916,12 @@ plot(lowerChopZone, "Lower Chopzone", showChopZone ? #00ffc8 : na, 2,style = plo
 
 plotshape(series=inChopZone, location=location.belowbar, color=color.rgb(187, 243, 33), style=shape.xcross, title="Chop Zone Indicator")
 
+chopZoneTrade = false
+chopZoneLookbackLoops = math.floor(chopZoneLookback/getTimeframeInMinutes())
+for i = 0 to chopZoneLookbackLoops
+    if (inChopZone[i])
+        chopZoneTrade := true
+
 // ********** EMA RENDERING **********
 fastMA = typeFastMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodFastMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), imd(close, periodFastMA))
 slowMA = typeSlowMA == "EMA" ? request.security(syminfo.tickerid, str.tostring(lowerTF), ta.ema(close, periodSlowMA)) : request.security(syminfo.tickerid, str.tostring(lowerTF), imd(close, periodSlowMA))
@@ -953,7 +961,7 @@ else if trendDirection < (-1 * trendLimit)
 else if trendDirection < (-1 * chopLimit)
     trendColor := color.rgb(94, 0, 0)
 
-chopDetect = (math.abs(trendDirection) < chopLimit and deltaMomentum < deltaMomentumChopLimt) or chopIndexDetect or inChopZone or inChopZone[1]
+chopDetect = (math.abs(trendDirection) < chopLimit and deltaMomentum < deltaMomentumChopLimt) or chopIndexDetect or chopZoneTrade
 volatileMove = math.abs(trendDirection) > volatileLimit or deltaMomentum > deltaMomentumVolLimt
 
 // Calculate adaptive line

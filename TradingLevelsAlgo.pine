@@ -895,7 +895,7 @@ if not validTriggerPeriod
 if inChopZone
     if low[1] > upperChopZone or high[1] < lowerChopZone
         inChopZone := false
-else if enableCentralChopZone and validTriggerPeriod
+else if enableCentralChopZone and validTriggerPeriod and showChopZone
     if barstate.isconfirmed
         timeSinceChopZone := timeSinceChopZone + 1
     if close > lowerChopZone and close < upperChopZone and high < upperChopZone and low > lowerChopZone

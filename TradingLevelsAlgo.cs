@@ -3,10 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Drawing;
+using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using NinjaTrader.Cbi;
 using NinjaTrader.CQG.ProtoBuf;
+using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.NinjaScript.Indicators;
@@ -24,8 +27,6 @@ namespace NinjaTrader.NinjaScript.Strategies
     // TODO: Change to process on tick and have trading on first tick
     // TODO: Look at split TP
 	// TODO: Consider TP to be from initial entry level
-	// TODO: Close trade if over x in so many candles/volatile move?
-    // FEATURE: Add a check to see if we are in a chopzone and if so , disable trading
     // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
     // FEATURE: Add timeout after two bad trades in succession
@@ -142,6 +143,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         public Brush DeltaVolTrendShade = Brushes.SkyBlue;
         public int DeltaShadeOpacity						= 25;
 
+        //Chop Zone Variables
+        private Series<bool> inChopZone;
+        private double upperChopZone;
+        private double lowerChopZone;
+        private int timeSinceChopZone;
+        private bool showChopZone = false;
+        private bool reenterChopZoneTop = false;
+        private bool reenterChopZoneBot = false;
+
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
@@ -232,6 +242,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProfitToMoveSL = 29;
                 SLNewLevel = -2;
 
+                EnableChopZone = true;
+                EnableExtendedChopZone = true;
+                ChopZoneMaxRange = 30;
+                ChopZoneMinDir = 2;
+                ChopZoneTimeFrame = 10;
+                ChopZoneResetTime = 120;
+                ChopZoneLookBack = 3;
+
                 #region Banned Trading Days
                 TradingBanDays = new List<DateTime>
                 {
@@ -266,6 +284,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 buyVolTrigger = new Series<bool>(this);
                 sellVolTrigger = new Series<bool>(this);
                 volTradeLength = 0;
+                inChopZone = new Series<bool>(this);
+                inChopZone[0] = false;
 
                 // Initialize EMAs
                 smoothConfirmMA = DynamicTrendLine(8, 13, 21);
@@ -300,10 +320,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 trendShade.Freeze(); // freeze the temp brush
                 DeltaVolTrendShade = trendShade; // assign the temp brush value to DeltaVolTrendShade.
             }
+            else if (State == State.Configure)
+            {
+                AddDataSeries(BarsPeriodType.Minute, ChopZoneTimeFrame);
+            }
         }
 
         protected override void OnBarUpdate()
         {
+            // Ensure we have enough data
+            if (CurrentBar < 14 || BarsInProgress == 1)
+                return;
+
             #region Time Session Functions
             // Reset PnL at the start of the session
             if (Bars.IsFirstBarOfSession)
@@ -323,13 +351,129 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Load variables
             GetTimeSessionVariables();
 
-            // Ensure we have enough data
-            if (CurrentBar < 14)
-                return;
             #endregion
 
             #region Trend/Chop Calculation
-            // ********** TREND CALCULATION **********
+            #region Central Chop Zone
+            double ChopO = Opens[1][0];
+            double ChopC = Closes[1][0];
+            double ChopH = Highs[1][0];
+            double ChopL = Lows[1][0];
+            bool chopZoneFound = false;
+            int directionChange = 0;
+            double chopRangeTop = ChopH;
+            double chopRangeBot = ChopL;
+            bool trendUp = ChopC > ChopO;
+            if (CurrentBar > 5 * ChopZoneTimeFrame)
+            for (int i = 0; i < 5; i++)
+            {
+                if (trendUp)
+                {
+                    if (Closes[1][i] < Opens[1][i])
+                    {
+                        directionChange++;
+                    }
+                }
+                else
+                {
+                    if (Closes[1][i] > Opens[1][i])
+                    {
+                        directionChange++;
+                    }
+                }
+
+                if (Closes[1][i] < Opens[1][i])
+                    trendUp = false;
+                else
+                    trendUp = true;
+
+                if (Highs[1][i] > chopRangeTop)
+                    chopRangeTop = Highs[1][i];
+
+                if (Lows[1][i] < chopRangeBot)
+                    chopRangeBot = Lows[1][i];
+             }
+
+            // Define chop zone based on calculated values
+            if (directionChange >= ChopZoneMinDir && High[0] < chopRangeTop && Low[0] > chopRangeBot && (chopRangeTop - chopRangeBot < ChopZoneMaxRange))
+            {
+                chopZoneFound = true;
+            }
+
+            if (chopZoneFound && EnableChopZone && validTriggerPeriod)
+            {
+                if (inChopZone[0] == false)
+                {
+                    inChopZone[0] = true;
+                    upperChopZone = chopRangeTop;
+                    lowerChopZone = chopRangeBot;
+                    timeSinceChopZone = 0;
+                    showChopZone = true;
+                    reenterChopZoneTop = false;
+                    reenterChopZoneBot = false;
+                }
+            }
+            else if (!validTriggerPeriod)
+            {
+                inChopZone[0] = false; 
+                timeSinceChopZone = 0;
+                showChopZone = false;
+                reenterChopZoneTop = false;
+                reenterChopZoneBot = false;
+            }
+
+            if (inChopZone[0])
+            {
+                if (Low[1] > upperChopZone || High[1] < lowerChopZone)
+                    inChopZone[0] = false;
+            }
+            else if (EnableChopZone && validTriggerPeriod)
+            {
+                timeSinceChopZone += BarsPeriod.Value;
+
+                if (Close[0] > lowerChopZone && Close[0] < upperChopZone && High[0] < upperChopZone && Low[0] > lowerChopZone && EnableExtendedChopZone)
+                {
+                    inChopZone[0] = true;
+                    if (Close[1] < lowerChopZone)
+                        reenterChopZoneBot = true;
+                    if (Close[1] > upperChopZone)
+                        reenterChopZoneTop = true;
+                }
+
+                if (!EnableExtendedChopZone)
+                    showChopZone = false;
+            }
+
+            if (Close[0] < lowerChopZone)
+                reenterChopZoneBot = true;
+            if (Close[0] > upperChopZone)
+                reenterChopZoneTop = true;
+
+            if ((timeSinceChopZone > ChopZoneResetTime) || (reenterChopZoneBot && reenterChopZoneTop))
+            {
+                showChopZone = false;
+                reenterChopZoneTop = false;
+                reenterChopZoneBot = false;
+            }
+
+            if (showChopZone)
+            {
+                Draw.Line(this, "ChopZoneTop" + CurrentBar, true, 1, upperChopZone, 0, upperChopZone, Brushes.SteelBlue, DashStyleHelper.Solid, 2);
+                Draw.Line(this, "ChopZoneBot" + CurrentBar, true, 1, lowerChopZone, 0, lowerChopZone, Brushes.Orange, DashStyleHelper.Solid, 2);
+            }
+
+            if (inChopZone[0])
+                Draw.Diamond(this, "ChopZoneIndicator" + CurrentBar, true, 0, Low[0] - TickSize * 50, Brushes.Cyan);
+
+            bool chopZoneTrade = false;
+            for (int i = 0; i < ChopZoneLookBack; i++)
+            {
+                if (inChopZone[i])
+                    chopZoneTrade = true;
+            }
+            #endregion
+
+            #region ********** TREND CALCULATION **********
             // Generate momentum signals
             momentum[0] = 0;
             for (int i = 0; i < dataLength; i++)
@@ -345,6 +489,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             momentumMain = EMA(momentumMA, atrSmoothLength);
             momentumSignal = EMA(momentumMain, atrSmoothLength);
 
+
             // Chop calculation
             chopIndex = ChoppinessIndex(chopCalcLength);
             chopIndexDetect[0] = chopIndex[0] > 61.8;
@@ -357,11 +502,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 (
                     Math.Abs(trendDirection[0]) < chopLimit
                     && deltaMomentum[0] < deltaMomentumChopLimt
-                ) || chopIndexDetect[0];
+                ) || chopIndexDetect[0] || chopZoneTrade;
 
             volatileMove[0] =
                 Math.Abs(trendDirection[0]) > volatileLimit
                 || deltaMomentum[0] > deltaMomentumVolLimt;
+            #endregion
             #endregion
 
             #region Volume Analysis
@@ -1655,6 +1801,46 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(-10, double.MaxValue)]
         [Display(Name = "SLNewLevel", Description = "New SL level after profit", Order = 50, GroupName = "Dynamic Stoploss")]
         public double SLNewLevel
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableChopZone", Description = "Enable chop zone filter", Order = 50, GroupName = "Chop Zone")]
+        public bool EnableChopZone
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableExtendedChopZone", Description = "Enable extended chopzone detection", Order = 51, GroupName = "Chop Zone")]
+        public bool EnableExtendedChopZone
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "ChopZoneMaxRange", Description = "Max range for chop zone", Order = 52, GroupName = "Chop Zone")]
+        public double ChopZoneMaxRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ChopZoneMinDir", Description = "Min direction changes for chop zone", Order = 53, GroupName = "Chop Zone")]
+        public int ChopZoneMinDir
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ChopZoneTimeFrame", Description = "Time frame for chop zone", Order = 54, GroupName = "Chop Zone")]
+        public int ChopZoneTimeFrame
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "ChopZoneResetTime", Description = "Time to reset chop zone", Order = 55, GroupName = "Chop Zone")]
+        public int ChopZoneResetTime
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1,100)]
+        [Display(Name ="ChopZoneLookBack", Description = "Look back period for chop zone", Order = 56, GroupName = "Chop Zone")]
+        public int ChopZoneLookBack
         { get; set; }
         #endregion
     }

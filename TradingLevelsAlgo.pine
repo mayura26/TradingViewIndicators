@@ -5,6 +5,8 @@
 
 // TODO: Rework the triggers and alerts to be in line with volume analysis
 
+// TODO: Add alerts for when leaving chopzone
+
 // TODO: Add predictive volume indicator for cross
 
 // TODO: Modifify Code so it checks timezone/confluences
@@ -85,7 +87,7 @@ levelClashOffset = input.float(60, title="Level Clash Buffer [ticks]", group="Ge
 lowerTF = input.int(3, title="MA Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the MA. This is in minutes and will be used to calculate the MA.") 
 trendTF = input.int(10, title="Trend Timeframe [min]", group="General",minval=0, maxval=10, tooltip = "This is the timeframe for the trend on the dashboard.")
 enableCentralChopZone = input(true, title="Enable Central Chop Zone", group="General", tooltip = "Enable the central chop zone. This is when the last 10m 5 candles, at least 3 of them are flipping and range less than 30. Then that range is consider a chop range. Trades won't be taken in this range.")
-chopZoneMaxRange = input(30, title="Chop Zone Max Range", group="General", tooltip = "This is the max range for the chop zone. This is in points and will be used to determine if the range is a chop zone.")
+chopZoneMaxRange = input(35, title="Chop Zone Max Range", group="General", tooltip = "This is the max range for the chop zone. This is in points and will be used to determine if the range is a chop zone.")
 resetChopZoneTime = input(120,title="Chop Zone Time To Show Zone [min]", group="General", tooltip = "This is the amount of time in minutes that the chopzone will be shown after being identified.")
 chopZoneLookback = input.int(9, title="Chop Zone Lookback Bars [min]", group="General",minval=3, maxval=30, tooltip = "Amount of time to lookback before we can take trades when in a chopzone. This is in minutes.")
 chopZoneMinDirChange = input.int(2, title="Chop Zone Min Direction Change", group="General",minval=1, maxval=5, tooltip = "Minimum number of direction changes in the chop zone to consider it a chop zone.")
@@ -498,8 +500,10 @@ atr100 = yesterdayClose + atr
 r = yesterdayHigh - yesterdayLow
 R6 = yesterdayHigh / yesterdayLow * yesterdayClose  //Bull target 2
 R4 = yesterdayClose + r * (1.1 / 2)  //Bear Last Stand
+R3 = yesterdayClose + r * (1.1 / 4)  //Bear Reversal Low
 S4 = yesterdayClose - r * (1.1 / 2)  //Bull Last Stand 
 S6 = yesterdayClose - (R6 - yesterdayClose)  //Bear Target 2
+S3 = yesterdayClose - r * (1.1 / 4)  //Bull Reversal High 
 
 // Calculate ORB
 orbTime = time(timeframe.period, orbSession, timezone = "America/New_York")
@@ -545,8 +549,10 @@ if (showATRLevels)
 if (showCamLevels)
     draw_levels_calculated(R6, preCalcColor, preCalcWidth, "Bull Target", labelOffset, startOfDayIndex)
     draw_levels_calculated(R4, preCalcColor, preCalcWidth, "Bear Reversal", labelOffset, startOfDayIndex)
+    draw_levels_calculated(R3, preCalcColor, preCalcWidth, "ERange High", labelOffset, startOfDayIndex)
     draw_levels_calculated(S4, preCalcColor, preCalcWidth, "Bull Reversal", labelOffset, startOfDayIndex)
     draw_levels_calculated(S6, preCalcColor, preCalcWidth, "Bear Target", labelOffset, startOfDayIndex)
+    draw_levels_calculated(S3, preCalcColor, preCalcWidth, "ERange Low", labelOffset, startOfDayIndex)
 
 // Daily levels
 if (showDailyLevels)
@@ -901,10 +907,11 @@ else if enableCentralChopZone and validTriggerPeriod and showChopZone
     if close > lowerChopZone and close < upperChopZone and high < upperChopZone and low > lowerChopZone
         inChopZone := true
 
-if close < lowerChopZone
-    reenterChopZoneBot := true
-if close > upperChopZone
-    reenterChopZoneTop := true
+if timeSinceChopZone > 0
+    if close < lowerChopZone
+        reenterChopZoneBot := true
+    if close > upperChopZone
+        reenterChopZoneTop := true
 
 if timeSinceChopZone > math.floor(resetChopZoneTime/getTimeframeInMinutes()) or (reenterChopZoneBot and reenterChopZoneTop) or (high > upperChopZone and low < lowerChopZone)
     showChopZone := false
@@ -1083,14 +1090,25 @@ var bool buyVolSignal = na
 var bool sellVolSignal = na
 var int barsMissed = na
 var int localBarsMissed = na
+posVolCutoff = deltaVolPosCutoff / 100
+negVolCutoff = -1 * deltaVolNegCutoff / 100
 
-if (midVolDump or midVolPump)
-    if deltaBuyVol < 0 and deltaSellVol < 0
-        localBarsMissed := volBarsToMissNegDelta
-    else if deltaBuyVol < 0 or deltaSellVol < 0
-        localBarsMissed := volBarsToMissPosDelta
+if midVolPump
+    if deltaBuyVol >= posVolCutoff
+        if deltaSellVol >= negVolCutoff
+            localBarsMissed := volBarsToMissTrade
+        else
+            localBarsMissed := volBarsToMissPosDelta
     else
-        localBarsMissed := volBarsToMissTrade
+        localBarsMissed := volBarsToMissNegDelta
+else if midVolDump
+    if deltaSellVol >= posVolCutoff
+        if deltaBuyVol >= negVolCutoff
+            localBarsMissed := volBarsToMissTrade
+        else
+            localBarsMissed := volBarsToMissPosDelta
+    else
+        localBarsMissed := volBarsToMissNegDelta
 
 if (validTriggerPeriod[1] and not validTriggerPeriod[0])
     if buyVolSignal
@@ -1109,7 +1127,7 @@ if (buyTrigger or buyVolSignal)
             volTradeLength := 0
             barsMissed := 0
         else if not (midVolPump or bullVolPump) and not volCloseOnReversalOnly
-            if (barsMissed < volBarsToMissTrade)
+            if (barsMissed < localBarsMissed)
                 barsMissed := barsMissed + 1
             else
                 buyVolSignal := false
@@ -1131,7 +1149,7 @@ if (sellTrigger or sellVolSignal)
             volTradeLength := 0
             barsMissed := 0
         else if not (midVolDump or bullVolDump) and not volCloseOnReversalOnly
-            if (barsMissed < volBarsToMissTrade)
+            if (barsMissed < localBarsMissed)
                 barsMissed := barsMissed + 1
             else
                 sellVolSignal := false
@@ -1182,10 +1200,22 @@ else if close - smoothConfirmMA < -1 * priceOptimalBufferEntry
     confirmBoxColor := color.rgb(116, 0, 0)
 
 confirmToolTip = ""
+chopText = "CHOP"
 if (volatileMove)
     confirmToolTip := "Volatile move in progress, caution fading this"
-else if (chopDetect)
-    confirmToolTip := "Market caught in chop. Advised to wait for trade"
+    
+if (chopDetect)
+    if (math.abs(trendDirection) < chopLimit and deltaMomentum < deltaMomentumChopLimt)
+        confirmToolTip := "Trend & momentum are choppy. Advised to wait for trade"
+        chopText := "CHOP(T/M)"
+    else if (chopIndexDetect)
+        confirmToolTip := "Chop index is high. Advised to wait for trade"
+        chopText := "CHOP(CI)"
+    else if (chopZoneTrade)
+        confirmToolTip := "Candle in chop zone. Advised to wait for trade"
+        chopText := "CHOP(CZ)"
+    else 
+        confirmToolTip := "Market caught in chop. Advised to wait for trade"
 
 volumePercent = 0.0
 volumeColor = color.rgb(71, 71, 71)
@@ -1222,8 +1252,6 @@ else if sellVolSignal
 
 // Volume Delta Shadow
 var color volBGColor = na
-posVolCutoff = deltaVolPosCutoff / 100
-negVolCutoff = -1 * deltaVolNegCutoff / 100
 if midVolPump and enableDeltaVolShadow and buyVolSignal
     if deltaBuyVol >= posVolCutoff
         if deltaSellVol >= negVolCutoff
@@ -1249,7 +1277,7 @@ bgcolor(volBGColor)
 if barstate.islast and show_table
     // Trend information
     f_fillCellColorText(0, 0, "T: " + str.tostring(math.round(trendDirection,1)), trendColor,"Shows the calculated trend index (0-10) and color. The brightest green/red indicates an aggresive up/down trend. Generally never look to short a bright green or long a bright red.")
-    f_fillCellColorText(0, 1, chopDetect ? 'CHOP' : (volatileMove ? 'WARN' : ''),confirmBoxColor, "Status of price compared to the confirmation line. Ideally you want to be entering this is grey, so you are close to the confirm support. Caution taking shorts while green and longs while red as you are on the wrong side of the trend.\n\nIt will also show whether the trend is particularly volatile and risky or whether it is a chop zone")
+    f_fillCellColorText(0, 1, chopDetect ? chopText : (volatileMove ? 'WARN' : ''),confirmBoxColor, confirmToolTip)
     
     // Vol Dashboard
     if showVolDashboard

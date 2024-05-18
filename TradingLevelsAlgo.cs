@@ -24,16 +24,23 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
+	// BUG: Bars to miss not updates on dashboard with right var
+	// BUG: Moving SL not working as intended?
+	// TODO: Chop zone needs to be highlighted
+	// TODO: Change delta check to check direction of trade
+	// TODO: Delta shade only when in trade
     // TODO: Change to process on tick and have trading on first tick
     // TODO: Look at split TP
-	// TODO: Consider TP to be from initial entry level
-    // FEATURE: Create standalone volume indicator
-    // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
+    // TODO: Consider TP to be from initial entry level
     // FEATURE: Add timeout after two bad trades in succession
+    // FEATURE: Use wicksize to identify chop
     // FEATURE: Add pre calculated levels
     // FEATURE: Add code to close trade on pre calculated level
+    // FEATURE: Create standalone volume indicator
+    // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
     public class TradingLevelsAlgo : Strategy
     {
+        #region Variables
         private Cbi.Order entryOrder = null;
         private double entryPrice = 0.0;
         private int entryBar = -1;
@@ -151,7 +158,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool showChopZone = false;
         private bool reenterChopZoneTop = false;
         private bool reenterChopZoneBot = false;
-
+        #endregion
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
@@ -185,8 +192,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RealTimePnlOnly = false;
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
-                EnableBannedDays = true;
-                MaxLoss = -500;
+                EnableBannedDays = false;
+                MaxLoss = -325;
                 MaxGain = 1200;
                 LossCutOff = -70;
                 ResetConsecOnTime = true;
@@ -253,7 +260,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Banned Trading Days
                 TradingBanDays = new List<DateTime>
                 {
-                    DateTime.Parse("2024-05-03", System.Globalization.CultureInfo.InvariantCulture),
+                    DateTime.Parse("2024-05-13", System.Globalization.CultureInfo.InvariantCulture),
+					DateTime.Parse("2024-05-03", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-09", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-10", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-11", System.Globalization.CultureInfo.InvariantCulture)
@@ -422,6 +430,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 reenterChopZoneBot = false;
             }
 
+            // BUG: Chopzone being reset too early
             if (inChopZone[0])
             {
                 if (Low[1] > upperChopZone || High[1] < lowerChopZone)
@@ -444,10 +453,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     showChopZone = false;
             }
 
-            if (Close[0] < lowerChopZone)
-                reenterChopZoneBot = true;
-            if (Close[0] > upperChopZone)
-                reenterChopZoneTop = true;
+            if (timeSinceChopZone > 0)
+            {
+                if (Close[0] < lowerChopZone)
+                    reenterChopZoneBot = true;
+                if (Close[0] > upperChopZone)
+                    reenterChopZoneTop = true;
+            }
 
             if ((timeSinceChopZone > ChopZoneResetTime) || (reenterChopZoneBot && reenterChopZoneTop))
             {
@@ -1369,6 +1381,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             return Math.Round(price / tickSize) * tickSize;
         }
 
+        // TODO: Add check if no time to disable trading
         private void GetTimeSessionVariables()
         {
 

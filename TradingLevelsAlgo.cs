@@ -24,14 +24,12 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-	// BUG: Bars to miss not updates on dashboard with right var
-	// BUG: Moving SL not working as intended?
-	// TODO: Chop zone needs to be highlighted
-	// TODO: Change delta check to check direction of trade
-	// TODO: Delta shade only when in trade
+    // TODO: Chop zone needs to be highlighted
+    // TODO: Add dynamic TP
     // TODO: Change to process on tick and have trading on first tick
     // TODO: Look at split TP
     // TODO: Consider TP to be from initial entry level
+    // TODO: Big win cutoffs
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Use wicksize to identify chop
     // FEATURE: Add pre calculated levels
@@ -141,14 +139,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int lastTimeSession = 0;
         private bool resetBarsMissedOnLong = false;
         private bool resetBarsMissedOnShort = true;
-		private int tradeQuantity = 3;
+        private int tradeQuantity = 3;
 
         // Delta Shading
-        public Brush DeltaVolNegShade						= Brushes.Gold;
-        public Brush DeltaVolBuyShade						= Brushes.LimeGreen;
+        public Brush DeltaVolNegShade = Brushes.Gold;
+        public Brush DeltaVolBuyShade = Brushes.LimeGreen;
         public Brush DeltaVolSellShade = Brushes.Salmon;
         public Brush DeltaVolTrendShade = Brushes.SkyBlue;
-        public int DeltaShadeOpacity						= 25;
+        public Brush ChopShade = Brushes.Silver;
+        public int DeltaShadeOpacity = 25;
 
         //Chop Zone Variables
         private Series<bool> inChopZone;
@@ -183,8 +182,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelCloseIgnoreRejects;
                 StopTargetHandling = StopTargetHandling.ByStrategyPosition;
                 BarsRequiredToTrade = 20;
-				IsExitOnSessionCloseStrategy = true;
-        		ExitOnSessionCloseSeconds = 30;
+                IsExitOnSessionCloseStrategy = true;
+                ExitOnSessionCloseSeconds = 30;
                 // Disable this property for performance gains in Strategy Analyzer optimizations
                 // See the Help Guide for additional information
                 IsInstantiatedOnEachOptimizationIteration = true;
@@ -207,7 +206,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TS3Start = DateTime.Parse("17:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS3End = DateTime.Parse("17:15", System.Globalization.CultureInfo.InvariantCulture);
 
-                TPLevelTS1 = 70;
+                TPLevelTS1 = 50;
                 SLLevelTS1 = 19;
                 BuySellBufferTS1 = 6;
                 BarsToHoldTradeTS1 = 5;
@@ -217,7 +216,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ResetBarsMissedOnLongTS1 = false;
                 ResetBarsMissedOnShortTS1 = true;
 
-                TPLevelTS2 = 70;
+                TPLevelTS2 = 40;
                 SLLevelTS2 = 16;
                 BuySellBufferTS2 = 5;
                 BarsToHoldTradeTS2 = 4;
@@ -238,15 +237,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ResetBarsMissedOnShortTS3 = true;
 
                 AveVolPeriod = 15;
-                VolSmooth = 6;
+                VolSmooth = 8;
 
                 EnableDynamicSettings = true;
                 BarsToMissNegDelta = 2;
                 BarsToMissPosDelta = 3;
+                DeltaPosCutOff = 2.5;
                 DeltaNegCutOff = 1.0;
 
                 EnableDynamicSL = true;
-                ProfitToMoveSL = 29;
+                ProfitToMoveSL = 32;
                 SLNewLevel = -2;
 
                 EnableChopZone = true;
@@ -261,7 +261,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TradingBanDays = new List<DateTime>
                 {
                     DateTime.Parse("2024-05-13", System.Globalization.CultureInfo.InvariantCulture),
-					DateTime.Parse("2024-05-03", System.Globalization.CultureInfo.InvariantCulture),
+                    DateTime.Parse("2024-05-03", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-09", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-10", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-11", System.Globalization.CultureInfo.InvariantCulture)
@@ -327,6 +327,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 trendShade.Opacity = DeltaShadeOpacity / 100.0; // set the opacity
                 trendShade.Freeze(); // freeze the temp brush
                 DeltaVolTrendShade = trendShade; // assign the temp brush value to DeltaVolTrendShade.
+
+                Brush chopShade = ChopShade.Clone(); //Copy the brush into a temporary brush
+                chopShade.Opacity = DeltaShadeOpacity / 100.0; // set the opacity
+                chopShade.Freeze(); // freeze the temp brush
+                ChopShade = chopShade; // assign the temp brush value to ChopShade.
             }
             else if (State == State.Configure)
             {
@@ -373,34 +378,34 @@ namespace NinjaTrader.NinjaScript.Strategies
             double chopRangeBot = ChopL;
             bool trendUp = ChopC > ChopO;
             if (CurrentBar > 5 * ChopZoneTimeFrame)
-            for (int i = 0; i < 5; i++)
-            {
-                if (trendUp)
+                for (int i = 0; i < 5; i++)
                 {
+                    if (trendUp)
+                    {
+                        if (Closes[1][i] < Opens[1][i])
+                        {
+                            directionChange++;
+                        }
+                    }
+                    else
+                    {
+                        if (Closes[1][i] > Opens[1][i])
+                        {
+                            directionChange++;
+                        }
+                    }
+
                     if (Closes[1][i] < Opens[1][i])
-                    {
-                        directionChange++;
-                    }
+                        trendUp = false;
+                    else
+                        trendUp = true;
+
+                    if (Highs[1][i] > chopRangeTop)
+                        chopRangeTop = Highs[1][i];
+
+                    if (Lows[1][i] < chopRangeBot)
+                        chopRangeBot = Lows[1][i];
                 }
-                else
-                {
-                    if (Closes[1][i] > Opens[1][i])
-                    {
-                        directionChange++;
-                    }
-                }
-
-                if (Closes[1][i] < Opens[1][i])
-                    trendUp = false;
-                else
-                    trendUp = true;
-
-                if (Highs[1][i] > chopRangeTop)
-                    chopRangeTop = Highs[1][i];
-
-                if (Lows[1][i] < chopRangeBot)
-                    chopRangeBot = Lows[1][i];
-             }
 
             // Define chop zone based on calculated values
             if (directionChange >= ChopZoneMinDir && High[0] < chopRangeTop && Low[0] > chopRangeBot && (chopRangeTop - chopRangeBot < ChopZoneMaxRange))
@@ -423,7 +428,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (!validTriggerPeriod)
             {
-                inChopZone[0] = false; 
+                inChopZone[0] = false;
                 timeSinceChopZone = 0;
                 showChopZone = false;
                 reenterChopZoneTop = false;
@@ -715,7 +720,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Trading Logic
-            // Trading Logic
+            #region Buy/Sell Triggers
             if (!chopDetect[0])
             {
                 buyVolTrigger[0] = (midVolPump[0] || bullVolPump[0]) && !sellVolTrigger[1];
@@ -732,54 +737,86 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool buyVolCloseTrigger = false;
             bool sellVolCloseTrigger = false;
 
-            if (validTriggerPeriod && !IsAllowedTime())
+            if (validTriggerPeriod && !EnableTrading)
             {
                 buyVolCloseTrigger = true;
                 sellVolCloseTrigger = true;
             }
 
-            validTriggerPeriod = IsAllowedTime() && EnableTrading;
+            validTriggerPeriod = EnableTrading;
+            #endregion
+
+            #region Delta Shading
             BackBrush = null;
+
             // Load in new variables if delta volume is weak
             if (EnableDynamicSettings)
             {
-                if (midVolPump[0] || midVolDump[0] || bullVolPump[0] || bullVolDump[0])
+                if (midVolPump[0])
                 {
-                    if (deltaBuyVol < -1 * DeltaNegCutOff/100 && deltaSellVol < -1 * DeltaNegCutOff /100)
+                    if (deltaBuyVol >= DeltaPosCutOff / 100)
                     {
-                        localBarsToMissTrade = BarsToMissNegDelta;
-                        BackBrush = DeltaVolNegShade;
-                    }
-                    else if (deltaBuyVol < -1 * DeltaNegCutOff / 100 || deltaSellVol < -1 * DeltaNegCutOff / 100)
-                    {
-                        localBarsToMissTrade = BarsToMissPosDelta;
-                        if (deltaBuyVol < deltaSellVol)
+                        if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
                         {
-                            BackBrush = DeltaVolSellShade;
+                            localBarsToMissTrade = barsToMissTrade;
+                            if (buyVolSignal)
+                                BackBrush = DeltaVolTrendShade;
                         }
                         else
                         {
-                            BackBrush = DeltaVolBuyShade;
+                            localBarsToMissTrade = BarsToMissPosDelta;
+                            if (buyVolSignal)
+                                BackBrush = DeltaVolBuyShade;
                         }
                     }
                     else
                     {
-                        localBarsToMissTrade = barsToMissTrade;
-                        BackBrush = DeltaVolTrendShade;
+                        localBarsToMissTrade = BarsToMissNegDelta;
+                        if (buyVolSignal)
+                            BackBrush = DeltaVolNegShade;
+                    }   
+                }
+                else if (midVolDump[0])
+                {
+                    if (deltaSellVol >= DeltaPosCutOff / 100)
+                    {
+                        if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
+                        {
+                            localBarsToMissTrade = barsToMissTrade;
+                            if (sellVolSignal)
+                                BackBrush = DeltaVolTrendShade;
+                        }
+                        else
+                        {
+                            localBarsToMissTrade = BarsToMissPosDelta;
+                            if (sellVolSignal)
+                                BackBrush = DeltaVolSellShade;
+                        }
+                    }
+                    else
+                    {
+                        localBarsToMissTrade = BarsToMissNegDelta;
+                        if (sellVolSignal)
+                            BackBrush = DeltaVolNegShade;
                     }
                 }
-            } 
+            }
             else
             {
                 localBarsToMissTrade = barsToMissTrade;
             }
-            
+
+            if (BackBrush == null && chopDetect[0])
+                BackBrush = ChopShade;
+
             if (localBarsToMissTrade != localBarsToMissPrev && validTriggerPeriod)
             {
-                Print(Time[0] + " Bars to Miss Trade Changed from " + localBarsToMissPrev + " to " + localBarsToMissTrade + ". Delta Buy: " + Math.Round(deltaBuyVol,3)*100 + "% Delta Sell: " + Math.Round(deltaSellVol,3)*100 + "%");
+                Print(Time[0] + " Bars to Miss Trade Changed from " + localBarsToMissPrev + " to " + localBarsToMissTrade + ". Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%");
             }
             localBarsToMissPrev = localBarsToMissTrade;
+            #endregion
 
+            #region Buy/Sell Signals
             if (buyTrigger || buyVolSignal)
             {
                 buyVolSignal = true;
@@ -914,6 +951,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
             #endregion
+            #endregion
 
             #region Trade Management
             #region Stoploss management
@@ -1000,7 +1038,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     ExitLong("Long");
                 }
-            } else if (sellVolCloseTrigger)
+            }
+            else if (sellVolCloseTrigger)
             {
                 if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Filled)
                 {
@@ -1010,7 +1049,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     ExitShort("Short");
                 }
-            } else if (!EnableTrading)
+            }
+            else if (!EnableTrading)
             {
                 if (Position.MarketPosition == MarketPosition.Long)
                 {
@@ -1020,13 +1060,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     ExitShort();
                 }
-            } else if (Position.MarketPosition == MarketPosition.Long)
+            }
+            else if (Position.MarketPosition == MarketPosition.Long)
             {
                 if (Close[0] > triggerPrice + tpLevel)
                 {
                     ExitLong("Long");
                 }
-            } else if (Position.MarketPosition == MarketPosition.Short)
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
             {
                 if (Close[0] < triggerPrice - tpLevel)
                 {
@@ -1172,11 +1214,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             string dashBoard =
                 $"PnL ({(RealTimePnlOnly ? "RT" : "ALL")}): $"
                 + realtimPnL.ToString()
-                + " | Consec: " + consecutiveLosses + " of " + maxLossConsec
-                + "\nTrading: "
+                + " | Trading: "
                 + (EnableTrading || DisablePNLLimits ? "Active" : "Off");
-            if (buyVolSignal || sellVolSignal)
-                dashBoard += "\nBars Missed: " + barsMissed + " of " + barsToMissTrade;
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                dashBoard += " | Consec: " + consecutiveLosses + " of " + maxLossConsec;
+                dashBoard += "\nBars Missed: " + barsMissed + " of " + localBarsToMissTrade;
+
+            }
+                
             if (entryOrder != null)
             {
                 string barHeld = "0";
@@ -1191,6 +1238,27 @@ namespace NinjaTrader.NinjaScript.Strategies
                     barHeld = (CurrentBar - entryBarShort).ToString();
                 dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
             }
+
+            dashBoard += "\nDelta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%";
+
+            string tradeStatus = "";
+
+            if (buyVolSignal)
+                tradeStatus += ((tradeStatus != "" ? " | " : "") + "Long Signal");
+            
+            if (sellVolSignal)
+                tradeStatus += ((tradeStatus != "" ? " | " : "") + "Short Signal");
+
+            if (Math.Abs(trendDirection[0]) < chopLimit && deltaMomentum[0] < deltaMomentumChopLimt)
+                tradeStatus += ((tradeStatus != "" ? " | " : "") + "Chop (TM)");
+            if (chopIndexDetect[0])
+                tradeStatus += ((tradeStatus != "" ? " | " : "") + "Chop (CI)");
+            if (chopZoneTrade)
+                tradeStatus += ((tradeStatus != "" ? " | " : "") + "Chop (CZ)");
+
+            if (tradeStatus != "")
+                dashBoard += "\nTriggers: " + tradeStatus;
+
             Draw.TextFixed(this, "Dashboard", dashBoard, TextPosition.BottomRight);
             #endregion
         }
@@ -1346,19 +1414,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
 
-        private bool IsAllowedTime()
-        {
-            // Convert bar's DateTime to TimeSpan for comparison
-            TimeSpan barTime = Time[0].TimeOfDay;
-
-            // Check if bar time is within session 1
-            bool isInSession1 = barTime >= TS1Start.TimeOfDay && barTime < TS1End.TimeOfDay;
-            bool isInSession2 = barTime >= TS2Start.TimeOfDay && barTime < TS2End.TimeOfDay;
-            bool isInSession3 = barTime >= TS3Start.TimeOfDay && barTime < TS3End.TimeOfDay;
-
-            return isInSession1 || isInSession2 || isInSession3 || DisableTradingTimes;
-        }
-
         private double GetLimitLevel(double priceTarget, double close, bool buyDir)
         {
             // Calculate limit level based on direction
@@ -1381,7 +1436,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             return Math.Round(price / tickSize) * tickSize;
         }
 
-        // TODO: Add check if no time to disable trading
         private void GetTimeSessionVariables()
         {
 
@@ -1494,6 +1548,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     EnableTrading = false;
                 }
+            }
+            else
+            {
+                EnableTrading = false;
             }
 
             if (EnableTradingTS1 && barTime == TS1End.TimeOfDay)
@@ -1794,8 +1852,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "DeltaNegCutOff", Description = "Delta volume cutoff for negative delta trades (%)", Order = 47, GroupName = "Dynamic Trades")]
+        [Range(-100, 100)]
+        [Display(Name = "DeltaPosCutOff", Description = "Delta volume cutoff for positive delta trades (%)", Order = 47, GroupName = "Dynamic Trades")]
+        public double DeltaPosCutOff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100, 100)]
+        [Display(Name = "DeltaNegCutOff", Description = "Delta volume cutoff for negative delta trades (%)", Order = 48, GroupName = "Dynamic Trades")]
         public double DeltaNegCutOff
         { get; set; }
 
@@ -1851,8 +1915,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(1,100)]
-        [Display(Name ="ChopZoneLookBack", Description = "Look back period for chop zone", Order = 56, GroupName = "Chop Zone")]
+        [Range(1, 100)]
+        [Display(Name = "ChopZoneLookBack", Description = "Look back period for chop zone", Order = 56, GroupName = "Chop Zone")]
         public int ChopZoneLookBack
         { get; set; }
         #endregion

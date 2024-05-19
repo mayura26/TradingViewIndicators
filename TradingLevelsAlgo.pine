@@ -486,7 +486,6 @@ if ticker.standard() == sym2
 atr_length = 14
 trigger_percentage = 0.236
 atr = request.security(syminfo.tickerid, 'D', ta.atr(atr_length)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
-
 range_1 = todayHigh - todayLow
 tr_percent_of_atr = range_1 / atr * 100
 atrBear = yesterdayClose - trigger_percentage * atr

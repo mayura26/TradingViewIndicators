@@ -13,6 +13,7 @@ using NinjaTrader.Data;
 using NinjaTrader.Gui;
 using NinjaTrader.NinjaScript.DrawingTools;
 using NinjaTrader.NinjaScript.Indicators;
+using NinjaTrader.NinjaScript.MarketAnalyzerColumns;
 using NinjaTrader.NinjaScript.SuperDomColumns;
 using SharpDX;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Tab;
@@ -24,11 +25,10 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    // TODO: Add dynamic TP
     // TODO: Change to process on tick and have trading on first tick
     // TODO: Look at split TP (trim on important levels)
     // TODO: Consider TP to be from initial entry level
-    // TODO: Big win cutoffs
+    // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading)
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Use wicksize to identify chop
     // FEATURE: Add pre calculated levels
@@ -53,6 +53,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         #region Trend/Momentum Variables
         private DynamicTrendLine smoothConfirmMA;
+        private Indicators.VWAP vwap;
+        private CurrentDayOHL currentDayOHL;
 
         // Momentum Variables
         private EMA momentumMA;
@@ -168,6 +170,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         public int DeltaShadeOpacity = 25;
         #endregion
 
+        #region ORB Variables
+        DateTime ORBStart;
+        DateTime ORBEnd;
+        #endregion
+
         #region Chop Zone Variables
         //Chop Zone Variables
         private Series<bool> inChopZone;
@@ -177,6 +184,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool showChopZone = false;
         private bool reenterChopZoneTop = false;
         private bool reenterChopZoneBot = false;
+        #endregion
+
+        #region Levels Variables
+        private List<double> CalculatedLevels;
         #endregion
         #endregion
         protected override void OnStateChange()
@@ -221,7 +232,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TradeQuantity = 3;
                 MiniContracts = false;
                 MaxLossRatio = 110;
-                MaxGainRatio = 400;
+                MaxGainRatio = 300;
                 LossCutOffRatio = 25;
                 ResetConsecOnTime = true;
                 EnableTradingTS1 = true;
@@ -284,8 +295,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SLNewLevel = -2;
 
                 EnableDynamicTP = true;
+                MoveLowerOnly = true;
                 LevelDetectRange = 10;
-                TPOffset = 10;
+                TPOffset = 8;
                 #endregion
                 #region Chop Zone Settings
                 EnableChopZone = true;
@@ -339,12 +351,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 volTradeLength = 0;
                 inChopZone = new Series<bool>(this);
                 inChopZone[0] = false;
+                CalculatedLevels = new List<double>();
+                ORBStart = DateTime.Parse("09:30", System.Globalization.CultureInfo.InvariantCulture);
+                ORBEnd = DateTime.Parse("10:00", System.Globalization.CultureInfo.InvariantCulture);
 
                 // Initialize EMAs
                 smoothConfirmMA = DynamicTrendLine(8, 13, 21);
+                vwap = VWAP();
+                currentDayOHL = CurrentDayOHL();
 
                 // Add our EMAs to the chart for visualization
                 AddChartIndicator(smoothConfirmMA);
+                AddChartIndicator(vwap);
                 #endregion
 
                 #region SL/TP
@@ -385,13 +403,15 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.Configure)
             {
                 AddDataSeries(BarsPeriodType.Minute, ChopZoneTimeFrame);
+                AddDataSeries(BarsPeriodType.Day, 1);
+                AddDataSeries(BarsPeriodType.Week, 1);
             }
         }
 
         protected override void OnBarUpdate()
         {
             // Ensure we have enough data
-            if (CurrentBar < 14 || BarsInProgress == 1)
+            if (CurrentBar < BarsRequiredToTrade || BarsInProgress != 0)
                 return;
 
             #region Time Session Functions
@@ -534,7 +554,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool chopZoneTrade = false;
             for (int i = 0; i < ChopZoneLookBack; i++)
             {
-                if (inChopZone[i])
+                if (inChopZone[i] && !IsORBSession())
                     chopZoneTrade = true;
             }
             #endregion
@@ -744,6 +764,71 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             #endregion
 
+            #region Level Calculation
+            if (CurrentBar > 10 * 16 * 60 / BarsPeriod.Value)
+            {
+                // Daily/Weekly Levels
+                double yesterdayClose = Closes[2][0];
+                double yesterdayHigh = Highs[2][0];
+                double yesterdayLow = Lows[2][0];
+                double lastWeekClose = Closes[3][0];
+                double lastWeekHigh = Highs[3][0];
+                double lastWeekLow = Lows[3][0];
+                double todayHigh = currentDayOHL.CurrentHigh[0];
+                double todayLow = currentDayOHL.CurrentLow[0];
+
+                // ATR Calculation
+                int atr_length = 14;
+                double trigger_percentage = 0.236;
+                double atr = ATR(BarsArray[2], atr_length)[1];
+                double range_1 = todayHigh - todayLow;
+                double tr_percent_of_atr = range_1 / atr * 100;
+                double atrBear = yesterdayClose - trigger_percentage * atr;
+                double atrBull = yesterdayClose + trigger_percentage * atr;
+                double atrNeg618 = yesterdayClose - atr * 0.618;
+                double atr618 = yesterdayClose + atr * 0.618;
+                double atrNeg100 = yesterdayClose - atr;
+                double atr100 = yesterdayClose + atr;
+
+                //Calculate camarilla pivots
+                double r = yesterdayHigh - yesterdayLow;
+                double R6 = yesterdayHigh / yesterdayLow * yesterdayClose; //Bull target 2
+                double R4 = yesterdayClose + r * (1.1 / 2); //Bear Last Stand
+                double R3 = yesterdayClose + r * (1.1 / 4); //Bear Reversal Low
+                double S4 = yesterdayClose - r * (1.1 / 2); //Bull Last Stand
+                double S6 = yesterdayClose - (R6 - yesterdayClose); //Bear Target 2
+                double S3 = yesterdayClose - r * (1.1 / 4); //Bull Reversal High
+
+                // TODO: Add ORB
+                // TODO: Add Day High/Low
+
+                // Add levels to list
+                CalculatedLevels.Clear();
+                CalculatedLevels.Add(vwap[0]);
+                AddLevel(lastWeekHigh, "Previous Week High");
+                AddLevel(lastWeekLow, "Previous Week Low");
+                AddLevel(lastWeekClose, "Previous Week Close");
+
+                AddLevel(yesterdayHigh, "Previous High");
+                AddLevel(yesterdayLow, "Previous Low");
+                AddLevel(yesterdayClose, "Previous Close");
+
+                AddLevel(atrBear, "ATR Bearish");
+                AddLevel(atrBull, "ATR Bullish");
+                AddLevel(atrNeg618, "ATR -0.618");
+                AddLevel(atr618, "ATR +0.618");
+                AddLevel(atrNeg100, "ATR -1.0");
+                AddLevel(atr100, "ATR +1.0");
+
+                AddLevel(R6, "Bull Target");
+                AddLevel(R4, "Bear Reversal");
+                AddLevel(R3, "Ex. Range High");
+                AddLevel(S4, "Bull Reversal");
+                AddLevel(S6, "Bear Target");
+                AddLevel(S3, "Ex. Range Low");
+            }
+            #endregion
+
             #region PnL Calculation
             #region Dynamic Gain/Loss
             MaxGain = MaxGainRatio * TradeQuantity;
@@ -768,7 +853,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(Time[0] + " ******** TRADING DISABLED ******** : $" + currentPnL);
             }
 
-            double realtimPnL = currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]);
+            double realtimPnL = Math.Round(currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]),1);
             // if in a position and the realized day's PnL plus the position PnL is greater than the loss limit then exit the order
             if ((((realtimPnL) <= MaxLoss) || (realtimPnL) >= MaxGain)
                 && EnableTrading
@@ -1016,25 +1101,40 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Trade Management
-            #region Stoploss management
+            #region TP/SL management
             // Resets the stop loss to the original value when all positions are closed
             if (Position.MarketPosition == MarketPosition.Flat)
             {
                 SetStopLoss("Long", CalculationMode.Ticks, slLevel / TickSize, false);
                 SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
+                SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
+                SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
             }
-            else if (Position.MarketPosition == MarketPosition.Long && EnableDynamicSL)
+            else if (Position.MarketPosition == MarketPosition.Long)
             {
-                if (High[0] > Position.AveragePrice + ProfitToMoveSL)
+                if (EnableDynamicSL)
+                    if (High[0] > Position.AveragePrice + ProfitToMoveSL)
+                    {
+                        SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
+                    }
+                if (EnableDynamicTP)
                 {
-                    SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
+                    double TPNewLevel = UpdateTPLevel(Position.AveragePrice + tpLevel, true);
+                    SetProfitTarget("Long", CalculationMode.Price, TPNewLevel);
                 }
             }
-            else if (Position.MarketPosition == MarketPosition.Short && EnableDynamicSL)
+            else if (Position.MarketPosition == MarketPosition.Short)
             {
-                if (Low[0] < Position.AveragePrice - ProfitToMoveSL)
+                if (EnableDynamicSL)
+                    if (Low[0] < Position.AveragePrice - ProfitToMoveSL)
+                    {
+                        SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
+                    }
+
+                if (EnableDynamicTP)
                 {
-                    SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
+                    double TPNewLevel = UpdateTPLevel(Position.AveragePrice - tpLevel, false);
+                    SetProfitTarget("Short", CalculationMode.Price, TPNewLevel);
                 }
             }
             #endregion
@@ -1457,6 +1557,91 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
 
+        private double UpdateTPLevel(double targetTP, bool isBuy)
+        {
+            // Sort the list of target prices
+            CalculatedLevels.Sort();
+
+            // If it's a sell check, reverse the order to start from the highest level
+            if (!isBuy)
+            {
+                CalculatedLevels.Reverse();
+            }
+
+            double? closestLevel = null;
+            double closestDifference = double.MaxValue;
+
+            // Iterate through the sorted list and find the closest level within the target offset
+            foreach (double level in CalculatedLevels)
+            {
+                double difference = Math.Abs(targetTP - level);
+
+                if (difference <= LevelDetectRange)
+                {
+                    if (MoveLowerOnly)
+                    {
+                        if (isBuy && level <= targetTP)
+                        {
+                            if (difference < closestDifference)
+                            {
+                                closestLevel = level;
+                                closestDifference = difference;
+                            }
+                        }
+                        else if (!isBuy && level >= targetTP)
+                        {
+                            if (difference < closestDifference)
+                            {
+                                closestLevel = level;
+                                closestDifference = difference;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (difference < closestDifference)
+                        {
+                            closestLevel = level;
+                            closestDifference = difference;
+                        }
+                    }
+                }
+            }
+
+            // Return the closest level found within the target offset or the original targetTP if no level is found
+            if (closestLevel.HasValue)
+            {
+                double newTPLevel = 0;
+                if (isBuy)
+                {
+                    newTPLevel = RoundToNearestTick(closestLevel.Value - TPOffset);
+                }
+                else
+                {
+                    newTPLevel = RoundToNearestTick(closestLevel.Value + TPOffset);
+                }
+                Print(Time[0] + " TP Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
+                return newTPLevel;
+            }
+            else
+            {
+                return targetTP;
+            }
+        }
+
+        public void AddLevel(double level, string levelName)
+        {
+            double textOffset = 2;
+            // Add the level to the targetPrices list
+            CalculatedLevels.Add(level);
+
+            // Plot the level on the chart
+            Draw.HorizontalLine(this, "TargetLevel" + levelName, level, Brushes.Aquamarine);
+
+            // Draw text on the rightmost side of the horizontal line
+            Draw.Text(this, "Label" + levelName, levelName, -10, level + textOffset, Brushes.Aqua);
+        }
+
         private double GetLimitLevel(double priceTarget, double close, bool buyDir)
         {
             // Calculate limit level based on direction
@@ -1477,6 +1662,16 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             double tickSize = Instrument.MasterInstrument.TickSize;
             return Math.Round(price / tickSize) * tickSize;
+        }
+
+        private bool IsORBSession()
+        {
+            TimeSpan barTime = Time[0].TimeOfDay;
+            if (barTime >= ORBStart.TimeOfDay && barTime < ORBEnd.TimeOfDay)
+            {
+                return true;
+            }
+            return false;
         }
 
         private void GetTimeSessionVariables()
@@ -1954,8 +2149,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         #region Dynamic Takeprofit
         [NinjaScriptProperty]
-        [Display(Name = "EnableDynamicTP", Description = "Enable dynamic TP based on delta momentum", Order = 57, GroupName = "Dynamic Takeprofit")]
+        [Display(Name = "EnableDynamicTP", Description = "Enable dynamic TP based on delta momentum", Order = 56, GroupName = "Dynamic Takeprofit")]
         public bool EnableDynamicTP
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "MoveLowerOnly", Description = "Move TP lower only", Order = 57, GroupName = "Dynamic Takeprofit")]
+        public bool MoveLowerOnly
         { get; set; }
 
         [NinjaScriptProperty]

@@ -162,6 +162,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (State == State.SetDefaults)
             {
+                #region Basic Settings
                 Description =
                     @"This is a strategy using pivot levels to enter long and short trades with confluence from EMA, ATR & Volume";
                 Name = "TradingLevelsAlgo";
@@ -187,7 +188,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Disable this property for performance gains in Strategy Analyzer optimizations
                 // See the Help Guide for additional information
                 IsInstantiatedOnEachOptimizationIteration = true;
+                #endregion
 
+                #region Properties Defaults
                 RealTimePnlOnly = false;
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
@@ -256,6 +259,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ChopZoneTimeFrame = 10;
                 ChopZoneResetTime = 120;
                 ChopZoneLookBack = 3;
+                #endregion
 
                 #region Banned Trading Days
                 TradingBanDays = new List<DateTime>
@@ -271,8 +275,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v1.5 ******** ");
-                // Initialise all variables
+                Print(Time[0] + " ******** TRADING ALGO v1.6 ******** ");
+                #region Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
                 trendDirection = new Series<double>(this);
@@ -300,14 +304,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 // Add our EMAs to the chart for visualization
                 AddChartIndicator(smoothConfirmMA);
+                #endregion
 
-                // SL/TP
+                #region SL/TP
                 SetStopLoss("Long", CalculationMode.Ticks, slLevel / TickSize, false);
                 SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
                 SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
                 SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
+                #endregion
 
-                // Delta Shading
+                #region Delta Shading
                 Brush negShade = DeltaVolNegShade.Clone(); //Copy the brush into a temporary brush
                 negShade.Opacity = DeltaShadeOpacity / 100.0; // set the opacity
                 negShade.Freeze(); // freeze the temp brush
@@ -332,6 +338,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 chopShade.Opacity = DeltaShadeOpacity / 100.0; // set the opacity
                 chopShade.Freeze(); // freeze the temp brush
                 ChopShade = chopShade; // assign the temp brush value to ChopShade.
+                #endregion
             }
             else if (State == State.Configure)
             {
@@ -1263,18 +1270,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
         }
 
-        protected override void OnOrderUpdate(
-            Cbi.Order order,
-            double limitPrice,
-            double stopPrice,
-            int quantity,
-            int filled,
-            double averageFillPrice,
-            Cbi.OrderState orderState,
-            DateTime time,
-            Cbi.ErrorCode error,
-            string comment
-        )
+        protected override void OnOrderUpdate(Cbi.Order order, double limitPrice, double stopPrice, int quantity, int filled, double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string comment)
         {
             // One time only, as we transition from historical
             // Convert any old historical order object references to the live order submitted to the real-time account
@@ -1328,15 +1324,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
 
-        protected override void OnExecutionUpdate(
-            Cbi.Execution execution,
-            string executionId,
-            double price,
-            int quantity,
-            Cbi.MarketPosition marketPosition,
-            string orderId,
-            DateTime time
-        )
+        protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
         {
             if (
                 execution.Order.OrderState == OrderState.Filled
@@ -1572,6 +1560,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         #region Properties
+        #region Main Parameters
         [NinjaScriptProperty]
         [Display(Name = "RealTimePnlOnly", Description = "Track PnL only during realtime trading", Order = 1, GroupName = "Main Parameters")]
         public bool RealTimePnlOnly
@@ -1614,7 +1603,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 7, GroupName = "Main Parameters")]
         public bool ResetConsecOnTime
         { get; set; }
+        #endregion
 
+        #region Sessions
         [NinjaScriptProperty]
         [Display(Name = "EnableTradingTS1", Description = "Enable trading for time session 1", Order = 8, GroupName = "Sessions")]
         public bool EnableTradingTS1
@@ -1665,7 +1656,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "TS3End", Description = "Time session 3 end", Order = 16, GroupName = "Sessions")]
         public DateTime TS3End
         { get; set; }
+        #endregion
 
+        #region Time Session 1
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "TPLevelTS1", Description = "Take profit level", Order = 15, GroupName = "Time Session 1")]
@@ -1717,7 +1710,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "ResetBarsMissedOnShortTS1", Description = "Reset bars missed on short", Order = 23, GroupName = "Time Session 1")]
         public bool ResetBarsMissedOnShortTS1
         { get; set; }
+        #endregion
 
+        #region Time Session 2
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "TPLevelTS2", Description = "Take profit level", Order = 24, GroupName = "Time Session 2")]
@@ -1769,7 +1764,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "ResetBarsMissedOnShortTS2", Description = "Reset bars missed on short", Order = 32, GroupName = "Time Session 2")]
         public bool ResetBarsMissedOnShortTS2
         { get; set; }
+        #endregion
 
+        #region Time Session 3
         [NinjaScriptProperty]
         [Range(0, double.MaxValue)]
         [Display(Name = "TPLevelTS3", Description = "Take profit level", Order = 33, GroupName = "Time Session 3")]
@@ -1821,7 +1818,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "ResetBarsMissedOnShortTS3", Description = "Reset bars missed on short", Order = 41, GroupName = "Time Session 3")]
         public bool ResetBarsMissedOnShortTS3
         { get; set; }
+        #endregion
 
+        #region Volume
         [NinjaScriptProperty]
         [Range(1, 100)]
         [Display(Name = "AveVolPeriod", Description = "Average Volume Period", Order = 42, GroupName = "Volume")]
@@ -1833,7 +1832,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "VolSmooth", Description = "Volume smoothing period", Order = 43, GroupName = "Volume")]
         public int VolSmooth
         { get; set; }
+        #endregion
 
+        #region Dynamic Trades
         [NinjaScriptProperty]
         [Display(Name = "EnableDynamicSettings", Description = "Use Dynamic Parameters based on delta volume", Order = 44, GroupName = "Dynamic Trades")]
         public bool EnableDynamicSettings
@@ -1862,7 +1863,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "DeltaNegCutOff", Description = "Delta volume cutoff for negative delta trades (%)", Order = 48, GroupName = "Dynamic Trades")]
         public double DeltaNegCutOff
         { get; set; }
+        #endregion
 
+        #region Dynamic Stoploss
         [NinjaScriptProperty]
         [Display(Name = "EnableDynamicSL", Description = "Enable SL move on profit", Order = 48, GroupName = "Dynamic Stoploss")]
         public bool EnableDynamicSL
@@ -1879,7 +1882,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "SLNewLevel", Description = "New SL level after profit", Order = 50, GroupName = "Dynamic Stoploss")]
         public double SLNewLevel
         { get; set; }
+        #endregion
 
+        #region Chop Zone
         [NinjaScriptProperty]
         [Display(Name = "EnableChopZone", Description = "Enable chop zone filter", Order = 50, GroupName = "Chop Zone")]
         public bool EnableChopZone
@@ -1919,6 +1924,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "ChopZoneLookBack", Description = "Look back period for chop zone", Order = 56, GroupName = "Chop Zone")]
         public int ChopZoneLookBack
         { get; set; }
+        #endregion
         #endregion
     }
 }

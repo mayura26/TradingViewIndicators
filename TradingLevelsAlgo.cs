@@ -24,10 +24,9 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    // TODO: Chop zone needs to be highlighted
     // TODO: Add dynamic TP
     // TODO: Change to process on tick and have trading on first tick
-    // TODO: Look at split TP
+    // TODO: Look at split TP (trim on important levels)
     // TODO: Consider TP to be from initial entry level
     // TODO: Big win cutoffs
     // FEATURE: Add timeout after two bad trades in succession
@@ -39,6 +38,7 @@ namespace NinjaTrader.NinjaScript.Strategies
     public class TradingLevelsAlgo : Strategy
     {
         #region Variables
+        #region Trade Variables
         private Cbi.Order entryOrder = null;
         private double entryPrice = 0.0;
         private int entryBar = -1;
@@ -49,7 +49,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         int consecutiveLosses = 0;
         private double triggerPrice = 0.0;
+        #endregion
 
+        #region Trend/Momentum Variables
         private DynamicTrendLine smoothConfirmMA;
 
         // Momentum Variables
@@ -65,7 +67,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private Series<double> deltaMomentum;
         private Series<bool> chopDetect;
         private Series<bool> volatileMove;
+        #endregion
 
+        #region Volume Variables
         // Volume Variables
         private Series<double> BuyVol;
         private Series<double> SellVol;
@@ -83,7 +87,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private Series<bool> volCrossSell;
         private Series<bool> irregVol;
         private int barsMissed = 0;
+        #endregion
 
+        #region Trading Variables
         // Trade Variables
         private Series<bool> buyVolTrigger;
         private Series<bool> sellVolTrigger;
@@ -95,7 +101,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         bool reverseBuyTrade = false;
         private int localBarsToMissTrade = 0;
         private int localBarsToMissPrev = 0;
+        #endregion
 
+        #region Constants
         // Momentum Constants
         private int dataLength = 8;
         private int atrMALength = 5;
@@ -118,16 +126,25 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double chopLimit = 1.5;
         private double deltaMomentumChopLimt = 0.5;
         private double deltaMomentumVolLimt = 2.5;
+        #endregion
 
+        #region Display Variables
         // Display Symbol Variables
         private bool showVolTrade = true;
         private bool showVolTradeClose = true;
+        #endregion
 
+        #region Trading PnL Variables
         // Trading PnL
         private bool EnableTrading = true;
         private double currentPnL;
         private List<DateTime> TradingBanDays;
+        public double MaxGain;
+        public double MaxLoss;
+        public double LossCutOff;
+        #endregion
 
+        #region Time Specific Trade Variables
         // Time Specific Trade Variables
         private double tpLevel = 90;
         private double slLevel = 15;
@@ -139,8 +156,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int lastTimeSession = 0;
         private bool resetBarsMissedOnLong = false;
         private bool resetBarsMissedOnShort = true;
-        private int tradeQuantity = 3;
+        #endregion
 
+        #region Delta Shading Variables
         // Delta Shading
         public Brush DeltaVolNegShade = Brushes.Gold;
         public Brush DeltaVolBuyShade = Brushes.LimeGreen;
@@ -148,7 +166,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         public Brush DeltaVolTrendShade = Brushes.SkyBlue;
         public Brush ChopShade = Brushes.Silver;
         public int DeltaShadeOpacity = 25;
+        #endregion
 
+        #region Chop Zone Variables
         //Chop Zone Variables
         private Series<bool> inChopZone;
         private double upperChopZone;
@@ -157,6 +177,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool showChopZone = false;
         private bool reenterChopZoneTop = false;
         private bool reenterChopZoneBot = false;
+        #endregion
         #endregion
         protected override void OnStateChange()
         {
@@ -167,7 +188,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                     @"This is a strategy using pivot levels to enter long and short trades with confluence from EMA, ATR & Volume";
                 Name = "TradingLevelsAlgo";
                 Calculate = Calculate.OnBarClose;
-                EntriesPerDirection = tradeQuantity;
                 EntryHandling = EntryHandling.AllEntries;
                 IncludeCommission = true;
                 IsExitOnSessionCloseStrategy = false;
@@ -191,13 +211,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
 
                 #region Properties Defaults
+                #region Trading Settings
                 RealTimePnlOnly = false;
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
                 EnableBannedDays = false;
-                MaxLoss = -325;
-                MaxGain = 1200;
-                LossCutOff = -70;
+                #endregion
+                #region Main Parameters
+                TradeQuantity = 3;
+                MiniContracts = false;
+                MaxLossRatio = 110;
+                MaxGainRatio = 400;
+                LossCutOffRatio = 25;
                 ResetConsecOnTime = true;
                 EnableTradingTS1 = true;
                 EnableTradingTS2 = true;
@@ -208,7 +233,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TS2End = DateTime.Parse("10:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS3Start = DateTime.Parse("17:00", System.Globalization.CultureInfo.InvariantCulture);
                 TS3End = DateTime.Parse("17:15", System.Globalization.CultureInfo.InvariantCulture);
-
+                #endregion
+                #region Time Session 1
                 TPLevelTS1 = 50;
                 SLLevelTS1 = 19;
                 BuySellBufferTS1 = 6;
@@ -216,9 +242,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BarsToMissTradeTS1 = 4;
                 OffsetFromEntryToCancelTS1 = 40;
                 MaxLossConsecTS1 = 3;
-                ResetBarsMissedOnLongTS1 = false;
-                ResetBarsMissedOnShortTS1 = true;
-
+                ResetBarsMissedOnLongTS1 = true;
+                ResetBarsMissedOnShortTS1 = false;
+                #endregion
+                #region Time Session 2
                 TPLevelTS2 = 40;
                 SLLevelTS2 = 16;
                 BuySellBufferTS2 = 5;
@@ -228,7 +255,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 MaxLossConsecTS2 = 2;
                 ResetBarsMissedOnLongTS2 = false;
                 ResetBarsMissedOnShortTS2 = false;
-
+                #endregion
+                #region Time Session 3
                 TPLevelTS3 = 45;
                 SLLevelTS3 = 15;
                 BuySellBufferTS3 = 2;
@@ -238,20 +266,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                 MaxLossConsecTS3 = 2;
                 ResetBarsMissedOnLongTS3 = true;
                 ResetBarsMissedOnShortTS3 = true;
-
+                #endregion 
+                #region Volume Settings
                 AveVolPeriod = 15;
                 VolSmooth = 8;
-
+                #endregion
+                #region Delta Volume Settings
                 EnableDynamicSettings = true;
                 BarsToMissNegDelta = 2;
                 BarsToMissPosDelta = 3;
                 DeltaPosCutOff = 2.5;
                 DeltaNegCutOff = 1.0;
-
+                #endregion
+                #region Dyanmic SL/TP Settings
                 EnableDynamicSL = true;
                 ProfitToMoveSL = 32;
                 SLNewLevel = -2;
 
+                EnableDynamicTP = true;
+                LevelDetectRange = 10;
+                TPOffset = 10;
+                #endregion
+                #region Chop Zone Settings
                 EnableChopZone = true;
                 EnableExtendedChopZone = true;
                 ChopZoneMaxRange = 30;
@@ -259,6 +295,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ChopZoneTimeFrame = 10;
                 ChopZoneResetTime = 120;
                 ChopZoneLookBack = 3;
+                #endregion
                 #endregion
 
                 #region Banned Trading Days
@@ -270,6 +307,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     DateTime.Parse("2024-04-10", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-11", System.Globalization.CultureInfo.InvariantCulture)
                 };
+                #endregion
+
+                #region Update Dynamic Variables
+                EntriesPerDirection = TradeQuantity;
                 #endregion
             }
             else if (State == State.DataLoaded)
@@ -339,6 +380,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 chopShade.Freeze(); // freeze the temp brush
                 ChopShade = chopShade; // assign the temp brush value to ChopShade.
                 #endregion
+
             }
             else if (State == State.Configure)
             {
@@ -703,7 +745,19 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region PnL Calculation
-            // PnL Check
+            #region Dynamic Gain/Loss
+            MaxGain = MaxGainRatio * TradeQuantity;
+            MaxLoss = MaxLossRatio * TradeQuantity * -1;
+            LossCutOff = LossCutOffRatio * TradeQuantity * -1;
+            if (MiniContracts)
+            {
+                MaxGain = MaxGain * 10;
+                MaxLoss = MaxLoss * 10;
+                LossCutOff = LossCutOff * 10;
+            }
+            #endregion
+
+            #region Trading Cutoff
             if (
                 (currentPnL < MaxLoss || currentPnL > MaxGain)
                 && EnableTrading
@@ -724,6 +778,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableTrading = false;
                 Print(Time[0] + " ******** TRADING DISABLED (mid-trade) ******** : $" + realtimPnL);
             }
+            #endregion
             #endregion
 
             #region Trading Logic
@@ -781,7 +836,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         localBarsToMissTrade = BarsToMissNegDelta;
                         if (buyVolSignal)
                             BackBrush = DeltaVolNegShade;
-                    }   
+                    }
                 }
                 else if (midVolDump[0])
                 {
@@ -1096,7 +1151,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     );
 
                     Print(Time[0] + " Long triggered: " + limitLevel);
-                    entryOrder = EnterLongLimit(0, true, tradeQuantity, limitLevel, "Long");
+                    entryOrder = EnterLongLimit(0, true, TradeQuantity, limitLevel, "Long");
                     entryBar = CurrentBar; // Remember the bar at which we entered
                     entryPrice = limitLevel; // Assuming immediate execution at the close price
                     triggerPrice = limitLevel;
@@ -1159,7 +1214,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     );
 
                     Print(Time[0] + " Short triggered: " + limitLevel);
-                    entryOrderShort = EnterShortLimit(0, true, tradeQuantity, limitLevel, "Short");
+                    entryOrderShort = EnterShortLimit(0, true, TradeQuantity, limitLevel, "Short");
                     entryBarShort = CurrentBar; // Remember the bar at which we entered
                     entryPriceShort = limitLevel; // Assuming immediate execution at the close price
                     triggerPrice = limitLevel;
@@ -1230,7 +1285,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 dashBoard += "\nBars Missed: " + barsMissed + " of " + localBarsToMissTrade;
 
             }
-                
+
             if (entryOrder != null)
             {
                 string barHeld = "0";
@@ -1252,7 +1307,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (buyVolSignal)
                 tradeStatus += ((tradeStatus != "" ? " | " : "") + "Long Signal");
-            
+
             if (sellVolSignal)
                 tradeStatus += ((tradeStatus != "" ? " | " : "") + "Short Signal");
 
@@ -1560,48 +1615,61 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         #region Properties
-        #region Main Parameters
+        #region Trade Settings
         [NinjaScriptProperty]
-        [Display(Name = "RealTimePnlOnly", Description = "Track PnL only during realtime trading", Order = 1, GroupName = "Main Parameters")]
+        [Display(Name = "RealTimePnlOnly", Description = "Track PnL only during realtime trading", Order = 1, GroupName = "Trade Settings")]
         public bool RealTimePnlOnly
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "EnableBannedDays", Description = "Enable banned days for backtesting", Order = 2, GroupName = "Main Parameters")]
+        [Display(Name = "EnableBannedDays", Description = "Enable banned days for backtesting", Order = 2, GroupName = "Trade Settings")]
         public bool EnableBannedDays
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "DisableTradingTimes", Description = "Disable preset trading times", Order = 2, GroupName = "Main Parameters")]
+        [Display(Name = "DisableTradingTimes", Description = "Disable preset trading times", Order = 2, GroupName = "Trade Settings")]
         public bool DisableTradingTimes
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "DisablePNLLimits", Description = "Disable PnL limits for the day", Order = 2, GroupName = "Main Parameters")]
+        [Display(Name = "DisablePNLLimits", Description = "Disable PnL limits for the day", Order = 2, GroupName = "Trade Settings")]
         public bool DisablePNLLimits
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(double.MinValue, -100)]
-        [Display(Name = "MaxLoss", Description = "Maximum loss before trading stops", Order = 4, GroupName = "Main Parameters")]
-        public double MaxLoss
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(100, double.MaxValue)]
-        [Display(Name = "MaxGain", Description = "Maximum daily gain before trading stops", Order = 5, GroupName = "Main Parameters")]
-        public double MaxGain
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(double.MinValue, 0)]
-        [Display(Name = "LossCutOff", Description = "Price to be considered a loss for consec. losses check", Order = 6, GroupName = "Main Parameters")]
-        public double LossCutOff
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 7, GroupName = "Main Parameters")]
+        [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 3, GroupName = "Trade Settings")]
         public bool ResetConsecOnTime
+        { get; set; }
+        #endregion
+
+        #region Main Parameters
+        [NinjaScriptProperty]
+        [Display(Name = "MiniContracts", Description = "Enable mini contracts", Order = 1, GroupName = "Main Parameters")]
+        public bool MiniContracts
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "TradeQuantity", Description = "Number of contracts to trade", Order = 2, GroupName = "Main Parameters")]
+        public int TradeQuantity
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "MaxLossRatio", Description = "Maximum loss before trading stops", Order = 4, GroupName = "Main Parameters")]
+        public double MaxLossRatio
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "MaxGainRatio", Description = "Maximum daily gain before trading stops", Order = 5, GroupName = "Main Parameters")]
+        public double MaxGainRatio
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "LossCutOffRatio", Description = "Price to be considered a loss for consec. losses check", Order = 6, GroupName = "Main Parameters")]
+        public double LossCutOffRatio
         { get; set; }
         #endregion
 
@@ -1881,6 +1949,25 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(-10, double.MaxValue)]
         [Display(Name = "SLNewLevel", Description = "New SL level after profit", Order = 50, GroupName = "Dynamic Stoploss")]
         public double SLNewLevel
+        { get; set; }
+        #endregion
+
+        #region Dynamic Takeprofit
+        [NinjaScriptProperty]
+        [Display(Name = "EnableDynamicTP", Description = "Enable dynamic TP based on delta momentum", Order = 57, GroupName = "Dynamic Takeprofit")]
+        public bool EnableDynamicTP
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "LevelDetectRange", Description = "Range to detect level to adjust TP to", Order = 58, GroupName = "Dynamic Takeprofit")]
+        public double LevelDetectRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "TPOffset", Description = "Offset from detected level for TP", Order = 59, GroupName = "Dynamic Takeprofit")]
+        public double TPOffset
         { get; set; }
         #endregion
 

@@ -916,6 +916,8 @@ if timeSinceChopZone > math.floor(resetChopZoneTime/getTimeframeInMinutes()) or 
     showChopZone := false
     reenterChopZoneTop := false
     reenterChopZoneBot := false
+    upperChopZone := 0
+    lowerChopZone := 0
 
 plot(upperChopZone, "Upper Chopzone", showChopZone ? #008cff : na, 2,style = plot.style_circles)
 plot(lowerChopZone, "Lower Chopzone", showChopZone ? #00ffc8 : na, 2,style = plot.style_circles)

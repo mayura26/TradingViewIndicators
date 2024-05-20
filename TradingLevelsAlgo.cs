@@ -26,15 +26,14 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     // BUG: Delta shading not showing always
-    // TODO: Rework groups of inputs to have numbers in the name
-    // TODO: Don't take trades near big levels (if entry is within offset of level, don't take trade against it). Make sure to check entry updated level, not og level
-    // TODO: Use ATR as exit trigger
+    // TODO: Don't take trades near big levels (if entry is within offset of level, don't take trade against it). Make sure to check entry updated level, not og level [Protective Trades]
+    // TODO: Use ATR as exit trigger [Protective Trades]
     // TODO: Change to process on tick and have trading on first tick
-    // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10)
-    // TODO: Dynamic entry level based on offset from Delta Volume reading
-    // TODO: Consider TP to be from initial entry level
-    // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading)
-    // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading
+    // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10) [Dynamic Exit]
+    // TODO: Dynamic entry level based on offset from Delta Volume reading [Dynamic Entry]
+    // TODO: Consider TP to be from initial entry level [Dynamic Exit]
+    // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Main]
+    // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Main]
     // TODO: Look at fib levels to improve drawing of levels
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Use wicksize to identify chop
@@ -44,6 +43,411 @@ namespace NinjaTrader.NinjaScript.Strategies
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
     public class TradingLevelsAlgo : Strategy
     {
+        #region Properties
+        #region 1. Main Parameters
+        [NinjaScriptProperty]
+        [Display(Name = "MiniContracts", Description = "Enable mini contracts", Order = 1, GroupName = "1. Main Parameters")]
+        public bool MiniContracts
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "TradeQuantity", Description = "Number of contracts to trade", Order = 2, GroupName = "1. Main Parameters")]
+        public int TradeQuantity
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "MaxLossRatio", Description = "Maximum loss before trading stops", Order = 4, GroupName = "1. Main Parameters")]
+        public double MaxLossRatio
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "MaxGainRatio", Description = "Maximum daily gain before trading stops", Order = 5, GroupName = "1. Main Parameters")]
+        public double MaxGainRatio
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "LossCutOffRatio", Description = "Price to be considered a loss for consec. losses check", Order = 6, GroupName = "1. Main Parameters")]
+        public double LossCutOffRatio
+        { get; set; }
+        #endregion
+
+        #region 2. Volume
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "AveVolPeriod", Description = "Average Volume Period", Order = 42, GroupName = "2. Volume")]
+        public int AveVolPeriod
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "VolSmooth", Description = "Volume smoothing period", Order = 43, GroupName = "2. Volume")]
+        public int VolSmooth
+        { get; set; }
+        #endregion
+
+        #region 3. Dynamic Trades
+        [NinjaScriptProperty]
+        [Display(Name = "EnableDynamicSettings", Description = "Use Dynamic Parameters based on delta volume", Order = 44, GroupName = "3. Dynamic Trades")]
+        public bool EnableDynamicSettings
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToMissNegDelta", Description = "Number of bars to miss when in negative delta volume", Order = 45, GroupName = "3. Dynamic Trades")]
+        public int BarsToMissNegDelta
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToMissPosDelta", Description = "Number of bars to miss when in positive delta volume", Order = 46, GroupName = "3. Dynamic Trades")]
+        public int BarsToMissPosDelta
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100, 100)]
+        [Display(Name = "DeltaPosCutOff", Description = "Delta volume cutoff for positive delta trades (%)", Order = 47, GroupName = "3. Dynamic Trades")]
+        public double DeltaPosCutOff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100, 100)]
+        [Display(Name = "DeltaNegCutOff", Description = "Delta volume cutoff for negative delta trades (%)", Order = 48, GroupName = "3. Dynamic Trades")]
+        public double DeltaNegCutOff
+        { get; set; }
+        #endregion
+
+        #region 3. Dynamic Stoploss
+        [NinjaScriptProperty]
+        [Display(Name = "EnableDynamicSL", Description = "Enable SL move on profit", Order = 48, GroupName = "3. Dynamic Stoploss")]
+        public bool EnableDynamicSL
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "ProfitToMoveSL", Description = "Profit level to move SL", Order = 49, GroupName = "3. Dynamic Stoploss")]
+        public double ProfitToMoveSL
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-10, double.MaxValue)]
+        [Display(Name = "SLNewLevel", Description = "New SL level after profit", Order = 50, GroupName = "3. Dynamic Stoploss")]
+        public double SLNewLevel
+        { get; set; }
+        #endregion
+
+        #region 3. Dynamic Takeprofit
+        [NinjaScriptProperty]
+        [Display(Name = "EnableDynamicTP", Description = "Enable dynamic TP based on delta momentum", Order = 56, GroupName = "3. Dynamic Takeprofit")]
+        public bool EnableDynamicTP
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "MoveLowerOnly", Description = "Move TP lower only", Order = 57, GroupName = "3. Dynamic Takeprofit")]
+        public bool MoveLowerOnly
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "LevelDetectRange", Description = "Range to detect level to adjust TP to", Order = 58, GroupName = "3. Dynamic Takeprofit")]
+        public double LevelDetectRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "TPOffset", Description = "Offset from detected level for TP", Order = 59, GroupName = "3. Dynamic Takeprofit")]
+        public double TPOffset
+        { get; set; }
+        #endregion
+
+        #region 4. Chop Zone
+        [NinjaScriptProperty]
+        [Display(Name = "EnableChopZone", Description = "Enable chop zone filter", Order = 50, GroupName = "4. Chop Zone")]
+        public bool EnableChopZone
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableExtendedChopZone", Description = "Enable extended chopzone detection", Order = 51, GroupName = "4. Chop Zone")]
+        public bool EnableExtendedChopZone
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "ChopZoneMaxRange", Description = "Max range for chop zone", Order = 52, GroupName = "4. Chop Zone")]
+        public double ChopZoneMaxRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ChopZoneMinDir", Description = "Min direction changes for chop zone", Order = 53, GroupName = "4. Chop Zone")]
+        public int ChopZoneMinDir
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ChopZoneTimeFrame", Description = "Time frame for chop zone", Order = 54, GroupName = "4. Chop Zone")]
+        public int ChopZoneTimeFrame
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "ChopZoneResetTime", Description = "Time to reset chop zone", Order = 55, GroupName = "4. Chop Zone")]
+        public int ChopZoneResetTime
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ChopZoneLookBack", Description = "Look back period for chop zone", Order = 56, GroupName = "4. Chop Zone")]
+        public int ChopZoneLookBack
+        { get; set; }
+        #endregion
+
+        #region 6. Sessions
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTradingTS1", Description = "Enable trading for time session 1", Order = 8, GroupName = "6. Sessions")]
+        public bool EnableTradingTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTradingTS2", Description = "Enable trading for time session 2", Order = 11, GroupName = "6. Sessions")]
+        public bool EnableTradingTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTradingTS3", Description = "Enable trading for time session 3", Order = 14, GroupName = "6. Sessions")]
+        public bool EnableTradingTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS1Start", Description = "Time session 1 start", Order = 9, GroupName = "6. Sessions")]
+        public DateTime TS1Start
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS1End", Description = "Time session 1 end", Order = 10, GroupName = "6. Sessions")]
+        public DateTime TS1End
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS2Start", Description = "Time session 2 start", Order = 12, GroupName = "6. Sessions")]
+        public DateTime TS2Start
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS2End", Description = "Time session 2 end", Order = 13, GroupName = "6. Sessions")]
+        public DateTime TS2End
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS3Start", Description = "Time session 3 start", Order = 15, GroupName = "6. Sessions")]
+        public DateTime TS3Start
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
+        [Display(Name = "TS3End", Description = "Time session 3 end", Order = 16, GroupName = "6. Sessions")]
+        public DateTime TS3End
+        { get; set; }
+        #endregion
+
+        #region 6. Time Session 1
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "TPLevelTS1", Description = "Take profit level", Order = 15, GroupName = "6. Time Session 1")]
+        public double TPLevelTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "SLLevelTS1", Description = "Stop loss level", Order = 16, GroupName = "6. Time Session 1")]
+        public double SLLevelTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "BuySellBufferTS1", Description = "Buffer for buy/sell limit levels", Order = 17, GroupName = "6. Time Session 1")]
+        public double BuySellBufferTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToHoldTradeTS1", Description = "Bars to hold trade", Order = 18, GroupName = "6. Time Session 1")]
+        public int BarsToHoldTradeTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToMissTradeTS1", Description = "Bars to miss trade", Order = 19, GroupName = "6. Time Session 1")]
+        public int BarsToMissTradeTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "OffsetFromEntryToCancelTS1", Description = "Offset from entry to cancel", Order = 20, GroupName = "6. Time Session 1")]
+        public double OffsetFromEntryToCancelTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "MaxLossConsecTS1", Description = "Max consecutive losses", Order = 21, GroupName = "6. Time Session 1")]
+        public int MaxLossConsecTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnLongTS1", Description = "Reset bars missed on long", Order = 22, GroupName = "6. Time Session 1")]
+        public bool ResetBarsMissedOnLongTS1
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnShortTS1", Description = "Reset bars missed on short", Order = 23, GroupName = "6. Time Session 1")]
+        public bool ResetBarsMissedOnShortTS1
+        { get; set; }
+        #endregion
+
+        #region 6. Time Session 2
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "TPLevelTS2", Description = "Take profit level", Order = 24, GroupName = "6. Time Session 2")]
+        public double TPLevelTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "SLLevelTS2", Description = "Stop loss level", Order = 25, GroupName = "6. Time Session 2")]
+        public double SLLevelTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "BuySellBufferTS2", Description = "Buffer for buy/sell limit levels", Order = 26, GroupName = "6. Time Session 2")]
+        public double BuySellBufferTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToHoldTradeTS2", Description = "Bars to hold trade", Order = 27, GroupName = "6. Time Session 2")]
+        public int BarsToHoldTradeTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToMissTradeTS2", Description = "Bars to miss trade", Order = 28, GroupName = "6. Time Session 2")]
+        public int BarsToMissTradeTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "OffsetFromEntryToCancelTS2", Description = "Offset from entry to cancel", Order = 29, GroupName = "6. Time Session 2")]
+        public double OffsetFromEntryToCancelTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "MaxLossConsecTS2", Description = "Max consecutive losses", Order = 30, GroupName = "6. Time Session 2")]
+        public int MaxLossConsecTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnLongTS2", Description = "Reset bars missed on long", Order = 31, GroupName = "6. Time Session 2")]
+        public bool ResetBarsMissedOnLongTS2
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnShortTS2", Description = "Reset bars missed on short", Order = 32, GroupName = "6. Time Session 2")]
+        public bool ResetBarsMissedOnShortTS2
+        { get; set; }
+        #endregion
+
+        #region 6. Time Session 3
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "TPLevelTS3", Description = "Take profit level", Order = 33, GroupName = "6. Time Session 3")]
+        public double TPLevelTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "SLLevelTS3", Description = "Stop loss level", Order = 34, GroupName = "6. Time Session 3")]
+        public double SLLevelTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "BuySellBufferTS3", Description = "Buffer for buy/sell limit levels", Order = 35, GroupName = "6. Time Session 3")]
+        public double BuySellBufferTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToHoldTradeTS3", Description = "Bars to hold trade", Order = 36, GroupName = "6. Time Session 3")]
+        public int BarsToHoldTradeTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BarsToMissTradeTS3", Description = "Bars to miss trade", Order = 37, GroupName = "6. Time Session 3")]
+        public int BarsToMissTradeTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "OffsetFromEntryToCancelTS3", Description = "Offset from entry to cancel", Order = 38, GroupName = "6. Time Session 3")]
+        public double OffsetFromEntryToCancelTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "MaxLossConsecTS3", Description = "Max consecutive losses", Order = 39, GroupName = "6. Time Session 3")]
+        public int MaxLossConsecTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnLongTS3", Description = "Reset bars missed on long", Order = 40, GroupName = "6. Time Session 3")]
+        public bool ResetBarsMissedOnLongTS3
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetBarsMissedOnShortTS3", Description = "Reset bars missed on short", Order = 41, GroupName = "6. Time Session 3")]
+        public bool ResetBarsMissedOnShortTS3
+        { get; set; }
+        #endregion
+
+        #region 9. Trade Settings
+        [NinjaScriptProperty]
+        [Display(Name = "RealTimePnlOnly", Description = "Track PnL only during realtime trading", Order = 1, GroupName = "9. Trade Settings")]
+        public bool RealTimePnlOnly
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableBannedDays", Description = "Enable banned days for backtesting", Order = 2, GroupName = "9. Trade Settings")]
+        public bool EnableBannedDays
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "DisableTradingTimes", Description = "Disable preset trading times", Order = 2, GroupName = "9. Trade Settings")]
+        public bool DisableTradingTimes
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "DisablePNLLimits", Description = "Disable PnL limits for the day", Order = 2, GroupName = "9. Trade Settings")]
+        public bool DisablePNLLimits
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 3, GroupName = "9. Trade Settings")]
+        public bool ResetConsecOnTime
+        { get; set; }
+        #endregion
+        #endregion
+
         #region Variables
         #region Trade Variables
         private Cbi.Order entryOrder = null;
@@ -1832,410 +2236,5 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Draw.VerticalLine(this, "Session3End", 0, Brushes.Orange, DashStyleHelper.Dot, 2);
             }
         }
-
-        #region Properties
-        #region Trade Settings
-        [NinjaScriptProperty]
-        [Display(Name = "RealTimePnlOnly", Description = "Track PnL only during realtime trading", Order = 1, GroupName = "Trade Settings")]
-        public bool RealTimePnlOnly
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EnableBannedDays", Description = "Enable banned days for backtesting", Order = 2, GroupName = "Trade Settings")]
-        public bool EnableBannedDays
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "DisableTradingTimes", Description = "Disable preset trading times", Order = 2, GroupName = "Trade Settings")]
-        public bool DisableTradingTimes
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "DisablePNLLimits", Description = "Disable PnL limits for the day", Order = 2, GroupName = "Trade Settings")]
-        public bool DisablePNLLimits
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 3, GroupName = "Trade Settings")]
-        public bool ResetConsecOnTime
-        { get; set; }
-        #endregion
-
-        #region Main Parameters
-        [NinjaScriptProperty]
-        [Display(Name = "MiniContracts", Description = "Enable mini contracts", Order = 1, GroupName = "Main Parameters")]
-        public bool MiniContracts
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "TradeQuantity", Description = "Number of contracts to trade", Order = 2, GroupName = "Main Parameters")]
-        public int TradeQuantity
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, double.MaxValue)]
-        [Display(Name = "MaxLossRatio", Description = "Maximum loss before trading stops", Order = 4, GroupName = "Main Parameters")]
-        public double MaxLossRatio
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, double.MaxValue)]
-        [Display(Name = "MaxGainRatio", Description = "Maximum daily gain before trading stops", Order = 5, GroupName = "Main Parameters")]
-        public double MaxGainRatio
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, double.MaxValue)]
-        [Display(Name = "LossCutOffRatio", Description = "Price to be considered a loss for consec. losses check", Order = 6, GroupName = "Main Parameters")]
-        public double LossCutOffRatio
-        { get; set; }
-        #endregion
-
-        #region Sessions
-        [NinjaScriptProperty]
-        [Display(Name = "EnableTradingTS1", Description = "Enable trading for time session 1", Order = 8, GroupName = "Sessions")]
-        public bool EnableTradingTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EnableTradingTS2", Description = "Enable trading for time session 2", Order = 11, GroupName = "Sessions")]
-        public bool EnableTradingTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EnableTradingTS3", Description = "Enable trading for time session 3", Order = 14, GroupName = "Sessions")]
-        public bool EnableTradingTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
-        [Display(Name = "TS1Start", Description = "Time session 1 start", Order = 9, GroupName = "Sessions")]
-        public DateTime TS1Start
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
-        [Display(Name = "TS1End", Description = "Time session 1 end", Order = 10, GroupName = "Sessions")]
-        public DateTime TS1End
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
-        [Display(Name = "TS2Start", Description = "Time session 2 start", Order = 12, GroupName = "Sessions")]
-        public DateTime TS2Start
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
-        [Display(Name = "TS2End", Description = "Time session 2 end", Order = 13, GroupName = "Sessions")]
-        public DateTime TS2End
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
-        [Display(Name = "TS3Start", Description = "Time session 3 start", Order = 15, GroupName = "Sessions")]
-        public DateTime TS3Start
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [PropertyEditor("NinjaTrader.Gui.Tools.TimeEditorKey")]
-        [Display(Name = "TS3End", Description = "Time session 3 end", Order = 16, GroupName = "Sessions")]
-        public DateTime TS3End
-        { get; set; }
-        #endregion
-
-        #region Time Session 1
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "TPLevelTS1", Description = "Take profit level", Order = 15, GroupName = "Time Session 1")]
-        public double TPLevelTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "SLLevelTS1", Description = "Stop loss level", Order = 16, GroupName = "Time Session 1")]
-        public double SLLevelTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "BuySellBufferTS1", Description = "Buffer for buy/sell limit levels", Order = 17, GroupName = "Time Session 1")]
-        public double BuySellBufferTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "BarsToHoldTradeTS1", Description = "Bars to hold trade", Order = 18, GroupName = "Time Session 1")]
-        public int BarsToHoldTradeTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "BarsToMissTradeTS1", Description = "Bars to miss trade", Order = 19, GroupName = "Time Session 1")]
-        public int BarsToMissTradeTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, double.MaxValue)]
-        [Display(Name = "OffsetFromEntryToCancelTS1", Description = "Offset from entry to cancel", Order = 20, GroupName = "Time Session 1")]
-        public double OffsetFromEntryToCancelTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "MaxLossConsecTS1", Description = "Max consecutive losses", Order = 21, GroupName = "Time Session 1")]
-        public int MaxLossConsecTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ResetBarsMissedOnLongTS1", Description = "Reset bars missed on long", Order = 22, GroupName = "Time Session 1")]
-        public bool ResetBarsMissedOnLongTS1
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ResetBarsMissedOnShortTS1", Description = "Reset bars missed on short", Order = 23, GroupName = "Time Session 1")]
-        public bool ResetBarsMissedOnShortTS1
-        { get; set; }
-        #endregion
-
-        #region Time Session 2
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "TPLevelTS2", Description = "Take profit level", Order = 24, GroupName = "Time Session 2")]
-        public double TPLevelTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "SLLevelTS2", Description = "Stop loss level", Order = 25, GroupName = "Time Session 2")]
-        public double SLLevelTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "BuySellBufferTS2", Description = "Buffer for buy/sell limit levels", Order = 26, GroupName = "Time Session 2")]
-        public double BuySellBufferTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "BarsToHoldTradeTS2", Description = "Bars to hold trade", Order = 27, GroupName = "Time Session 2")]
-        public int BarsToHoldTradeTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "BarsToMissTradeTS2", Description = "Bars to miss trade", Order = 28, GroupName = "Time Session 2")]
-        public int BarsToMissTradeTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, double.MaxValue)]
-        [Display(Name = "OffsetFromEntryToCancelTS2", Description = "Offset from entry to cancel", Order = 29, GroupName = "Time Session 2")]
-        public double OffsetFromEntryToCancelTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "MaxLossConsecTS2", Description = "Max consecutive losses", Order = 30, GroupName = "Time Session 2")]
-        public int MaxLossConsecTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ResetBarsMissedOnLongTS2", Description = "Reset bars missed on long", Order = 31, GroupName = "Time Session 2")]
-        public bool ResetBarsMissedOnLongTS2
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ResetBarsMissedOnShortTS2", Description = "Reset bars missed on short", Order = 32, GroupName = "Time Session 2")]
-        public bool ResetBarsMissedOnShortTS2
-        { get; set; }
-        #endregion
-
-        #region Time Session 3
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "TPLevelTS3", Description = "Take profit level", Order = 33, GroupName = "Time Session 3")]
-        public double TPLevelTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "SLLevelTS3", Description = "Stop loss level", Order = 34, GroupName = "Time Session 3")]
-        public double SLLevelTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "BuySellBufferTS3", Description = "Buffer for buy/sell limit levels", Order = 35, GroupName = "Time Session 3")]
-        public double BuySellBufferTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "BarsToHoldTradeTS3", Description = "Bars to hold trade", Order = 36, GroupName = "Time Session 3")]
-        public int BarsToHoldTradeTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "BarsToMissTradeTS3", Description = "Bars to miss trade", Order = 37, GroupName = "Time Session 3")]
-        public int BarsToMissTradeTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, double.MaxValue)]
-        [Display(Name = "OffsetFromEntryToCancelTS3", Description = "Offset from entry to cancel", Order = 38, GroupName = "Time Session 3")]
-        public double OffsetFromEntryToCancelTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "MaxLossConsecTS3", Description = "Max consecutive losses", Order = 39, GroupName = "Time Session 3")]
-        public int MaxLossConsecTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ResetBarsMissedOnLongTS3", Description = "Reset bars missed on long", Order = 40, GroupName = "Time Session 3")]
-        public bool ResetBarsMissedOnLongTS3
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "ResetBarsMissedOnShortTS3", Description = "Reset bars missed on short", Order = 41, GroupName = "Time Session 3")]
-        public bool ResetBarsMissedOnShortTS3
-        { get; set; }
-        #endregion
-
-        #region Volume
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "AveVolPeriod", Description = "Average Volume Period", Order = 42, GroupName = "Volume")]
-        public int AveVolPeriod
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "VolSmooth", Description = "Volume smoothing period", Order = 43, GroupName = "Volume")]
-        public int VolSmooth
-        { get; set; }
-        #endregion
-
-        #region Dynamic Trades
-        [NinjaScriptProperty]
-        [Display(Name = "EnableDynamicSettings", Description = "Use Dynamic Parameters based on delta volume", Order = 44, GroupName = "Dynamic Trades")]
-        public bool EnableDynamicSettings
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "BarsToMissNegDelta", Description = "Number of bars to miss when in negative delta volume", Order = 45, GroupName = "Dynamic Trades")]
-        public int BarsToMissNegDelta
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "BarsToMissPosDelta", Description = "Number of bars to miss when in positive delta volume", Order = 46, GroupName = "Dynamic Trades")]
-        public int BarsToMissPosDelta
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(-100, 100)]
-        [Display(Name = "DeltaPosCutOff", Description = "Delta volume cutoff for positive delta trades (%)", Order = 47, GroupName = "Dynamic Trades")]
-        public double DeltaPosCutOff
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(-100, 100)]
-        [Display(Name = "DeltaNegCutOff", Description = "Delta volume cutoff for negative delta trades (%)", Order = 48, GroupName = "Dynamic Trades")]
-        public double DeltaNegCutOff
-        { get; set; }
-        #endregion
-
-        #region Dynamic Stoploss
-        [NinjaScriptProperty]
-        [Display(Name = "EnableDynamicSL", Description = "Enable SL move on profit", Order = 48, GroupName = "Dynamic Stoploss")]
-        public bool EnableDynamicSL
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "ProfitToMoveSL", Description = "Profit level to move SL", Order = 49, GroupName = "Dynamic Stoploss")]
-        public double ProfitToMoveSL
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(-10, double.MaxValue)]
-        [Display(Name = "SLNewLevel", Description = "New SL level after profit", Order = 50, GroupName = "Dynamic Stoploss")]
-        public double SLNewLevel
-        { get; set; }
-        #endregion
-
-        #region Dynamic Takeprofit
-        [NinjaScriptProperty]
-        [Display(Name = "EnableDynamicTP", Description = "Enable dynamic TP based on delta momentum", Order = 56, GroupName = "Dynamic Takeprofit")]
-        public bool EnableDynamicTP
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "MoveLowerOnly", Description = "Move TP lower only", Order = 57, GroupName = "Dynamic Takeprofit")]
-        public bool MoveLowerOnly
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "LevelDetectRange", Description = "Range to detect level to adjust TP to", Order = 58, GroupName = "Dynamic Takeprofit")]
-        public double LevelDetectRange
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(0, double.MaxValue)]
-        [Display(Name = "TPOffset", Description = "Offset from detected level for TP", Order = 59, GroupName = "Dynamic Takeprofit")]
-        public double TPOffset
-        { get; set; }
-        #endregion
-
-        #region Chop Zone
-        [NinjaScriptProperty]
-        [Display(Name = "EnableChopZone", Description = "Enable chop zone filter", Order = 50, GroupName = "Chop Zone")]
-        public bool EnableChopZone
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EnableExtendedChopZone", Description = "Enable extended chopzone detection", Order = 51, GroupName = "Chop Zone")]
-        public bool EnableExtendedChopZone
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, double.MaxValue)]
-        [Display(Name = "ChopZoneMaxRange", Description = "Max range for chop zone", Order = 52, GroupName = "Chop Zone")]
-        public double ChopZoneMaxRange
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "ChopZoneMinDir", Description = "Min direction changes for chop zone", Order = 53, GroupName = "Chop Zone")]
-        public int ChopZoneMinDir
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "ChopZoneTimeFrame", Description = "Time frame for chop zone", Order = 54, GroupName = "Chop Zone")]
-        public int ChopZoneTimeFrame
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, int.MaxValue)]
-        [Display(Name = "ChopZoneResetTime", Description = "Time to reset chop zone", Order = 55, GroupName = "Chop Zone")]
-        public int ChopZoneResetTime
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "ChopZoneLookBack", Description = "Look back period for chop zone", Order = 56, GroupName = "Chop Zone")]
-        public int ChopZoneLookBack
-        { get; set; }
-        #endregion
-        #endregion
     }
 }

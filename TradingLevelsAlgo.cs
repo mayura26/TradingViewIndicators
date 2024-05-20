@@ -35,7 +35,9 @@ namespace NinjaTrader.NinjaScript.Strategies
     // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Main]
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Main]
     // TODO: Look at fib levels to improve drawing of levels
+    // FEATURE: Cancel order when in chopzone
     // FEATURE: Add timeout after two bad trades in succession
+    // FEATURE: Add more levels to protective trades
     // FEATURE: Use wicksize to identify chop
     // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
@@ -719,7 +721,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Main Parameters
                 TradeQuantity = 3;
                 MiniContracts = false;
-                MaxLossRatio = 110;
+                MaxLossRatio = 150;
                 MaxGainRatio = 300;
                 LossCutOffRatio = 25;
                 ResetConsecOnTime = true;
@@ -1351,12 +1353,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProtectiveBuyLevels.Add(yesterdayHigh);
                 ProtectiveBuyLevels.Add(atr618);
                 ProtectiveBuyLevels.Add(atr100);
+                ProtectiveBuyLevels.Add(R6); // Bull Target
 
                 ProtectiveSellLevels.Clear();
                 ProtectiveSellLevels.Add(lastWeekLow);
                 ProtectiveSellLevels.Add(yesterdayLow);
                 ProtectiveSellLevels.Add(atrNeg618);
                 ProtectiveSellLevels.Add(atrNeg100);
+                ProtectiveSellLevels.Add(S6); // Bear Target
                 #endregion
             }
             #endregion

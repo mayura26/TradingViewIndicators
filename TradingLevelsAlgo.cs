@@ -26,9 +26,11 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     // TODO: Change to process on tick and have trading on first tick
-    // TODO: Look at split TP (trim on important levels)
+    // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10)
+    // TODO: Dynamic entry level based on offset from Delta Volume reading
     // TODO: Consider TP to be from initial entry level
     // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading)
+    // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Use wicksize to identify chop
     // FEATURE: Add pre calculated levels
@@ -168,6 +170,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         public Brush DeltaVolTrendShade = Brushes.SkyBlue;
         public Brush ChopShade = Brushes.Silver;
         public int DeltaShadeOpacity = 25;
+        public Brush BackBrushLast = null;
         #endregion
 
         #region ORB Variables
@@ -484,7 +487,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (chopZoneFound && EnableChopZone && validTriggerPeriod)
             {
-                if (inChopZone[0] == false)
+                if (inChopZone[1] == false)
                 {
                     inChopZone[0] = true;
                     upperChopZone = chopRangeTop;
@@ -504,11 +507,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 reenterChopZoneBot = false;
             }
 
-            // BUG: Chopzone being reset too early
-            if (inChopZone[0])
+            if (inChopZone[1])
             {
                 if (Low[1] > upperChopZone || High[1] < lowerChopZone)
+                {
                     inChopZone[0] = false;
+                }
+                else
+                {
+                    inChopZone[0] = true;
+                }
             }
             else if (EnableChopZone && validTriggerPeriod)
             {
@@ -894,7 +902,15 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Delta Shading
-            BackBrush = null;
+
+            if (!buyVolSignal && !sellVolSignal)
+            {
+                BackBrush = null;
+            }
+            else
+            {
+                BackBrush = BackBrushLast;
+            }
 
             // Load in new variables if delta volume is weak
             if (EnableDynamicSettings)
@@ -952,6 +968,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 localBarsToMissTrade = barsToMissTrade;
             }
+
+            BackBrushLast = BackBrush;
 
             if (BackBrush == null && chopDetect[0])
                 BackBrush = ChopShade;

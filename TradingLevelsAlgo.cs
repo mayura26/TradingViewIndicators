@@ -25,12 +25,17 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
+    // BUG: Delta shading not showing always
+    // TODO: Rework groups of inputs to have numbers in the name
+    // TODO: Don't take trades near big levels (if entry is within offset of level, don't take trade against it). Make sure to check entry updated level, not og level
+    // TODO: Use ATR as exit trigger
     // TODO: Change to process on tick and have trading on first tick
     // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10)
     // TODO: Dynamic entry level based on offset from Delta Volume reading
     // TODO: Consider TP to be from initial entry level
     // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading)
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading
+    // TODO: Look at fib levels to improve drawing of levels
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Use wicksize to identify chop
     // FEATURE: Add pre calculated levels
@@ -861,7 +866,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(Time[0] + " ******** TRADING DISABLED ******** : $" + currentPnL);
             }
 
-            double realtimPnL = Math.Round(currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]),1);
+            double realtimPnL = Math.Round(currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]), 1);
             // if in a position and the realized day's PnL plus the position PnL is greater than the loss limit then exit the order
             if ((((realtimPnL) <= MaxLoss) || (realtimPnL) >= MaxGain)
                 && EnableTrading
@@ -1395,28 +1400,29 @@ namespace NinjaTrader.NinjaScript.Strategies
                 $"PnL ({(RealTimePnlOnly ? "RT" : "ALL")}): $"
                 + realtimPnL.ToString()
                 + " | Trading: "
-                + (EnableTrading || DisablePNLLimits ? "Active" : "Off");
+                + (EnableTrading || DisablePNLLimits ? "Active" : "Off")
+                + "\nConsec: " + consecutiveLosses + " of " + maxLossConsec;
 
             if (Position.MarketPosition != MarketPosition.Flat)
             {
-                dashBoard += " | Consec: " + consecutiveLosses + " of " + maxLossConsec;
-                dashBoard += "\nBars Missed: " + barsMissed + " of " + localBarsToMissTrade;
-
+                dashBoard += " | Bars Missed: " + barsMissed + " of " + localBarsToMissTrade;
             }
-
-            if (entryOrder != null)
+            else
             {
-                string barHeld = "0";
-                if (entryOrder.OrderState == OrderState.Working)
-                    barHeld = (CurrentBar - entryBar).ToString();
-                dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
-            }
-            else if (entryOrderShort != null)
-            {
-                string barHeld = "0";
-                if (entryOrderShort.OrderState == OrderState.Working)
-                    barHeld = (CurrentBar - entryBarShort).ToString();
-                dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
+                if (entryOrder != null)
+                {
+                    string barHeld = "0";
+                    if (entryOrder.OrderState == OrderState.Working)
+                        barHeld = (CurrentBar - entryBar).ToString();
+                    dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
+                }
+                else if (entryOrderShort != null)
+                {
+                    string barHeld = "0";
+                    if (entryOrderShort.OrderState == OrderState.Working)
+                        barHeld = (CurrentBar - entryBarShort).ToString();
+                    dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
+                }
             }
 
             dashBoard += "\nDelta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%";

@@ -27,12 +27,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
     // BUG: Delta shading not showing always
-    // TODO: Use ATR as exit trigger [Protective Trades]
-    // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10) [Dynamic Exit]
-    // TODO: Consider TP to be from initial entry level [Dynamic Exit]
-    // TODO: Change to process on tick and have trading on first tick
-    // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Main]
-    // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Main]
+    // TODO: Use ATR as exit trigger [Protective Trades] ***** CRITICAL *****
+    // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10) [Dynamic Trim] ***** IMPORTANT *****
+    // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
+    // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Gain Protection]
+    // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
     // TODO: Look at fib levels to improve drawing of levels
     // FEATURE: Cancel order when in chopzone
     // FEATURE: Add timeout after two bad trades in succession
@@ -230,11 +229,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "EnableDynamicExit", Description = "Enable dynamic exit based on orginal level", Order = 60, GroupName = "4. Dynamic Entry/Exit")]
-        public bool EnableDynamicExit
-        { get; set; }
-
-        [NinjaScriptProperty]
         [Range(-100, 100)]
         [Display(Name = "TrendOffset", Description = "Offset from delta trend for dynamic entry", Order = 61, GroupName = "4. Dynamic Entry/Exit")]
         public int DynamicEntryOffsetTrend
@@ -250,6 +244,42 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(-100, 100)]
         [Display(Name = "NegOffset", Description = "Offset from negative delta for dynamic entry", Order = 63, GroupName = "4. Dynamic Entry/Exit")]
         public int DynamicEntryOffsetNeg
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TPCalcFromInit", Description = "Calculate TP level from initial trigger level", Order = 68, GroupName = "4. Dynamic Entry/Exit")]
+        public bool TPCalcFromInit
+        { get; set; }
+        #endregion
+
+        #region 4. Dynamic Trim
+        [NinjaScriptProperty]
+        [Display(Name = "EnableDynamicTrim", Description = "Enable dynamic trim based on offset TP level", Order = 64, GroupName = "4. Dynamic Trim")]
+        public bool EnableDynamicTrim
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "ExitTPLevel", Description = "Exit TP level for dynamic trim", Order = 65, GroupName = "4. Dynamic Trim")]
+        public double ExitTPLevel
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "TrimPercent", Description = "Percentage of contracts to trim", Order = 66, GroupName = "4. Dynamic Trim")]
+        public double TrimPercent
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "ExitLevelRange", Description = "Range to check for exit level", Order = 67, GroupName = "4. Dynamic Trim")]
+        public double ExitLevelRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ExitLevelOffset", Description = "Offset from exit level for trim", Order = 68, GroupName = "4. Dynamic Trim")]
+        public double ExitLevelOffset
         { get; set; }
         #endregion
 
@@ -804,16 +834,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
                 #region Dynamic Entry/Exit
                 EnableDynamicEntry = true;
-                EnableDynamicExit = false;
                 DynamicEntryOffsetTrend = 4;
                 DynamicEntryOffsetPos = 0;
                 DynamicEntryOffsetNeg = -3;
+                TPCalcFromInit = false;
                 #endregion
                 #region Gain Protection
                 EnableTrailingDrawdown = false;
                 BigWinCutoffCount = 5;
                 BigWinCutoffRatio = 500;
                 TrailingDrawdownRatio = 1000;
+                #endregion
+                #region Dynamic Trim
+                EnableDynamicTrim = false;
+                ExitTPLevel = 20;
+                TrimPercent = 50;
+                ExitLevelRange = 5;
+                ExitLevelOffset = 2;
                 #endregion
                 #endregion
 
@@ -1668,7 +1705,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicTP)
                 {
                     double originalTP = Position.AveragePrice + tpLevel;
-                    if (EnableDynamicExit)
+                    if (TPCalcFromInit)
                     {
                         Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice + tpLevel));
                         originalTP = triggerPrice + tpLevel;
@@ -1689,7 +1726,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicTP)
                 {
                     double originalTP = Position.AveragePrice - tpLevel;
-                    if (EnableDynamicExit)
+                    if (TPCalcFromInit)
                     {
                         Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice - tpLevel));
                         originalTP = triggerPrice - tpLevel;
@@ -1786,14 +1823,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (Position.MarketPosition == MarketPosition.Long)
             {
-                if ((Close[0] > triggerPrice + tpLevel) && EnableDynamicExit)
+                if ((Close[0] > triggerPrice + tpLevel) && TPCalcFromInit)
                 {
                     ExitLong("Long");
                 }
             }
             else if (Position.MarketPosition == MarketPosition.Short)
             {
-                if ((Close[0] < triggerPrice - tpLevel) && EnableDynamicExit)
+                if ((Close[0] < triggerPrice - tpLevel) && TPCalcFromInit)
                 {
                     ExitShort("Short");
                 }

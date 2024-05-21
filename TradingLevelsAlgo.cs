@@ -160,6 +160,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "TPOffset", Description = "Offset from detected level for TP", Order = 59, GroupName = "3. Dynamic Takeprofit")]
         public double TPOffset
         { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "TPCalcFromInitTrigger", Description = "Calculate TP level from initial trigger level", Order = 68, GroupName = "3. Dynamic Takeprofit")]
+        public bool TPCalcFromInitTrigger
+        { get; set; }
         #endregion
 
         #region 4. Chop Zone
@@ -244,11 +249,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(-100, 100)]
         [Display(Name = "NegOffset", Description = "Offset from negative delta for dynamic entry", Order = 63, GroupName = "4. Dynamic Entry/Exit")]
         public int DynamicEntryOffsetNeg
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "TPCalcFromInit", Description = "Calculate TP level from initial trigger level", Order = 68, GroupName = "4. Dynamic Entry/Exit")]
-        public bool TPCalcFromInit
         { get; set; }
         #endregion
 
@@ -812,6 +812,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableDynamicSL = true;
                 ProfitToMoveSL = 32;
                 SLNewLevel = -2;
+                TPCalcFromInitTrigger = false;
 
                 EnableDynamicTP = true;
                 MoveLowerOnly = true;
@@ -837,7 +838,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DynamicEntryOffsetTrend = 4;
                 DynamicEntryOffsetPos = 0;
                 DynamicEntryOffsetNeg = -3;
-                TPCalcFromInit = false;
                 #endregion
                 #region Gain Protection
                 EnableTrailingDrawdown = false;
@@ -1705,7 +1705,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicTP)
                 {
                     double originalTP = Position.AveragePrice + tpLevel;
-                    if (TPCalcFromInit)
+                    if (TPCalcFromInitTrigger)
                     {
                         Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice + tpLevel));
                         originalTP = triggerPrice + tpLevel;
@@ -1726,7 +1726,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicTP)
                 {
                     double originalTP = Position.AveragePrice - tpLevel;
-                    if (TPCalcFromInit)
+                    if (TPCalcFromInitTrigger)
                     {
                         Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice - tpLevel));
                         originalTP = triggerPrice - tpLevel;
@@ -1823,14 +1823,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (Position.MarketPosition == MarketPosition.Long)
             {
-                if ((Close[0] > triggerPrice + tpLevel) && TPCalcFromInit)
+                if ((Close[0] > triggerPrice + tpLevel) && TPCalcFromInitTrigger)
                 {
                     ExitLong("Long");
                 }
             }
             else if (Position.MarketPosition == MarketPosition.Short)
             {
-                if ((Close[0] < triggerPrice - tpLevel) && TPCalcFromInit)
+                if ((Close[0] < triggerPrice - tpLevel) && TPCalcFromInitTrigger)
                 {
                     ExitShort("Short");
                 }

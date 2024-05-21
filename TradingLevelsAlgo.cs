@@ -29,7 +29,6 @@ namespace NinjaTrader.NinjaScript.Strategies
     // BUG: Delta shading not showing always
     // TODO: Use ATR as exit trigger [Protective Trades]
     // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10) [Dynamic Exit]
-    // TODO: Dynamic entry level based on offset from Delta Volume reading [Dynamic Entry]
     // TODO: Consider TP to be from initial entry level [Dynamic Exit]
     // TODO: Change to process on tick and have trading on first tick
     // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Main]
@@ -237,19 +236,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(-100, 100)]
-        [Display(Name = "DynamicEntryOffsetTrend", Description = "Offset from delta trend for dynamic entry", Order = 61, GroupName = "4. Dynamic Entry/Exit")]
+        [Display(Name = "TrendOffset", Description = "Offset from delta trend for dynamic entry", Order = 61, GroupName = "4. Dynamic Entry/Exit")]
         public int DynamicEntryOffsetTrend
         { get; set; }
 
         [NinjaScriptProperty]
         [Range(-100, 100)]
-        [Display(Name = "DynamicEntryOffsetPos", Description = "Offset from positive delta for dynamic entry", Order = 62, GroupName = "4. Dynamic Entry/Exit")]
+        [Display(Name = "PosOffset", Description = "Offset from positive delta for dynamic entry", Order = 62, GroupName = "4. Dynamic Entry/Exit")]
         public int DynamicEntryOffsetPos
         { get; set; }
 
         [NinjaScriptProperty]
         [Range(-100, 100)]
-        [Display(Name = "DynamicEntryOffsetNeg", Description = "Offset from negative delta for dynamic entry", Order = 63, GroupName = "4. Dynamic Entry/Exit")]
+        [Display(Name = "NegOffset", Description = "Offset from negative delta for dynamic entry", Order = 63, GroupName = "4. Dynamic Entry/Exit")]
         public int DynamicEntryOffsetNeg
         { get; set; }
         #endregion
@@ -804,11 +803,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProtectiveLevelRangeCheck = 5;
                 #endregion
                 #region Dynamic Entry/Exit
-                EnableDynamicEntry = false;
+                EnableDynamicEntry = true;
                 EnableDynamicExit = false;
-                DynamicEntryOffsetTrend = 5;
-                DynamicEntryOffsetPos = 5;
-                DynamicEntryOffsetNeg = 5;
+                DynamicEntryOffsetTrend = 4;
+                DynamicEntryOffsetPos = 0;
+                DynamicEntryOffsetNeg = -3;
                 #endregion
                 #region Gain Protection
                 EnableTrailingDrawdown = false;
@@ -1114,8 +1113,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Volume Analysis
-            // ********** VOLUME ANALYSIS **********
-            // calculate difference between current open and previous close
+            #region Volume Calculation
             double gap = Open[0] - Close[1];
 
             double bull_gap = Math.Max(gap, 0);
@@ -1169,7 +1167,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             double deltaBuyVol = (smoothBuy[0] - smoothBuy[1]) / smoothBuy[1];
             double deltaSellVol = (smoothSell[0] - smoothSell[1]) / smoothSell[1];
+            #endregion
 
+            #region Volume Chart Display
             // Volume Momentum Buy/Sell
             double symbolOffset = 50;
             Brush volColor = Brushes.White;
@@ -1279,6 +1279,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 Draw.Diamond(this, "irregVol" + CurrentBar, true, 0, symbolLocation, volColor);
             }
+            #endregion
             #endregion
 
             #region Level Management
@@ -1790,8 +1791,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if ((buyTrigger || reverseBuyTrade) && entryOrder == null)
                 {
+                    double dynamicOffset = GetDynamicEntryOffset(true, deltaBuyVol, deltaSellVol);
                     double limitLevel = GetLimitLevel(
-                        smoothConfirmMA[0] + buySellBuffer,
+                        smoothConfirmMA[0] + buySellBuffer + dynamicOffset,
                         Close[0],
                         true
                     );
@@ -1823,8 +1825,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     && entryOrder.OrderState != OrderState.Filled
                 )
                 {
+                    double dynamicOffset = GetDynamicEntryOffset(true, deltaBuyVol, deltaSellVol);
                     double limitLevel = GetLimitLevel(
-                        smoothConfirmMA[0] + buySellBuffer,
+                        smoothConfirmMA[0] + buySellBuffer + dynamicOffset,
                         Close[0],
                         true
                     );
@@ -1866,8 +1869,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if ((sellTrigger || reverseSellTrade) && entryOrderShort == null)
                 {
+                    double dynamicOffset = GetDynamicEntryOffset(false, deltaBuyVol, deltaSellVol);
                     double limitLevel = GetLimitLevel(
-                        smoothConfirmMA[0] - buySellBuffer,
+                        smoothConfirmMA[0] - buySellBuffer - dynamicOffset,
                         Close[0],
                         false
                     );
@@ -1899,8 +1903,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     && entryOrderShort.OrderState != OrderState.Filled
                 )
                 {
+                    double dynamicOffset = GetDynamicEntryOffset(false, deltaBuyVol, deltaSellVol);
                     double limitLevel = GetLimitLevel(
-                        smoothConfirmMA[0] - buySellBuffer,
+                        smoothConfirmMA[0] - buySellBuffer - dynamicOffset,
                         Close[0],
                         false
                     );
@@ -2243,6 +2248,59 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
             return true;
+        }
+
+        private double GetDynamicEntryOffset(bool buyDir, double deltaBuyVol, double deltaSellVol)
+        {
+            if (EnableDynamicEntry)
+            {
+                if (buyDir)
+                {
+                    if (deltaBuyVol >= DeltaPosCutOff / 100)
+                    {
+                        if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
+                        {
+                            Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
+                            return DynamicEntryOffsetTrend;
+                        }
+                        else
+                        {
+                            Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
+                            return DynamicEntryOffsetPos;
+                        }
+                    }
+                    else
+                    {
+                        Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
+                        return DynamicEntryOffsetNeg;
+                    }
+                }
+                else
+                {
+                    if (deltaSellVol >= DeltaPosCutOff / 100)
+                    {
+                        if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
+                        {
+                            Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
+                            return DynamicEntryOffsetTrend;
+                        }
+                        else
+                        {
+                            Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
+                            return DynamicEntryOffsetPos;
+                        }
+                    }
+                    else
+                    {
+                        Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
+                        return DynamicEntryOffsetNeg;
+                    }
+                }
+            }
+            else
+            {
+                return 0;
+            }
         }
 
         private double GetLimitLevel(double priceTarget, double close, bool buyDir)

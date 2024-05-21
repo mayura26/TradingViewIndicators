@@ -1662,11 +1662,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicSL)
                     if (High[0] > Position.AveragePrice + ProfitToMoveSL)
                     {
+                        Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
                         SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
                     }
                 if (EnableDynamicTP)
                 {
-                    double TPNewLevel = UpdateTPLevel(Position.AveragePrice + tpLevel, true);
+                    double originalTP = Position.AveragePrice + tpLevel;
+                    if (EnableDynamicExit)
+                    {
+                        Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice + tpLevel));
+                        originalTP = triggerPrice + tpLevel;
+                    }
+                    double TPNewLevel = UpdateTPLevel(originalTP, true);
                     SetProfitTarget("Long", CalculationMode.Price, TPNewLevel);
                 }
             }
@@ -1675,12 +1682,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicSL)
                     if (Low[0] < Position.AveragePrice - ProfitToMoveSL)
                     {
+                        Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
                         SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
                     }
 
                 if (EnableDynamicTP)
                 {
-                    double TPNewLevel = UpdateTPLevel(Position.AveragePrice - tpLevel, false);
+                    double originalTP = Position.AveragePrice - tpLevel;
+                    if (EnableDynamicExit)
+                    {
+                        Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice - tpLevel));
+                        originalTP = triggerPrice - tpLevel;
+                    }
+                    double TPNewLevel = UpdateTPLevel(originalTP, false);
                     SetProfitTarget("Short", CalculationMode.Price, TPNewLevel);
                 }
             }
@@ -1772,14 +1786,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (Position.MarketPosition == MarketPosition.Long)
             {
-                if (Close[0] > triggerPrice + tpLevel)
+                if ((Close[0] > triggerPrice + tpLevel) && EnableDynamicExit)
                 {
                     ExitLong("Long");
                 }
             }
             else if (Position.MarketPosition == MarketPosition.Short)
             {
-                if (Close[0] < triggerPrice - tpLevel)
+                if ((Close[0] < triggerPrice - tpLevel) && EnableDynamicExit)
                 {
                     ExitShort("Short");
                 }
@@ -2201,7 +2215,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     newTPLevel = RoundToNearestTick(closestLevel.Value + TPOffset);
                 }
-                Print(Time[0] + " TP Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
+                Print(Time[0] + " Dynamic TP: TP Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
                 return newTPLevel;
             }
             else
@@ -2260,18 +2274,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
                         {
-                            Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
+                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
                             return DynamicEntryOffsetTrend;
                         }
                         else
                         {
-                            Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
+                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
                             return DynamicEntryOffsetPos;
                         }
                     }
                     else
                     {
-                        Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
+                        Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
                         return DynamicEntryOffsetNeg;
                     }
                 }
@@ -2281,18 +2295,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
                         {
-                            Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
+                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
                             return DynamicEntryOffsetTrend;
                         }
                         else
                         {
-                            Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
+                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
                             return DynamicEntryOffsetPos;
                         }
                     }
                     else
                     {
-                        Print(Time[0] + " Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
+                        Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
                         return DynamicEntryOffsetNeg;
                     }
                 }

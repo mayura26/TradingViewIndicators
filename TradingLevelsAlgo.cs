@@ -27,8 +27,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
     // BUG: Delta shading not showing always
-    // TODO: Trial changing protective level to be initial trigger without delta offset
-    // TODO: Use ATR as exit trigger [Protective Trades] ***** CRITICAL *****
     // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10) [Dynamic Trim] ***** IMPORTANT *****
     // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
     // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Gain Protection]
@@ -870,8 +868,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Banned Trading Days
                 TradingBanDays = new List<DateTime>
                 {
-                    DateTime.Parse("2024-05-20", System.Globalization.CultureInfo.InvariantCulture),
-                    DateTime.Parse("2024-05-13", System.Globalization.CultureInfo.InvariantCulture),
+                    DateTime.Parse("2024-05-22", System.Globalization.CultureInfo.InvariantCulture), // Tight range from OPEX, identified in the morning with NVDA on the bell
+                    DateTime.Parse("2024-05-20", System.Globalization.CultureInfo.InvariantCulture), // Post opex monday
+                    DateTime.Parse("2024-05-13", System.Globalization.CultureInfo.InvariantCulture), 
                     DateTime.Parse("2024-05-03", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-09", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-10", System.Globalization.CultureInfo.InvariantCulture),
@@ -886,7 +885,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v1.7 ******** ");
+                Print(Time[0] + " ******** TRADING ALGO v1.8 ******** ");
                 #region Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
@@ -1061,9 +1060,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     lowerChopZone = chopRangeBot;
                     timeSinceChopZone = 0;
                     showChopZone = true;
-                    reenterChopZoneTop = false;
-                    reenterChopZoneBot = false;
+
                 }
+                inChopZone[0] = true;
+                reenterChopZoneTop = false;
+                reenterChopZoneBot = false;
             }
             else if (!validTriggerPeriod)
             {
@@ -1085,7 +1086,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 timeSinceChopZone += BarsPeriod.Value;
 
-                if (Close[0] > lowerChopZone && Close[0] < upperChopZone && High[0] < upperChopZone && Low[0] > lowerChopZone && EnableExtendedChopZone)
+                if (Close[0] >= lowerChopZone && Close[0] <= upperChopZone && (High[0] <= upperChopZone || Low[0] >= lowerChopZone) && EnableExtendedChopZone)
                 {
                     inChopZone[0] = true;
                     if (Close[1] < lowerChopZone)
@@ -1901,7 +1902,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         true
                     );
 
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(limitLevel, true)) || !EnableProtectiveLevelTrades)
+                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
                     {
                         Print(Time[0] + " Long triggered: " + limitLevel);
                         entryOrder = EnterLongLimit(0, true, TradeQuantity, limitLevel, "Long");
@@ -1935,7 +1936,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         true
                     );
 
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(limitLevel, true)) || !EnableProtectiveLevelTrades)
+                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
                     {
                         ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
                         entryPrice = limitLevel; // Assuming immediate execution at the close price
@@ -1979,7 +1980,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         false
                     );
 
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(limitLevel, false)) || !EnableProtectiveLevelTrades)
+                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, false)) || !EnableProtectiveLevelTrades)
                     {
                         Print(Time[0] + " Short triggered: " + limitLevel);
                         entryOrderShort = EnterShortLimit(0, true, TradeQuantity, limitLevel, "Short");
@@ -2013,7 +2014,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         false
                     );
 
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(limitLevel, false)) || !EnableProtectiveLevelTrades)
+                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)) || !EnableProtectiveLevelTrades)
                     {
                         ChangeOrder(entryOrderShort, entryOrderShort.Quantity, limitLevel, 0);
                         entryPriceShort = limitLevel; // Assuming immediate execution at the close price
@@ -2094,9 +2095,21 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (Math.Abs(trendDirection[0]) < chopLimit && deltaMomentum[0] < deltaMomentumChopLimt)
                 tradeStatus += ((tradeStatus != "" ? " | " : "") + "Chop (TM)");
             if (chopIndexDetect[0])
-                tradeStatus += ((tradeStatus != "" ? " | " : "") + "Chop (CI)");
+                tradeStatus += ((tradeStatus != "" ? " | " : "") + $"Chop (CI)");
+
             if (chopZoneTrade)
+            {
                 tradeStatus += ((tradeStatus != "" ? " | " : "") + "Chop (CZ)");
+                if (timeSinceChopZone > 0)
+                { 
+                    tradeStatus += $" Time: {timeSinceChopZone}s";
+                    if (!reenterChopZoneTop)
+                        tradeStatus += $" // Top RE";
+                    if (!reenterChopZoneBot)
+                        tradeStatus += $" // Bot RE";
+
+                }
+            }
 
             if (tradeStatus != "")
                 dashBoard += "\nTriggers: " + tradeStatus;

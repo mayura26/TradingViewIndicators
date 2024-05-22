@@ -27,6 +27,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
     // BUG: Delta shading not showing always
+    // TODO: Trial changing protective level to be initial trigger without delta offset
     // TODO: Use ATR as exit trigger [Protective Trades] ***** CRITICAL *****
     // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10) [Dynamic Trim] ***** IMPORTANT *****
     // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
@@ -582,6 +583,19 @@ namespace NinjaTrader.NinjaScript.Strategies
         private Series<double> deltaMomentum;
         private Series<bool> chopDetect;
         private Series<bool> volatileMove;
+
+        // ATR Variables
+        private double upperATRRange = 0.0;
+        private double lowerATRRange = 0.0;
+        private Series<double> movingRange;
+        private Series<double> atrTR;
+        private HMA atrHMA;
+        private Series<bool> buyATRSignal;
+        private Series<bool> sellATRSignal;
+        private Series<bool> atrCloseGrtMR;
+        private Series<bool> atrCloseLessMR;
+        private Series<bool> atrMainGrtSignal;
+        private Series<bool> atrMainLessSignal;
         #endregion
 
         #region Volume Variables
@@ -625,7 +639,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int atrSmoothLength = 3;
         private double atrMultiplier = 1.0;
         private int numATR = 4;
-        private bool checkPastSignal = true;
 
         // Volume Constants
         private double volTopLimit = 85;
@@ -881,6 +894,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 deltaMomentum = new Series<double>(this);
                 chopDetect = new Series<bool>(this);
                 volatileMove = new Series<bool>(this);
+                movingRange = new Series<double>(this);
+                atrTR = new Series<double>(this);
+                buyATRSignal = new Series<bool>(this);
+                sellATRSignal = new Series<bool>(this);
+                atrCloseGrtMR = new Series<bool>(this);
+                atrCloseLessMR = new Series<bool>(this);
+                atrMainGrtSignal = new Series<bool>(this);
+                atrMainLessSignal = new Series<bool>(this);
                 BuyVol = new Series<double>(this);
                 SellVol = new Series<double>(this);
                 smoothNetVol = new Series<double>(this);
@@ -906,6 +927,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 smoothConfirmMA = DynamicTrendLine(8, 13, 21);
                 vwap = VWAP();
                 currentDayOHL = CurrentDayOHL();
+                atrHMA = HMA(atrTR, numATR);
 
                 // Add our EMAs to the chart for visualization
                 AddChartIndicator(smoothConfirmMA);
@@ -983,7 +1005,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             #endregion
 
-            #region Trend/Chop Calculation
+            #region Trend/Chop/ATR Calculation
             #region Central Chop Zone
             double ChopO = Opens[1][0];
             double ChopC = Closes[1][0];
@@ -1110,7 +1132,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             #endregion
 
-            #region ********** TREND CALCULATION **********
+            #region Momentum/Chop Calculation
             // Generate momentum signals
             momentum[0] = 0;
             for (int i = 0; i < dataLength; i++)
@@ -1125,7 +1147,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             momentumMA = EMA(momentum, atrMALength);
             momentumMain = EMA(momentumMA, atrSmoothLength);
             momentumSignal = EMA(momentumMain, atrSmoothLength);
-
 
             // Chop calculation
             chopIndex = ChoppinessIndex(chopCalcLength);
@@ -1144,6 +1165,39 @@ namespace NinjaTrader.NinjaScript.Strategies
             volatileMove[0] =
                 Math.Abs(trendDirection[0]) > volatileLimit
                 || deltaMomentum[0] > deltaMomentumVolLimt;
+            #endregion
+
+            #region ATR Dot Calculation
+            double hl2 = (High[0] + Low[0]) / 2;
+            atrTR[0] = Math.Max(High[0] - Low[0], Math.Max(Math.Abs(High[0] - Close[1]), Math.Abs(Low[0] - Close[1])));
+            upperATRRange = hl2 + atrMultiplier * atrHMA[0];
+            lowerATRRange = hl2 + -atrMultiplier * atrHMA[0];
+
+            if (Close[0] < movingRange[1])
+                movingRange[0] = upperATRRange;
+            else
+                movingRange[0] = lowerATRRange;
+
+            atrCloseGrtMR[0] = Close[0] > movingRange[0];
+            atrCloseLessMR[0] = Close[0] < movingRange[0];
+            atrMainGrtSignal[0] = momentumMain[0] > momentumSignal[0];
+            atrMainLessSignal[0] = momentumMain[0] < momentumSignal[0];
+
+            buyATRSignal[0] = atrCloseGrtMR[0] && atrCloseGrtMR[1] && atrCloseGrtMR[2] && atrCloseGrtMR[3] && momentumMain[0] > momentumSignal[0] && !atrMainGrtSignal[1];
+            sellATRSignal[0] = atrCloseLessMR[0] && atrCloseLessMR[1] && atrCloseLessMR[2] && atrCloseLessMR[3] && momentumMain[0] < momentumSignal[0] && !atrMainLessSignal[1];
+
+            if (buyATRSignal[0])
+            {
+                if (ExitOnATRReversal && entryOrderShort != null)
+                    Print(Time[0] + " Protective Trades: Close Sell Trade due to ATR Signal");
+                Draw.TriangleUp(this, "BuyATRSignal" + CurrentBar, true, 0, Low[0] - TickSize * 110, Brushes.Navy);
+            }
+            else if (sellATRSignal[0])
+            {
+                if (ExitOnATRReversal && entryOrder != null)
+                    Print(Time[0] + " Protective Trades: Close Buy Trade due to ATR Signal");
+                Draw.TriangleDown(this, "SellATRSignal" + CurrentBar, true, 0, High[0] + TickSize * 110, Brushes.Gold);
+            }
             #endregion
             #endregion
 
@@ -1549,7 +1603,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (buyTrigger || buyVolSignal)
             {
                 buyVolSignal = true;
-                if (!EnableTrading || midVolDump[0] || bullVolDump[0])
+                if (!EnableTrading || midVolDump[0] || bullVolDump[0] || (ExitOnATRReversal && sellATRSignal[0]))
                 {
                     buyVolSignal = false;
                     buyVolCloseTrigger = true;
@@ -1591,7 +1645,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (sellTrigger || sellVolSignal)
             {
                 sellVolSignal = true;
-                if (!EnableTrading || midVolPump[0] || bullVolPump[0])
+                if (!EnableTrading || midVolPump[0] || bullVolPump[0] || (ExitOnATRReversal && buyATRSignal[0]))
                 {
                     sellVolSignal = false;
                     sellVolCloseTrigger = true;

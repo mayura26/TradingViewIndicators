@@ -1046,10 +1046,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (!validTriggerPeriod)
             {
                 inChopZone[0] = false;
-                timeSinceChopZone = 0;
-                showChopZone = false;
-                reenterChopZoneTop = false;
-                reenterChopZoneBot = false;
             }
 
             if (inChopZone[1])
@@ -1093,6 +1089,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 showChopZone = false;
                 reenterChopZoneTop = false;
                 reenterChopZoneBot = false;
+                upperChopZone = 0;
+                lowerChopZone = 0;
             }
 
             if (showChopZone)
@@ -1102,7 +1100,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             if (inChopZone[0])
-                Draw.Diamond(this, "ChopZoneIndicator" + CurrentBar, true, 0, Low[0] - TickSize * 50, Brushes.Cyan);
+                Draw.Diamond(this, "ChopZoneIndicator" + CurrentBar, true, 0, Low[0] - TickSize * 80, Brushes.Cyan);
 
             bool chopZoneTrade = false;
             for (int i = 0; i < ChopZoneLookBack; i++)
@@ -2499,7 +2497,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     EnableTrading = false;
                 }
             }
-            else
+            else if (!DisableTradingTimes)
             {
                 EnableTrading = false;
             }

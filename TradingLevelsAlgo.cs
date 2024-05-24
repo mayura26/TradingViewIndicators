@@ -235,19 +235,19 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Range(-100, 100)]
         [Display(Name = "TrendOffset", Description = "Offset from delta trend for dynamic entry", Order = 61, GroupName = "4. Dynamic Entry/Exit")]
-        public int DynamicEntryOffsetTrend
+        public double DynamicEntryOffsetTrend
         { get; set; }
 
         [NinjaScriptProperty]
         [Range(-100, 100)]
         [Display(Name = "PosOffset", Description = "Offset from positive delta for dynamic entry", Order = 62, GroupName = "4. Dynamic Entry/Exit")]
-        public int DynamicEntryOffsetPos
+        public double DynamicEntryOffsetPos
         { get; set; }
 
         [NinjaScriptProperty]
         [Range(-100, 100)]
         [Display(Name = "NegOffset", Description = "Offset from negative delta for dynamic entry", Order = 63, GroupName = "4. Dynamic Entry/Exit")]
-        public int DynamicEntryOffsetNeg
+        public double DynamicEntryOffsetNeg
         { get; set; }
         #endregion
 
@@ -546,6 +546,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 3, GroupName = "9. Trade Settings")]
         public bool ResetConsecOnTime
         { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableNewFeatures", Description = "Enable new features", Order = 4, GroupName = "9. Trade Settings")]
+        public bool EnableNewFeatures
+        { get; set; }
         #endregion
         #endregion
 
@@ -757,6 +762,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
                 EnableBannedDays = false;
+                EnableNewFeatures = false;
                 #endregion
                 #region Main Parameters
                 TradeQuantity = 3;
@@ -798,15 +804,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ResetBarsMissedOnShortTS2 = false;
                 #endregion
                 #region Time Session 3
-                TPLevelTS3 = 45;
+                TPLevelTS3 = 40;
                 SLLevelTS3 = 15;
-                BuySellBufferTS3 = 2;
-                BarsToHoldTradeTS3 = 3;
+                BuySellBufferTS3 = 5;
+                BarsToHoldTradeTS3 = 4;
                 BarsToMissTradeTS3 = 3;
-                OffsetFromEntryToCancelTS3 = 50;
+                OffsetFromEntryToCancelTS3 = 30;
                 MaxLossConsecTS3 = 2;
-                ResetBarsMissedOnLongTS3 = true;
-                ResetBarsMissedOnShortTS3 = true;
+                ResetBarsMissedOnLongTS3 = false;
+                ResetBarsMissedOnShortTS3 = false;
                 #endregion 
                 #region Volume Settings
                 AveVolPeriod = 15;
@@ -842,7 +848,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Protective Trades
                 ExitOnATRReversal = false;
                 EnableProtectiveLevelTrades = true;
-                ProtectiveLevelRangeCheck = 5;
+                ProtectiveLevelRangeCheck = 10;
                 #endregion
                 #region Dynamic Entry/Exit
                 EnableDynamicEntry = true;
@@ -870,7 +876,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     DateTime.Parse("2024-05-22", System.Globalization.CultureInfo.InvariantCulture), // Tight range from OPEX, identified in the morning with NVDA on the bell
                     DateTime.Parse("2024-05-20", System.Globalization.CultureInfo.InvariantCulture), // Post opex monday
-                    DateTime.Parse("2024-05-13", System.Globalization.CultureInfo.InvariantCulture), 
+                    DateTime.Parse("2024-05-13", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-05-03", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-09", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-10", System.Globalization.CultureInfo.InvariantCulture),
@@ -1094,6 +1100,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (Close[1] > upperChopZone)
                         reenterChopZoneTop = true;
                 }
+                else
+                {
+                    inChopZone[0] = false;
+                }
 
                 if (!EnableExtendedChopZone)
                     showChopZone = false;
@@ -1186,17 +1196,29 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             buyATRSignal[0] = atrCloseGrtMR[0] && atrCloseGrtMR[1] && atrCloseGrtMR[2] && atrCloseGrtMR[3] && momentumMain[0] > momentumSignal[0] && !atrMainGrtSignal[1];
             sellATRSignal[0] = atrCloseLessMR[0] && atrCloseLessMR[1] && atrCloseLessMR[2] && atrCloseLessMR[3] && momentumMain[0] < momentumSignal[0] && !atrMainLessSignal[1];
+            bool closeLongOnATRReversal = false;
+            bool closeShortOnATRReversal = false;
 
             if (buyATRSignal[0])
             {
-                if (ExitOnATRReversal && entryOrderShort != null)
+                if (validTriggerPeriod)
+                    Print(Time[0] + " Buy ATR Signal");
+                if (ExitOnATRReversal && Position.MarketPosition == MarketPosition.Short && Close[0] <= Position.AveragePrice - 5)
+                {
                     Print(Time[0] + " Protective Trades: Close Sell Trade due to ATR Signal");
+                    closeShortOnATRReversal = true;
+                }
                 Draw.TriangleUp(this, "BuyATRSignal" + CurrentBar, true, 0, Low[0] - TickSize * 110, Brushes.Navy);
             }
             else if (sellATRSignal[0])
             {
-                if (ExitOnATRReversal && entryOrder != null)
+                if (validTriggerPeriod)
+                    Print(Time[0] + " Sell ATR Signal");
+                if (ExitOnATRReversal && Position.MarketPosition == MarketPosition.Long && Close[0] >= Position.AveragePrice + 5)
+                {
                     Print(Time[0] + " Protective Trades: Close Buy Trade due to ATR Signal");
+                    closeLongOnATRReversal = true;
+                }
                 Draw.TriangleDown(this, "SellATRSignal" + CurrentBar, true, 0, High[0] + TickSize * 110, Brushes.Gold);
             }
             #endregion
@@ -1440,18 +1462,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 #region Protective Levels Array
                 ProtectiveBuyLevels.Clear();
+                ProtectiveBuyLevels.Add(vwap[0]);
                 ProtectiveBuyLevels.Add(lastWeekHigh);
                 ProtectiveBuyLevels.Add(yesterdayHigh);
                 ProtectiveBuyLevels.Add(atr618);
                 ProtectiveBuyLevels.Add(atr100);
                 ProtectiveBuyLevels.Add(R6); // Bull Target
+                ProtectiveBuyLevels.Add(R4); // Bear Reversal
+
 
                 ProtectiveSellLevels.Clear();
+                ProtectiveSellLevels.Add(vwap[0]);
                 ProtectiveSellLevels.Add(lastWeekLow);
                 ProtectiveSellLevels.Add(yesterdayLow);
                 ProtectiveSellLevels.Add(atrNeg618);
                 ProtectiveSellLevels.Add(atrNeg100);
                 ProtectiveSellLevels.Add(S6); // Bear Target
+                ProtectiveSellLevels.Add(S4); // Bull Reversal
+
                 #endregion
             }
             #endregion
@@ -1604,7 +1632,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (buyTrigger || buyVolSignal)
             {
                 buyVolSignal = true;
-                if (!EnableTrading || midVolDump[0] || bullVolDump[0] || (ExitOnATRReversal && sellATRSignal[0]))
+                if (!EnableTrading || midVolDump[0] || bullVolDump[0] || closeLongOnATRReversal)
                 {
                     buyVolSignal = false;
                     buyVolCloseTrigger = true;
@@ -1646,7 +1674,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (sellTrigger || sellVolSignal)
             {
                 sellVolSignal = true;
-                if (!EnableTrading || midVolPump[0] || bullVolPump[0] || (ExitOnATRReversal && buyATRSignal[0]))
+                if (!EnableTrading || midVolPump[0] || bullVolPump[0] || closeShortOnATRReversal)
                 {
                     sellVolSignal = false;
                     sellVolCloseTrigger = true;
@@ -1980,7 +2008,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         false
                     );
 
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, false)) || !EnableProtectiveLevelTrades)
+                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)) || !EnableProtectiveLevelTrades)
                     {
                         Print(Time[0] + " Short triggered: " + limitLevel);
                         entryOrderShort = EnterShortLimit(0, true, TradeQuantity, limitLevel, "Short");
@@ -2101,7 +2129,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 tradeStatus += ((tradeStatus != "" ? " | " : "") + "Chop (CZ)");
                 if (timeSinceChopZone > 0)
-                { 
+                {
                     tradeStatus += $" Time: {timeSinceChopZone}s";
                     if (!reenterChopZoneTop)
                         tradeStatus += $" // Top RE";
@@ -2244,11 +2272,22 @@ namespace NinjaTrader.NinjaScript.Strategies
                         EnableTrading = false;
                         Print(
                             Time[0]
-                                + " ******** TRADING DISABLED (3 losses in a row) ******** : $"
+                                + $" ******** TRADING DISABLED ({consecutiveLosses} losses in a row) ******** : $"
                                 + currentPnL
                         );
                     }
                 }
+            }
+        }
+
+        public override string DisplayName
+        {
+            get
+            {
+                if (State == State.SetDefaults)
+                    return "TradingLevelsAlgo";
+                else
+                    return "";
             }
         }
         #endregion
@@ -2347,7 +2386,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (entryPrice >= level - ProtectiveLevelRangeCheck && entryPrice <= level)
                     {
-                        Print(Time[0] + " Long not safe at: " + entryPrice + " due to level: " + level);
+                        Print(Time[0] + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level));
                         return false;
                     }
                 }
@@ -2358,7 +2397,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (entryPrice <= level + ProtectiveLevelRangeCheck && entryPrice >= level)
                     {
-                        Print(Time[0] + " Short not safe at: " + entryPrice + " due to level: " + level);
+                        Print(Time[0] + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level));
                         return false;
                     }
                 }
@@ -2564,10 +2603,40 @@ namespace NinjaTrader.NinjaScript.Strategies
                     EnableTrading = false;
                 }
             }
+            else if (DisableTradingTimes)
+            {
+                tpLevel = TPLevelTS3;
+                slLevel = SLLevelTS3;
+                buySellBuffer = BuySellBufferTS3;
+                barsToHoldTrade = BarsToHoldTradeTS3;
+                barsToMissTrade = BarsToMissTradeTS3;
+                offsetFromEntryToCancel = OffsetFromEntryToCancelTS3;
+                maxLossConsec = MaxLossConsecTS3;
+                resetBarsMissedOnLong = ResetBarsMissedOnLongTS3;
+                resetBarsMissedOnShort = ResetBarsMissedOnShortTS3;
+
+                if (lastTimeSession != 4)
+                {
+                    lastTimeSession = 4;
+                    Print(Time[0] + " ******** TRADING SESSION 4 ******** ");
+                    Draw.VerticalLine(this, "Session4", 0, Brushes.Aquamarine, DashStyleHelper.Dash, 2);
+                    if (ResetConsecOnTime)
+                    {
+                        consecutiveLosses = 0;
+                        EnableTrading = true;
+                        Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ON SESSION CHANGE ******** ");
+                    }
+                    SetStopLoss("Long", CalculationMode.Ticks, slLevel / TickSize, false);
+                    SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
+                    SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
+                    SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
+                }
+            }
             else if (!DisableTradingTimes)
             {
                 EnableTrading = false;
             }
+
 
             if (EnableTradingTS1 && barTime == TS1End.TimeOfDay)
             {

@@ -220,8 +220,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
+        [Display(Name = "EnableSuperProtectMode", Description = "Enable super protective mode", Order = 58, GroupName = "4. Protective Trades")]
+        public bool EnableSuperProtectMode
+        { get; set; }
+
+        [NinjaScriptProperty]
         [Range(1, double.MaxValue)]
-        [Display(Name = "ProtectiveLevelRangeCheck", Description = "Range to check for protective level trades", Order = 58, GroupName = "4. Protective Trades")]
+        [Display(Name = "ProtectiveLevelRangeCheck", Description = "Range to check for protective level trades", Order = 59, GroupName = "4. Protective Trades")]
         public double ProtectiveLevelRangeCheck
         { get; set; }
         #endregion
@@ -848,13 +853,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Protective Trades
                 ExitOnATRReversal = false;
                 EnableProtectiveLevelTrades = true;
+                EnableSuperProtectMode = false;
                 ProtectiveLevelRangeCheck = 10;
                 #endregion
                 #region Dynamic Entry/Exit
                 EnableDynamicEntry = true;
                 DynamicEntryOffsetTrend = 4;
                 DynamicEntryOffsetPos = 0;
-                DynamicEntryOffsetNeg = -3;
+                DynamicEntryOffsetNeg = -3.5;
                 #endregion
                 #region Gain Protection
                 EnableTrailingDrawdown = false;
@@ -874,6 +880,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Banned Trading Days
                 TradingBanDays = new List<DateTime>
                 {
+                    DateTime.Parse("2024-05-24", System.Globalization.CultureInfo.InvariantCulture), // Friday before long weekend
                     DateTime.Parse("2024-05-22", System.Globalization.CultureInfo.InvariantCulture), // Tight range from OPEX, identified in the morning with NVDA on the bell
                     DateTime.Parse("2024-05-20", System.Globalization.CultureInfo.InvariantCulture), // Post opex monday
                     DateTime.Parse("2024-05-13", System.Globalization.CultureInfo.InvariantCulture),
@@ -891,7 +898,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v1.8 ******** ");
+                Print(Time[0] + " ******** TRADING ALGO v1.9 ******** ");
                 #region Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
@@ -2384,7 +2391,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 foreach (double level in ProtectiveBuyLevels)
                 {
-                    if (entryPrice >= level - ProtectiveLevelRangeCheck && entryPrice <= level)
+                    if (entryPrice >= level - ProtectiveLevelRangeCheck && entryPrice <= level + (EnableSuperProtectMode ? ProtectiveLevelRangeCheck : 0))
                     {
                         Print(Time[0] + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level));
                         return false;
@@ -2395,7 +2402,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 foreach (double level in ProtectiveSellLevels)
                 {
-                    if (entryPrice <= level + ProtectiveLevelRangeCheck && entryPrice >= level)
+                    if (entryPrice <= level + ProtectiveLevelRangeCheck && entryPrice >= level - (EnableSuperProtectMode ? ProtectiveLevelRangeCheck : 0))
                     {
                         Print(Time[0] + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level));
                         return false;

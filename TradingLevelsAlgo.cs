@@ -18,6 +18,7 @@ using NinjaTrader.NinjaScript.SuperDomColumns;
 using SharpDX;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Tab;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.ToolTip;
+using static NinjaTrader.CQG.ProtoBuf.MarketDataSubscription.Types;
 using Brush = System.Windows.Media.Brush;
 using Brushes = System.Windows.Media.Brushes;
 #endregion
@@ -26,8 +27,9 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
-    // BUG: Delta shading not showing always
-    // TODO: Create dynamic trim mode. Have a level at which we will trim the trade. This level will also be linked into the main levels. Offset from limit (2) and searchrange (10) [Dynamic Trim] ***** IMPORTANT *****
+    // BUG: ATR calc is wrong?
+    // TODO: Optimise Dyanmic Trrim
+    // BUG: Dynamic trim loses SL/TP
     // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
     // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Gain Protection]
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
@@ -638,6 +640,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         bool reverseBuyTrade = false;
         private int localBarsToMissTrade = 0;
         private int localBarsToMissPrev = 0;
+        bool dynamicTrimTriggered = false;
         #endregion
 
         #region Constants
@@ -678,6 +681,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double MaxGain;
         public double MaxLoss;
         public double LossCutOff;
+        private int lastTradeChecked = -1;
         #endregion
 
         #region Time Specific Trade Variables
@@ -702,7 +706,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         public Brush DeltaVolTrendShade = Brushes.SkyBlue;
         public Brush ChopShade = Brushes.Silver;
         public int DeltaShadeOpacity = 25;
-        public Brush BackBrushLast = null;
         #endregion
 
         #region ORB Variables
@@ -860,7 +863,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableDynamicEntry = true;
                 DynamicEntryOffsetTrend = 4;
                 DynamicEntryOffsetPos = 0;
-                DynamicEntryOffsetNeg = -3.5;
+                DynamicEntryOffsetNeg = -3;
                 #endregion
                 #region Gain Protection
                 EnableTrailingDrawdown = false;
@@ -1555,17 +1558,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             validTriggerPeriod = EnableTrading;
             #endregion
 
-            #region Delta Shading
-
-            if (!buyVolSignal && !sellVolSignal)
-            {
-                BackBrush = null;
-            }
-            else
-            {
-                BackBrush = BackBrushLast;
-            }
-
+            #region Delta Bars to Miss Trade
             // Load in new variables if delta volume is weak
             if (EnableDynamicSettings)
             {
@@ -1623,11 +1616,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 localBarsToMissTrade = barsToMissTrade;
             }
 
-            BackBrushLast = BackBrush;
-
-            if (BackBrush == null && chopDetect[0])
-                BackBrush = ChopShade;
-
             if (localBarsToMissTrade != localBarsToMissPrev && validTriggerPeriod)
             {
                 Print(Time[0] + " Bars to Miss Trade Changed from " + localBarsToMissPrev + " to " + localBarsToMissTrade + ". Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%");
@@ -1636,6 +1624,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Buy/Sell Signals
+            #region Trigger Logic
             if (buyTrigger || buyVolSignal)
             {
                 buyVolSignal = true;
@@ -1719,7 +1708,39 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                 }
             }
+            #endregion
 
+            #region Delta Brush Updates
+            if (EnableDynamicSettings)
+                if (buyVolSignal || sellVolSignal)
+                {
+                    if (localBarsToMissTrade == barsToMissTrade)
+                    {
+                        BackBrush = DeltaVolTrendShade;
+                    }
+                    else if (localBarsToMissTrade == BarsToMissPosDelta)
+                    {
+                        if (buyVolSignal)
+                            BackBrush = DeltaVolBuyShade;
+                        else if (sellVolSignal)
+                            BackBrush = DeltaVolSellShade;
+                    }
+                    else if (localBarsToMissTrade == BarsToMissNegDelta)
+                    {
+                        BackBrush = DeltaVolNegShade;
+                    }
+                }
+                else if (chopDetect[0])
+                {
+                    BackBrush = ChopShade;
+                }
+                else
+                {
+                    BackBrush = null;
+                }
+            #endregion
+
+            #region Trigger Display
             if (buyTrigger && showVolTrade)
             {
                 Draw.ArrowUp(
@@ -1771,6 +1792,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             #endregion
             #endregion
+            #endregion
 
             #region Trade Management
             #region TP/SL management
@@ -1781,6 +1803,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
                 SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
                 SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
+                dynamicTrimTriggered = false;
+                RemoveDrawObject("TrimLevel");
+                RemoveDrawObject("LabelTrim");
             }
             else if (Position.MarketPosition == MarketPosition.Long)
             {
@@ -1790,6 +1815,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
                         SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
                     }
+
                 if (EnableDynamicTP)
                 {
                     double originalTP = Position.AveragePrice + tpLevel;
@@ -1875,7 +1901,24 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             #endregion
 
-            #region Close trades on close signal
+            #region Close/Trim Trades
+            #region Trim Marker
+            double trimLevel = 0;
+            if (EnableDynamicTrim && Position.MarketPosition != MarketPosition.Flat && !dynamicTrimTriggered)
+            {
+                if (Position.MarketPosition == MarketPosition.Long)
+                {
+                    trimLevel = UpdateTrimLevel(Position.AveragePrice + ExitTPLevel, true);
+                }
+                else if (Position.MarketPosition == MarketPosition.Short)
+                {
+                    trimLevel = UpdateTrimLevel(Position.AveragePrice - ExitTPLevel, false);
+                }
+                Draw.HorizontalLine(this, "TrimLevel", trimLevel, Brushes.Magenta);
+                Draw.Text(this, "LabelTrim", "Trim", -10, trimLevel - 2, Brushes.Magenta);
+            }
+            #endregion
+
             if (buyVolCloseTrigger)
             {
                 if (entryOrder != null && entryOrder.OrderState == OrderState.Filled)
@@ -1915,12 +1958,26 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     ExitLong("Long");
                 }
+                else if (EnableDynamicTrim && (Close[0] > trimLevel) && !dynamicTrimTriggered)
+                {
+                    int trimQuantity = (int)Math.Round(Position.Quantity * TrimPercent / 100, 0);
+                    Print(Time[0] + " Dynamic Trim: Trimming Long Position by " + trimQuantity + " at: " + Close[0]);
+                    ExitLong(trimQuantity, "DynamicTrim", "Long");
+                    dynamicTrimTriggered = true;
+                }
             }
             else if (Position.MarketPosition == MarketPosition.Short)
             {
                 if ((Close[0] < triggerPrice - tpLevel) && TPCalcFromInitTrigger)
                 {
                     ExitShort("Short");
+                }
+                else if (EnableDynamicTrim && (Close[0] < trimLevel) && !dynamicTrimTriggered)
+                {
+                    int trimQuantity = (int)Math.Round(Position.Quantity * TrimPercent / 100, 0);
+                    Print(Time[0] + " Dynamic Trim: Trimming Short Position by " + trimQuantity + " at: " + Close[0]);
+                    ExitShort(trimQuantity, "DynamicTrim", "Short");
+                    dynamicTrimTriggered = true;
                 }
             }
             #endregion
@@ -2211,6 +2268,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         // Execution Update
         protected override void OnExecutionUpdate(Execution execution, string executionId, double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
         {
+            #region Trade Closed
             if (
                 execution.Order.OrderState == OrderState.Filled
                 && (
@@ -2228,11 +2286,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                         + price
                 );
             }
+            #endregion
 
-            if (
-                Position.MarketPosition == MarketPosition.Flat
-                && SystemPerformance.AllTrades.Count > 0
-            )
+            #region PnL Calculation
+            if (SystemPerformance.AllTrades.Count > 0)
             {
                 if (RealTimePnlOnly && State == State.Realtime || !RealTimePnlOnly)
                 {
@@ -2242,49 +2299,53 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                     // Sum the profits of trades with similar exit times
                     double totalTradePnL = lastTrade.ProfitCurrency;
+                    int totalQuantity = lastTrade.Quantity;
                     DateTime exitTime = lastTrade.Exit.Time;
-                    for (int i = SystemPerformance.AllTrades.Count - 2; i >= 0; i--)
+                    if (lastTrade.TradeNumber > lastTradeChecked)
                     {
-                        Cbi.Trade trade = SystemPerformance.AllTrades[i];
-                        if (Math.Abs((trade.Exit.Time - exitTime).TotalSeconds) <= 10)
+                        for (int i = SystemPerformance.AllTrades.Count - 2; i >= 0; i--)
                         {
-                            totalTradePnL += trade.ProfitCurrency;
+                            Cbi.Trade trade = SystemPerformance.AllTrades[i];
+                            if (Math.Abs((trade.Exit.Time - exitTime).TotalSeconds) <= 10 && trade.TradeNumber > lastTradeChecked)
+                            {
+                                totalTradePnL += trade.ProfitCurrency;
+                                totalQuantity += trade.Quantity;
+                            }
+                            else
+                            {
+                                break; // Exit the loop if the exit time is different
+                            }
                         }
-                        else
+                        lastTradeChecked = lastTrade.TradeNumber;
+                        currentPnL += totalTradePnL;
+
+                        Print(Time[0] + " Trade PnL: $" + totalTradePnL + " | Current PnL: $" + currentPnL + " | Points : " + RoundToNearestTick(totalTradePnL / totalQuantity / Bars.Instrument.MasterInstrument.PointValue));
+
+                        if (totalTradePnL < LossCutOff)
                         {
-                            break; // Exit the loop if the exit time is different
+                            consecutiveLosses++;
+                            Print(Time[0] + " ******** CONSECUTIVE LOSSES: " + consecutiveLosses);
                         }
-                    }
+                        else if (totalTradePnL >= 0)
+                        {
+                            consecutiveLosses = 0; // Reset the count on a non-loss trade
+                            Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
+                        }
 
-
-                    currentPnL += totalTradePnL;
-
-                    Print(Time[0] + " Trade PnL: $" + totalTradePnL);
-                    Print(Time[0] + " Current PnL: $" + currentPnL);
-
-                    if (totalTradePnL < LossCutOff)
-                    {
-                        consecutiveLosses++;
-                        Print(Time[0] + " ******** CONSECUTIVE LOSSES: " + consecutiveLosses);
-                    }
-                    else if (totalTradePnL >= 0)
-                    {
-                        consecutiveLosses = 0; // Reset the count on a non-loss trade
-                        Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
-                    }
-
-                    // Check if there have been three consecutive losing trades
-                    if (consecutiveLosses >= maxLossConsec && !DisablePNLLimits)
-                    {
-                        EnableTrading = false;
-                        Print(
-                            Time[0]
-                                + $" ******** TRADING DISABLED ({consecutiveLosses} losses in a row) ******** : $"
-                                + currentPnL
-                        );
+                        // Check if there have been three consecutive losing trades
+                        if (consecutiveLosses >= maxLossConsec && !DisablePNLLimits)
+                        {
+                            EnableTrading = false;
+                            Print(
+                                Time[0]
+                                    + $" ******** TRADING DISABLED ({consecutiveLosses} losses in a row) ******** : $"
+                                    + currentPnL
+                            );
+                        }
                     }
                 }
             }
+            #endregion
         }
 
         public override string DisplayName
@@ -2364,6 +2425,78 @@ namespace NinjaTrader.NinjaScript.Strategies
                     newTPLevel = RoundToNearestTick(closestLevel.Value + TPOffset);
                 }
                 Print(Time[0] + " Dynamic TP: TP Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
+                return newTPLevel;
+            }
+            else
+            {
+                return targetTP;
+            }
+        }
+
+        private double UpdateTrimLevel(double targetTP, bool isBuy)
+        {
+            // Sort the list of target prices
+            CalculatedLevels.Sort();
+
+            // If it's a sell check, reverse the order to start from the highest level
+            if (!isBuy)
+            {
+                CalculatedLevels.Reverse();
+            }
+
+            double? closestLevel = null;
+            double closestDifference = double.MaxValue;
+
+            // Iterate through the sorted list and find the closest level within the target offset
+            foreach (double level in CalculatedLevels)
+            {
+                double difference = Math.Abs(targetTP - level);
+
+                if (difference <= ExitLevelRange)
+                {
+                    if (MoveLowerOnly)
+                    {
+                        if (isBuy && level <= targetTP)
+                        {
+                            if (difference < closestDifference)
+                            {
+                                closestLevel = level;
+                                closestDifference = difference;
+                            }
+                        }
+                        else if (!isBuy && level >= targetTP)
+                        {
+                            if (difference < closestDifference)
+                            {
+                                closestLevel = level;
+                                closestDifference = difference;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        if (difference < closestDifference)
+                        {
+                            closestLevel = level;
+                            closestDifference = difference;
+                        }
+                    }
+                }
+            }
+
+            // Return the closest level found within the target offset or the original targetTP if no level is found
+            if (closestLevel.HasValue)
+            {
+                double newTPLevel = 0;
+                if (isBuy)
+                {
+                    newTPLevel = RoundToNearestTick(closestLevel.Value - ExitLevelOffset);
+                }
+                else
+                {
+                    newTPLevel = RoundToNearestTick(closestLevel.Value + ExitLevelOffset);
+                }
+                Print(Time[0] + " Dynamic Trim: Trim Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
                 return newTPLevel;
             }
             else

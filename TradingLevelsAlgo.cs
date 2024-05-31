@@ -27,13 +27,17 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
-    // BUG: ATR calc is wrong?
+	// TODO: Optimise buysellbuffer by 0.5?
+	// TODO: Design dynamic calc of TP level using ATR or similar
     // TODO: Optimise Dyanmic Trrim
     // BUG: Dynamic trim loses SL/TP
+    // TODO: Add shorts to dynamic trim
     // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
     // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Gain Protection]
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
     // TODO: Look at fib levels to improve drawing of levels
+	// TODO: EMA levels to exit trades
+	// TODO: Chopzone top for exits
     // FEATURE: Cancel order when in chopzone
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Add more levels to protective trades
@@ -165,6 +169,40 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "TPCalcFromInitTrigger", Description = "Calculate TP level from initial trigger level", Order = 68, GroupName = "3. Dynamic Takeprofit")]
         public bool TPCalcFromInitTrigger
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTPChopZone", Description = "Enable TP level based on chop zone", Order = 69, GroupName = "3. Dynamic Takeprofit")]
+        public bool EnableTPChopZone
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "TPChopZoneSearchRange", Description = "Search range for chop zone TP mode", Order = 70, GroupName = "3. Dynamic Takeprofit")]
+        public double TPChopZoneSearchRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "TPChopZoneOffset", Description = "Offset from chop zone top for TP", Order = 71, GroupName = "3. Dynamic Takeprofit")]
+        public double TPChopZoneOffset
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTPVWAP", Description = "Enable TP level based on VWAP", Order = 72, GroupName = "3. Dynamic Takeprofit")]
+        public bool EnableTPVWAP
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "TPVWAPSearchRange", Description = "Search range for VWAP TP mode", Order = 73, GroupName = "3. Dynamic Takeprofit")]
+        public double TPVWAPSearchRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "TPVWAPOffset", Description = "Offset from VWAP for TP", Order = 74, GroupName = "3. Dynamic Takeprofit")]
+        public double TPVWAPOffset
         { get; set; }
         #endregion
 
@@ -564,14 +602,17 @@ namespace NinjaTrader.NinjaScript.Strategies
         #region Variables
         #region Trade Variables
         private Cbi.Order entryOrder = null;
+        private Cbi.Order entryOrderTrim = null;
         private double entryPrice = 0.0;
         private int entryBar = -1;
 
         private Cbi.Order entryOrderShort = null;
+        private Cbi.Order entryOrderTrimShort = null;
         private double entryPriceShort = 0.0;
         private int entryBarShort = -1;
 
         int consecutiveLosses = 0;
+        int bigWinCount = 0;
         private double triggerPrice = 0.0;
         #endregion
 
@@ -640,7 +681,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         bool reverseBuyTrade = false;
         private int localBarsToMissTrade = 0;
         private int localBarsToMissPrev = 0;
-        bool dynamicTrimTriggered = false;
         #endregion
 
         #region Constants
@@ -681,6 +721,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double MaxGain;
         public double MaxLoss;
         public double LossCutOff;
+        public double BigWinCutoff;
+        public double TrailingDrawdownLimit;
         private int lastTradeChecked = -1;
         #endregion
 
@@ -742,7 +784,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     @"This is a strategy using pivot levels to enter long and short trades with confluence from EMA, ATR & Volume";
                 Name = "TradingLevelsAlgo";
                 Calculate = Calculate.OnBarClose;
-                EntryHandling = EntryHandling.AllEntries;
+                EntryHandling = EntryHandling.UniqueEntries;
                 IncludeCommission = true;
                 IsExitOnSessionCloseStrategy = false;
                 ExitOnSessionCloseSeconds = 30;
@@ -759,6 +801,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BarsRequiredToTrade = 20;
                 IsExitOnSessionCloseStrategy = true;
                 ExitOnSessionCloseSeconds = 30;
+                EntriesPerDirection = 1;
                 // Disable this property for performance gains in Strategy Analyzer optimizations
                 // See the Help Guide for additional information
                 IsInstantiatedOnEachOptimizationIteration = true;
@@ -843,6 +886,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 MoveLowerOnly = true;
                 LevelDetectRange = 10;
                 TPOffset = 8;
+
+                EnableTPChopZone = true;
+                TPChopZoneSearchRange = 15;
+                TPChopZoneOffset = 1;
+
+                EnableTPVWAP = true;
+                TPVWAPSearchRange = 10;
+                TPVWAPOffset = 1;
                 #endregion
                 #region Chop Zone Settings
                 EnableChopZone = true;
@@ -868,8 +919,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Gain Protection
                 EnableTrailingDrawdown = false;
                 BigWinCutoffCount = 5;
-                BigWinCutoffRatio = 500;
-                TrailingDrawdownRatio = 1000;
+                BigWinCutoffRatio = 50;
+                TrailingDrawdownRatio = 100;
                 #endregion
                 #region Dynamic Trim
                 EnableDynamicTrim = false;
@@ -892,10 +943,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                     DateTime.Parse("2024-04-10", System.Globalization.CultureInfo.InvariantCulture),
                     DateTime.Parse("2024-04-11", System.Globalization.CultureInfo.InvariantCulture)
                 };
-                #endregion
-
-                #region Update Dynamic Variables
-                EntriesPerDirection = TradeQuantity;
                 #endregion
             }
             else if (State == State.DataLoaded)
@@ -954,6 +1001,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
                 SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
                 SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
+                SetStopLoss("LongTrim", CalculationMode.Ticks, slLevel / TickSize, false);
+                SetProfitTarget("LongTrim", CalculationMode.Ticks, ExitTPLevel / TickSize);
                 #endregion
 
                 #region Delta Shading
@@ -1005,6 +1054,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 currentPnL = 0;
                 consecutiveLosses = 0;
+                bigWinCount = 0;
+                TrailingDrawdownLimit = 0;
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
             }
@@ -1499,11 +1550,15 @@ namespace NinjaTrader.NinjaScript.Strategies
             MaxGain = MaxGainRatio * TradeQuantity;
             MaxLoss = MaxLossRatio * TradeQuantity * -1;
             LossCutOff = LossCutOffRatio * TradeQuantity * -1;
+            BigWinCutoff = BigWinCutoffRatio * TradeQuantity;
+            TrailingDrawdownLimit = TrailingDrawdownRatio * TradeQuantity * -1;
+
             if (MiniContracts)
             {
                 MaxGain = MaxGain * 10;
                 MaxLoss = MaxLoss * 10;
                 LossCutOff = LossCutOff * 10;
+                BigWinCutoff = BigWinCutoff * 10;
             }
             #endregion
 
@@ -1803,9 +1858,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
                 SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
                 SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
-                dynamicTrimTriggered = false;
-                RemoveDrawObject("TrimLevel");
-                RemoveDrawObject("LabelTrim");
+                SetStopLoss("LongTrim", CalculationMode.Ticks, slLevel / TickSize, false);
+                SetProfitTarget("LongTrim", CalculationMode.Ticks, ExitTPLevel / TickSize);
             }
             else if (Position.MarketPosition == MarketPosition.Long)
             {
@@ -1814,6 +1868,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
                         SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
+                        SetStopLoss("LongTrim", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
                     }
 
                 if (EnableDynamicTP)
@@ -1825,7 +1880,25 @@ namespace NinjaTrader.NinjaScript.Strategies
                         originalTP = triggerPrice + tpLevel;
                     }
                     double TPNewLevel = UpdateTPLevel(originalTP, true);
+                    if (TPNewLevel > upperChopZone && Math.Abs(TPNewLevel - upperChopZone) <= TPChopZoneSearchRange && EnableTPChopZone)
+                    {
+                        Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + (upperChopZone - TPChopZoneOffset));
+                        TPNewLevel = upperChopZone - TPChopZoneOffset;
+                    }
+
+                    if (TPNewLevel > vwap[0] && Math.Abs(TPNewLevel - vwap[0]) <= TPVWAPSearchRange && EnableTPVWAP)
+                    {
+                        Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + (vwap[0] - TPVWAPOffset));
+                        TPNewLevel = vwap[0] - TPVWAPOffset;
+                    }
+
                     SetProfitTarget("Long", CalculationMode.Price, TPNewLevel);
+                }
+
+                if (EnableDynamicTrim)
+                {
+                    double trimLevel = UpdateTrimLevel(Position.AveragePrice + ExitTPLevel, true);
+                    SetProfitTarget("LongTrim", CalculationMode.Price, trimLevel);
                 }
             }
             else if (Position.MarketPosition == MarketPosition.Short)
@@ -1846,6 +1919,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                         originalTP = triggerPrice - tpLevel;
                     }
                     double TPNewLevel = UpdateTPLevel(originalTP, false);
+                    if (TPNewLevel < lowerChopZone && Math.Abs(TPNewLevel - lowerChopZone) <= TPChopZoneSearchRange && EnableTPChopZone)
+                    {
+                        Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + (lowerChopZone + TPChopZoneOffset));
+                        TPNewLevel = lowerChopZone + TPChopZoneOffset;
+                    }
+
+                    if (TPNewLevel < vwap[0] && Math.Abs(TPNewLevel - vwap[0]) <= TPVWAPSearchRange && EnableTPVWAP)
+                    {
+                        Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + (vwap[0] + TPVWAPOffset));
+                        TPNewLevel = vwap[0] + TPVWAPOffset;
+                    }
+
                     SetProfitTarget("Short", CalculationMode.Price, TPNewLevel);
                 }
             }
@@ -1873,6 +1958,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     );
                     CancelOrder(entryOrder);
                     entryOrder = null; // Reset the entry order variable
+                    if (entryOrderTrim != null && entryOrderTrim.OrderState == OrderState.Working)
+                    {
+                        CancelOrder(entryOrderTrim);
+                        entryOrderTrim = null;
+                    }
                 }
             }
 
@@ -1902,23 +1992,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Close/Trim Trades
-            #region Trim Marker
-            double trimLevel = 0;
-            if (EnableDynamicTrim && Position.MarketPosition != MarketPosition.Flat && !dynamicTrimTriggered)
-            {
-                if (Position.MarketPosition == MarketPosition.Long)
-                {
-                    trimLevel = UpdateTrimLevel(Position.AveragePrice + ExitTPLevel, true);
-                }
-                else if (Position.MarketPosition == MarketPosition.Short)
-                {
-                    trimLevel = UpdateTrimLevel(Position.AveragePrice - ExitTPLevel, false);
-                }
-                Draw.HorizontalLine(this, "TrimLevel", trimLevel, Brushes.Magenta);
-                Draw.Text(this, "LabelTrim", "Trim", -10, trimLevel - 2, Brushes.Magenta);
-            }
-            #endregion
-
             if (buyVolCloseTrigger)
             {
                 if (entryOrder != null && entryOrder.OrderState == OrderState.Filled)
@@ -1928,6 +2001,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Position.MarketPosition == MarketPosition.Long)
                 {
                     ExitLong("Long");
+                    if (EnableDynamicTrim)
+                        ExitLong("LongTrim");
                 }
             }
             else if (sellVolCloseTrigger)
@@ -1957,13 +2032,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if ((Close[0] > triggerPrice + tpLevel) && TPCalcFromInitTrigger)
                 {
                     ExitLong("Long");
-                }
-                else if (EnableDynamicTrim && (Close[0] > trimLevel) && !dynamicTrimTriggered)
-                {
-                    int trimQuantity = (int)Math.Round(Position.Quantity * TrimPercent / 100, 0);
-                    Print(Time[0] + " Dynamic Trim: Trimming Long Position by " + trimQuantity + " at: " + Close[0]);
-                    ExitLong(trimQuantity, "DynamicTrim", "Long");
-                    dynamicTrimTriggered = true;
+                    if (EnableDynamicTrim)
+                        ExitLong("LongTrim");
                 }
             }
             else if (Position.MarketPosition == MarketPosition.Short)
@@ -1972,17 +2042,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     ExitShort("Short");
                 }
-                else if (EnableDynamicTrim && (Close[0] < trimLevel) && !dynamicTrimTriggered)
-                {
-                    int trimQuantity = (int)Math.Round(Position.Quantity * TrimPercent / 100, 0);
-                    Print(Time[0] + " Dynamic Trim: Trimming Short Position by " + trimQuantity + " at: " + Close[0]);
-                    ExitShort(trimQuantity, "DynamicTrim", "Short");
-                    dynamicTrimTriggered = true;
-                }
             }
             #endregion
 
             #region Buy/Sell Orders
+            int mainTradeQuantity = TradeQuantity;
+            int trimTradeQuantity = (int)Math.Round(TradeQuantity * TrimPercent / 100, 0);
+            if (EnableDynamicTrim)
+                mainTradeQuantity = TradeQuantity - trimTradeQuantity;
+
             if (!buyVolCloseTrigger && !sellVolCloseTrigger)
             {
                 if ((buyTrigger || reverseBuyTrade) && entryOrder == null)
@@ -1997,7 +2065,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
                     {
                         Print(Time[0] + " Long triggered: " + limitLevel);
-                        entryOrder = EnterLongLimit(0, true, TradeQuantity, limitLevel, "Long");
+                        entryOrder = EnterLongLimit(0, true, mainTradeQuantity, limitLevel, "Long");
+                        if (EnableDynamicTrim)
+                            entryOrderTrim = EnterLongLimit(0, true, trimTradeQuantity, limitLevel, "LongTrim");
                         entryBar = CurrentBar; // Remember the bar at which we entered
                         entryPrice = limitLevel; // Assuming immediate execution at the close price
                         triggerPrice = limitLevel;
@@ -2031,6 +2101,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
                     {
                         ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
+                        if (entryOrderTrim != null && entryOrderTrim.OrderState != OrderState.Filled)
+                            ChangeOrder(entryOrderTrim, entryOrderTrim.Quantity, limitLevel, 0);
                         entryPrice = limitLevel; // Assuming immediate execution at the close price
                         Draw.Line(
                             this,
@@ -2057,6 +2129,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print(Time[0] + " Long Order Cancelled due to protective trades at: " + Close[0]);
                         CancelOrder(entryOrder);
                         entryOrder = null; // Reset the entry order variable
+                        if (entryOrderTrim != null)
+                        {
+                            CancelOrder(entryOrderTrim);
+                            entryOrderTrim = null;
+                        }
                     }
                 }
             }
@@ -2218,11 +2295,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (entryOrder != null && entryOrder.IsBacktestOrder && State == State.Realtime)
                 entryOrder = GetRealtimeOrder(entryOrder);
 
-            if (
-                entryOrderShort != null
-                && entryOrderShort.IsBacktestOrder
-                && State == State.Realtime
-            )
+            if (entryOrderTrim != null && entryOrderTrim.IsBacktestOrder && State == State.Realtime)
+                entryOrderTrim = GetRealtimeOrder(entryOrderTrim);
+
+            if (entryOrderShort != null && entryOrderShort.IsBacktestOrder && State == State.Realtime)
                 entryOrderShort = GetRealtimeOrder(entryOrderShort);
 
             if (order.Name == "Long")
@@ -2256,7 +2332,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
             {
                 entryOrder = null;
+                entryOrderTrim = null;
                 entryOrderShort = null;
+
                 if (order.Name == "Stop loss" && order.OrderState == OrderState.Rejected)
                 {
                     ExitLong();
@@ -2332,6 +2410,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
                         }
 
+                        if (totalTradePnL > BigWinCutoff)
+                        {
+                            bigWinCount++;
+                            Print(Time[0] + " ******** BIG WINS: " + bigWinCount);
+                        }
+
                         // Check if there have been three consecutive losing trades
                         if (consecutiveLosses >= maxLossConsec && !DisablePNLLimits)
                         {
@@ -2341,6 +2425,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                                     + $" ******** TRADING DISABLED ({consecutiveLosses} losses in a row) ******** : $"
                                     + currentPnL
                             );
+                        }
+
+                        if (bigWinCount >= BigWinCutoffCount && !DisablePNLLimits)
+                        {
+                            EnableTrading = false;
+                            Print(Time[0] + $" ******** TRADING DISABLED ({bigWinCount} big wins) ******** : $" + currentPnL);
                         }
                     }
                 }

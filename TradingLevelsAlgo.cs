@@ -27,7 +27,6 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
-	// TODO: Optimise buysellbuffer by 0.5?
 	// TODO: Design dynamic calc of TP level using ATR or similar
     // TODO: Optimise Dyanmic Trrim
     // BUG: Dynamic trim loses SL/TP
@@ -37,6 +36,7 @@ namespace NinjaTrader.NinjaScript.Strategies
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
     // TODO: Look at fib levels to improve drawing of levels
 	// TODO: EMA levels to exit trades
+	// TODO: ATR trigger to start buy trigger again?
 	// TODO: Chopzone top for exits
     // FEATURE: Cancel order when in chopzone
     // FEATURE: Add timeout after two bad trades in succession
@@ -2075,9 +2075,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                             this,
                             "entryLine" + CurrentBar,
                             true,
-                            1,
+                            0,
                             limitLevel,
-                            -1,
+                            -2,
                             limitLevel,
                             Brushes.Green,
                             DashStyleHelper.Solid,
@@ -2108,9 +2108,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                             this,
                             "entryLine" + CurrentBar,
                             true,
-                            1,
+                            0,
                             limitLevel,
-                            -1,
+                            -2,
                             limitLevel,
                             Brushes.Green,
                             DashStyleHelper.Solid,
@@ -2160,9 +2160,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                             this,
                             "entryLineShort" + CurrentBar,
                             true,
-                            1,
+                            0,
                             limitLevel,
-                            -1,
+                            -2,
                             limitLevel,
                             Brushes.Red,
                             DashStyleHelper.Solid,
@@ -2191,9 +2191,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                             this,
                             "entryLineShort" + CurrentBar,
                             true,
-                            1,
+                            0,
                             limitLevel,
-                            -1,
+                            -2,
                             limitLevel,
                             Brushes.Red,
                             DashStyleHelper.Solid,

@@ -3,12 +3,6 @@
 // Data provided in this script is not financial advice.
 // Based on my own ideas and ideas from Saty ATR Levels, posty's pivots, @midtownsk8rguy and other scripts.
 
-// TODO: Rework the triggers and alerts to be in line with volume analysis
-
-// TODO: Add alerts for when leaving chopzone
-
-// TODO: Add predictive volume indicator for cross
-
 // TODO: Modifify Code so it checks timezone/confluences
 
 // TODO: create min number of confluences for a cross auto buy
@@ -20,6 +14,10 @@
 // TODO: Reorganise inputs
 
 // TODO: Review all tooltips
+
+// FEATURE: Rework the triggers and alerts to be in line with volume analysis
+
+// FEATURE: Add predictive volume indicator for cross
 
 // FEATURE: Supertrend
 
@@ -185,6 +183,7 @@ alertATRArrow = input(false, title="ATR Arrow", group="Alerts", inline="main2")
 alertVolumeChange = input(false, title="Volume Direction Change", group="Alerts", inline="main2")
 alertVolTrade = input(true, title="Alert on Volume Trade", group="Alerts", tooltip="Alert when a volume trade is triggered.", inline="main3")
 alertVolTradeClose = input(true, title="Alert on Volume Trade Close", group="Alerts", tooltip="Alert when a volume trade is triggered.", inline="main3")
+alertChopZoneExit = input(true, title="Alert on Chop Zone Exit", group="Alerts", tooltip="Alert when leaving the chop zone.", inline="main4")
 
 show_table      = input.bool(true,"Show Dashboard", group="Dashboard", inline="Table")
 tableLocation   = input.string(defval='Bottom right', options=['Top left', 'Top center', 'Top right', 'Bottom left', 'Bottom center', 'Bottom right'], title='| Location', group="Dashboard", inline="Table")
@@ -196,26 +195,26 @@ table_fontcolor       = input.color(color.white, title="  |  Font Color"
 timePeriod1 = input.session("1000-1615", title="Trade Period 1", group="Trading Time (NY Time)")
 timePeriod1VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod1CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Cross")
-timePeriod1CrossMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Cross")
+timePeriod1CrossMinConfluence = input(3, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Cross")
 timePeriod1DirectionalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Dir")
-timePeriod1DirectionalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Dir")
-timePeriod1ReversalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Rev")
+timePeriod1DirectionalMinConfluence = input(1, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Dir")
+timePeriod1ReversalTriggerEnabled = input(true, title="Reversal Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Rev")
 timePeriod1ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Rev")
 timePeriod2 = input.session("0600-1000", title="Trade Period 2", group="Trading Time (NY Time)")
 timePeriod2VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod2CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Cross")
-timePeriod2CrossMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Cross")
+timePeriod2CrossMinConfluence = input(3, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Cross")
 timePeriod2DirectionalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Dir")
 timePeriod2DirectionalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Dir")
-timePeriod2ReversalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Rev")
+timePeriod2ReversalTriggerEnabled = input(true, title="Reversal Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Rev")
 timePeriod2ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Rev")
 timePeriod3 = input.session("1700-1715", title="Trade Period 3", group="Trading Time (NY Time)")
 timePeriod3VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod3CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp3Cross")
-timePeriod3CrossMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp3Cross")
+timePeriod3CrossMinConfluence = input(3, title="Min Confluences", group="Trading Time (NY Time)", inline="tp3Cross")
 timePeriod3DirectionalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp3Dir")
 timePeriod3DirectionalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp3Dir")
-timePeriod3ReversalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp3Rev")
+timePeriod3ReversalTriggerEnabled = input(true, title="Reversal Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp3Rev")
 timePeriod3ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp3Rev")
 orbSession = input.session("0930-1000", title="ORB Calculation Time", group="Trading Time (NY Time)", tooltip="This is the time for the Opening Range Breakout calculation.Reccomended to set this to the first 15-60 minutes of the trading day.")
 
@@ -882,20 +881,17 @@ if (directionChange >= chopZoneMinDirChange and ChopH < chopRangeTop and ChopL >
 
 if chopZoneFound and enableCentralChopZone and validTriggerPeriod
     if inChopZone == false
-        inChopZone := true
         upperChopZone := chopRangeTop
         lowerChopZone := chopRangeBot
         timeSinceChopZone := 0
         showChopZone := true
-        reenterChopZoneTop := false
-        reenterChopZoneBot := false
+    
+    inChopZone := true
+    reenterChopZoneTop := false
+    reenterChopZoneBot := false
 
 if not validTriggerPeriod
     inChopZone := false
-    timeSinceChopZone := 0
-    showChopZone := false
-    reenterChopZoneTop := false
-    reenterChopZoneBot := false
 
 if inChopZone
     if low[1] > upperChopZone or high[1] < lowerChopZone
@@ -1018,8 +1014,39 @@ crossSignalLookback = math.floor(crossLookbackTime / getTimeframeInMinutes())
 bufferBuySellLookback = math.floor(bounceLookbackTime / getTimeframeInMinutes())
 crossATRLookback = math.floor(crossATRLookbackTime / getTimeframeInMinutes())
 
+// ******** LOAD TIMEZONE SETTINGS ********
+minDirectionalConfluence = 0
+minReversalConfluence = 0
+minCrossConfluence = 0
+volumeTradesEnabled = false
+crossTradesEnabled = false
+directionalTradesEnabled = false
+reversalTradesEnabled = false
 
-bool allConfluencesEnabled = not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York"))
+if not na(time(timeframe = timeframe.period, session = timePeriod1, timezone = "America/New_York"))
+    minDirectionalConfluence := timePeriod1DirectionalMinConfluence
+    minReversalConfluence := timePeriod1ReversalMinConfluence
+    minCrossConfluence := timePeriod1CrossMinConfluence
+    volumeTradesEnabled := timePeriod1VolTriggerEnabled
+    crossTradesEnabled := timePeriod1CrossTriggerEnabled
+    directionalTradesEnabled := timePeriod1DirectionalTriggerEnabled
+    reversalTradesEnabled := timePeriod1ReversalTriggerEnabled
+else if not na(time(timeframe = timeframe.period, session = timePeriod2, timezone = "America/New_York"))
+    minDirectionalConfluence := timePeriod2DirectionalMinConfluence
+    minReversalConfluence := timePeriod2ReversalMinConfluence
+    minCrossConfluence := timePeriod2CrossMinConfluence
+    volumeTradesEnabled := timePeriod2VolTriggerEnabled
+    crossTradesEnabled := timePeriod2CrossTriggerEnabled
+    directionalTradesEnabled := timePeriod2DirectionalTriggerEnabled
+    reversalTradesEnabled := timePeriod2ReversalTriggerEnabled
+else if not na(time(timeframe = timeframe.period, session = timePeriod3, timezone = "America/New_York"))
+    minDirectionalConfluence := timePeriod3DirectionalMinConfluence
+    minReversalConfluence := timePeriod3ReversalMinConfluence
+    minCrossConfluence := timePeriod3CrossMinConfluence
+    volumeTradesEnabled := timePeriod3VolTriggerEnabled
+    crossTradesEnabled := timePeriod3CrossTriggerEnabled
+    directionalTradesEnabled := timePeriod3DirectionalTriggerEnabled
+    reversalTradesEnabled := timePeriod3ReversalTriggerEnabled
 
 // If trend is up and we get a bounce up we have a buy directional else its reversal
 if ticker.standard() == sym1
@@ -1071,6 +1098,7 @@ if buyATRSignal
     for i = 0 to crossATRLookback
         if fastCrossSlowUp[i]
             buyCrossSignal := true
+   
 
 // Volume Momentum Buy/Sell
 var bool buyVolTrigger = na
@@ -1298,18 +1326,43 @@ systemState := 0
 
 buyReversalCount = 0
 sellReversalCount = 0
+buyDirectionalCount = 0
+sellDirectionalCount = 0
 
 for i = 0 to bufferBuySellLookback
     if buySignal[i]
         buyTriggeredInLookback := true
+        buyDirectionalCount += 1
     if sellSignal[i]
         sellTriggeredInLookback := true
+        sellDirectionalCount += 1
     if buyReversalSignal[i]
         buyTriggeredInLookback := true
         buyReversalCount += 1
     if sellSignal[i] or sellReversalSignal[i]
         sellTriggeredInLookback := true
         sellReversalCount += 1
+
+crossTradeBuyConfluenceCount = 0
+crossTradeSellConfluenceCount = 0
+
+for i = 0 to crossSignalLookback
+    if buyATRSignal[i]
+        crossTradeBuyConfluenceCount := crossTradeBuyConfluenceCount + 1
+    if sellATRSignal[i]
+        crossTradeSellConfluenceCount := crossTradeSellConfluenceCount + 1
+    if fastCrossSlowUp[i]
+        crossTradeBuyConfluenceCount := crossTradeBuyConfluenceCount + 1
+    if fastCrossSlowDown[i]
+        crossTradeSellConfluenceCount := crossTradeSellConfluenceCount + 1
+    if anySym1BounceUp[i]
+        crossTradeBuyConfluenceCount := crossTradeBuyConfluenceCount + 1
+    if anySym1BounceDown[i]
+        crossTradeSellConfluenceCount := crossTradeSellConfluenceCount + 1
+    if  buyVolTrigger[i]
+        crossTradeBuyConfluenceCount := crossTradeBuyConfluenceCount + 1
+    if  sellVolTrigger[i]
+        crossTradeSellConfluenceCount := crossTradeSellConfluenceCount + 1
 
 // Make sure we get the last level in the lookback for the calcs
 limitBounceLevel = 0.0
@@ -1341,7 +1394,7 @@ if systemState[1] > 0 and systemState[1] < 10 and cancelBuyCondition
 else if systemState[1] > 10 and cancelSellCondition
     systemState := 0
 else
-    if not chopDetect and allConfluencesEnabled
+    if not chopDetect
         for i = 0 to bufferBuySellLookback
             int revIndex = bufferBuySellLookback - i
             if buyCrossSignal[revIndex] and lastCrossDir and buyCancelIndex > revIndex
@@ -1372,15 +1425,12 @@ else
                 systemState := 14
                 limitLevel := getLimitLevel(limitBounceLevel - priceOptimalReversalEntry, close, false)
 
-buyLong = systemState == 2
-buyCross = systemState == 3
-buyReversal = systemState == 4
-sellShort = systemState == 12
-sellCross = systemState == 13
-sellReversal = systemState == 14
-
-buyReversalTrigger = buyReversal and buyReversalCount > 1
-sellReversalTrigger = sellReversal and sellReversalCount > 1
+buyLong = systemState == 2 and buyDirectionalCount >= minDirectionalConfluence and directionalTradesEnabled
+buyCross = systemState == 3 and crossTradeBuyConfluenceCount >= minCrossConfluence and crossTradesEnabled
+buyReversal = systemState == 4 and buyReversalCount >= minReversalConfluence and reversalTradesEnabled
+sellShort = systemState == 12 and sellDirectionalCount >= minDirectionalConfluence and directionalTradesEnabled
+sellCross = systemState == 13 and crossTradeSellConfluenceCount >= minCrossConfluence and crossTradesEnabled
+sellReversal = systemState == 14 and sellReversalCount >= minReversalConfluence and reversalTradesEnabled
 
 // ********** RENDERING SYMBOLS **********
 if showAllConditions
@@ -1395,23 +1445,6 @@ if showAllConditions
     if chopDetect
         box.new(bar_index, high, bar_index - 1, low, border_color=color.rgb(120, 120, 122, 35), border_width=1, bgcolor=color.rgb(120, 120, 122, 35), border_style=line.style_dashed)
 
-if (buyVolCloseTrigger or sellVolCloseTrigger)
-    if showVolTradeClose
-        draw_label(bar_index, close, 'C', xloc.bar_index, buyVolCloseTrigger ? yloc.abovebar : yloc.belowbar,  color.rgb(110, 0, 137), buyVolCloseTrigger ? label.style_label_down: label.style_label_up, color.white, size.small, text.align_center, '')
-    if alertVolTradeClose
-        alert("Close Volume Trade at: " + str.tostring(limitLevel) , alert.freq_once_per_bar)
-if buyTrigger and not buyVolSignal[1]
-    if showVolTrade
-        draw_label(bar_index, close, 'B', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
-    if alertVolTrade
-        alert("Volume Buy Trade at:" + str.tostring(limitLevel), alert.freq_once_per_bar)
-if sellTrigger and not sellVolSignal[1]
-    if showVolTrade
-        draw_label(bar_index, close, 'S', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
-    if alertVolTrade
-        alert("Volume Sell Trade at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
-
-
 TP = tpLevel * syminfo.mintick
 SL = slLevel * syminfo.mintick
 
@@ -1423,51 +1456,64 @@ if validTriggerPeriod
         if alertDirectionalBuySell
             alert("Close Position", alert.freq_once_per_bar)
 
-    if buyLong
+    if buyReversal and not buyReversal[1]
+        draw_label(bar_index, close, 'Br', xloc.bar_index, yloc.belowbar,  #006105, label.style_label_up, color.white, size.small, text.align_center, '')
+        if showBuySellLevels
+            draw_buymarker(limitLevel, TP, SL)
+        if alertCrossBuySell and not buyReversal[1]
+            alert("Reversal Buy at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
+
+    if buyLong and not buyLong[1]
+        draw_label(bar_index, close, 'Bd', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
         if showBuySellLevels
             draw_buymarker(limitLevel, TP, SL)
 
         if alertDirectionalBuySell and not buyLong[1]
             alert("Directional Buy at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
-    if buyCross
+    if buyCross and not buyCross[1]
+        draw_label(bar_index, close, 'Bc', xloc.bar_index, yloc.belowbar,  #06b60f, label.style_label_up, color.white, size.small, text.align_center, '')
         if showBuySellLevels
             draw_buymarker(limitLevel, TP, SL)
         if alertCrossBuySell and not buyCross[1]
             alert("Cross Buy at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
-    if buyReversalTrigger
+    if sellReversal and not sellReversal[1]
+        draw_label(bar_index, close, 'Sr', xloc.bar_index, yloc.abovebar,  color.rgb(97, 0, 0), label.style_label_down, color.white, size.small, text.align_center, '')
         if showBuySellLevels
-            draw_buymarker(limitLevel, TP, SL)
-        if alertCrossBuySell and not buyReversalTrigger[1]
-            alert("Reversal Buy at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
+            draw_sellmarker(limitLevel, TP, SL)
+        if alertReversalBuySell and not sellReversal[1]
+            alert("Reversal Sell at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
-    if sellShort
+    if sellShort and not sellShort[1]
+        draw_label(bar_index, close, 'Sd', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
         if showBuySellLevels
             draw_sellmarker(limitLevel, TP, SL)
         if alertDirectionalBuySell and not buyCross[1]
             alert("Directional Sell at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
-    if sellCross
+    if sellCross and not sellCross[1]
+        draw_label(bar_index, close, 'Sc', xloc.bar_index, yloc.abovebar,  color.rgb(182, 6, 6), label.style_label_down, color.white, size.small, text.align_center, '')
         if showBuySellLevels
             draw_sellmarker(limitLevel, TP, SL)
         if alertCrossBuySell and not sellCross[1]
             alert("Cross Sell at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
-    if sellReversalTrigger
-        if showBuySellLevels
-            draw_sellmarker(limitLevel, TP, SL)
-        if alertReversalBuySell and not sellReversalTrigger[1]
-            alert("Reversal Sell at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
-
-
-// ***** PLOT SHAPES *****
-plotshape(series=close, title="Directional Long", style=shape.triangleup, location=location.bottom, color= buyLong and validTriggerPeriod  ? color.green : na, size=size.small)
-plotshape(series=close, title="Reversal Long", style=shape.flag, location=location.bottom, color= buyReversalTrigger and validTriggerPeriod ? color.green : na, size=size.small)
-plotshape(series=close, title="Cross Long", style=shape.labelup, location=location.bottom, color= buyCross and validTriggerPeriod  ? color.green : na, size=size.small)
-plotshape(series=close, title="Directional Short", style=shape.triangledown, location=location.top, color= sellShort and validTriggerPeriod  ? color.red : na, size=size.small)
-plotshape(series=close, title="Reversal Short", style=shape.flag, location=location.top, color= sellReversalTrigger and validTriggerPeriod ? color.red : na, size=size.small)
-plotshape(series=close, title="Cross Short", style=shape.labeldown, location=location.top, color= sellCross and validTriggerPeriod  ? color.red : na, size=size.small)
+if (buyVolCloseTrigger or sellVolCloseTrigger) and volumeTradesEnabled
+    if showVolTradeClose
+        draw_label(bar_index, close, 'Cv', xloc.bar_index, buyVolCloseTrigger ? yloc.abovebar : yloc.belowbar,  color.rgb(110, 0, 137), buyVolCloseTrigger ? label.style_label_down: label.style_label_up, color.white, size.small, text.align_center, '')
+    if alertVolTradeClose
+        alert("Close Volume Trade at: " + str.tostring(limitLevel) , alert.freq_once_per_bar)
+if buyTrigger and not buyVolSignal[1] and volumeTradesEnabled
+    if showVolTrade
+        draw_label(bar_index, close, 'Bv', xloc.bar_index, yloc.belowbar,  color.rgb(0, 145, 7), label.style_label_up, color.white, size.small, text.align_center, '')
+    if alertVolTrade
+        alert("Volume Buy Trade at:" + str.tostring(limitLevel), alert.freq_once_per_bar)
+if sellTrigger and not sellVolSignal[1] and volumeTradesEnabled
+    if showVolTrade
+        draw_label(bar_index, close, 'Sv', xloc.bar_index, yloc.abovebar,  color.rgb(150, 1, 1), label.style_label_down, color.white, size.small, text.align_center, '')
+    if alertVolTrade
+        alert("Volume Sell Trade at: " + str.tostring(limitLevel), alert.freq_once_per_bar)
 
 // ********** ALERTS **********
 if (anyPivotSym1Bounce or anyPivotSym2Bounce) and alertPivotsBounce
@@ -1496,6 +1542,10 @@ if alertVolumeChange
         alert('Volume Cross Sell on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)
     else if volCrossBuySignal
         alert('Volume Cross Buy on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)
+
+if alertChopZoneExit
+    if not chopZoneTrade and chopZoneTrade[1]
+        alert('Chop Zone Exit on: ' + str.tostring(syminfo.ticker), alert.freq_once_per_bar_close)
 
 if showAllConditions
     debugText = ""

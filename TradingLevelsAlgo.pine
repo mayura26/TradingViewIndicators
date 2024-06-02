@@ -60,11 +60,11 @@ preCalcLabel = input("Calc", title="Calculated Label", group="Level Settings", i
 preCalcWidth = input(2, title="    └ Calculated Width", group="Level Settings", inline = "pcwidth")
 
 // Calculated Levels
-showDailyLevels = input(true, title="Show Daily Levels", group="Calculated Levels", tooltip = "This will show the daily levels on the chart. These are calculated from the previous day's high, low, and close.")
+showDailyLevels = input(true, title="Show Daily Levels", group="Calculated Levels", tooltip = "This will show the daily levels on the chart. This is the high and low of the current day")
 showWeeklyLevels = input(true, title="Show Weekly Levels", group="Calculated Levels", tooltip = "This will show the weekly levels on the chart. These are calculated from the previous week's high, low, and close.")
 showYesterdayLevels = input(true, title="Show Yesterday Levels", group="Calculated Levels", tooltip = "This will show the yesterday levels on the chart. These are calculated from the previous day's high, low, and close.")
 showATRLevels = input(true, title="Show ATR Levels", group="Calculated Levels", tooltip = "This will show the ATR levels on the chart. These are calculated from the ATR and show the bearish and bullish levels, as well ATR(-1/-0.618) and ATR(1/0.618).")
-showCamLevels = input(true, title="Show Camarilla Levels", group="Calculated Levels", tooltip = "This will show the Camarilla levels on the chart. This is the S4, S6, R4, R6 levels")
+showCamLevels = input(true, title="Show Camarilla Levels", group="Calculated Levels", tooltip = "This will show the Camarilla levels on the chart. This is the S3, S4, S6, R3, R4, R6 levels")
 showORBLevels = input(true, title="Show ORB Levels", group="Calculated Levels", tooltip = "This will show the Opening Range Breakout levels on the chart. This is the high and low of the first (15/30/60) minutes of the trading day.")
 timeBeforeLevelLive = input(60, title="Time Before Level Live [min]", group="Calculated Levels", tooltip = "Time before level becomes live and is used in triggers. This is to prevent the level from being used too early while still being set (e.g. high of day).")
 
@@ -76,14 +76,14 @@ chopZoneMinDirChange = input.int(2, title="Chop Zone Min Direction Change", grou
 
 lowerTF = input.int(3, title="MA Timeframe [min]", group="Timeframe Settings",minval=0, maxval=10, tooltip = "This is the timeframe for the MA. This is in minutes and will be used to calculate the MA.") 
 trendTF = input.int(10, title="Trend Timeframe [min]", group="Timeframe Settings",minval=0, maxval=10, tooltip = "This is the timeframe for the trend on the dashboard.")
-crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="Timeframe Settings",minval=3, maxval=30, tooltip="Lookback time after a crossover/ATR trigger to check for bounces off levels.")
+crossLookbackTime = input.int(12, title="Crossover Lookback Timeframe [min]", group="Timeframe Settings",minval=3, maxval=30, tooltip="Lookback time after a crossover/ATR trigger to check for other confluences to trigger an buy/sell.")
 bounceLookbackTime = input.int(12, title="Bounce Lookback Timeframe [min]", group="Timeframe Settings",minval=3, maxval=30, tooltip="Lookback time to look for a bounce off a level to trigger a buy/sell.")
 crossATRLookbackTime = input.int(9, title="Crossover/ATR Lookback Timeframe [min]", group="Timeframe Settings",minval=3, maxval=30, tooltip="Lookback time after a crossover/ATR trigger to check for a crossover/ATR.")
 
 labelOffset = input(-1, title="Label Offset", group="Display Settings", tooltip = "This is the offset of the labels for the lines. Caution can sometimes end up in the wrong place and will move when this is adjusted. Seems to be a function of TradingView repainting.")
 clashLineTransp = input(50,title="Clashing Line Transparency", group="Display Settings", tooltip = "The transparency  of lines when they are clashing")
-levelBounceBuffer = input.float(15.0, title="Level Bounce Buffer [H-L] (%)", group="Display Settings", minval=0, maxval=100, tooltip = "This is the offset for the level bounce. This is a percentage of the high/low range of the bar. If the close/open is within this buffer of the level, it will be considered a bounce.")
 levelClashOffset = input.float(60, title="Level Clash Buffer [ticks]", group="Display Settings",minval=0, tooltip = "This the level clash offset. This is in ticks and will be used to determine if levels are too close to each other. If levels are within this buffer, they will not be drawn.")
+levelBounceBuffer = input.float(15.0, title="Level Bounce Buffer [H-L] (%)", group="Display Settings", minval=0, maxval=100, tooltip = "This is the offset for the level bounce. This is a percentage of the high/low range of the bar. If the close/open is within this buffer of the level, it will be considered a bounce.")
 buySellBuffer = input.float(10, title="Buy/Sell Offset [ticks]", group="Display Settings",minval=0, tooltip = "This is the offset for the buy/sell levels. This is in ticks and will be used to determine the optimal level for the buy/sell.")
 reversalOffset = input.float(5, title="Reversal Offset [ticks]", group="Display Settings",minval=0, tooltip = "This is the offset for the reversal levels. This is in ticks and will be used to determine the optimal level for the reversal buy/sell.")
 showAllConditions = input(false, title="Show Conditions for Entry", group = "Display Settings", tooltip="This will show all the conditions being triggered. Mostly useful for debugging.")
@@ -118,9 +118,9 @@ includeTrigPreCalc = input(false, title="Trigger Buy/Sell   |   ", g
 includeRevPreCalc = input(true, title="Trigger Reversal", group="Level Bounce (PreCalc)", inline="PreCalc")
 
 // ATR
-showATRArrow = input(true, title="Show ATR Arrow", group="ATR")
+showATRArrow = input(true, title="Show ATR Arrow", group="ATR", tooltip="Show the ATR arrow on the chart. This will show an arrow that predicts trades from looking at the momentum crossover and the ATR breakout.")
 atrArrowTransparency = input.int(20, title="    └ ATR Arrow Transparency", group="ATR", minval=0, maxval=100)
-showATRDots = input(true, title="Show ATR Dots", group="ATR", inline="main")
+showATRDots = input(true, title="Show ATR Dots", group="ATR", inline="main", tooltip="Show the ATR dots on the chart. These are predictive symbols to show an arrow could form.")
 atrDotTransparency = input.int(80, title="    └ ATR Dot Transparency", group="ATR", minval=0, maxval=100)
 buyATRColor = input(color.rgb(20, 161, 44), title="Buy ATR Color", group="ATR", inline="color")
 sellATRColor = input(color.rgb(133, 0, 55), title="   |   Sell ATR Color", group="ATR", inline="color")
@@ -188,19 +188,19 @@ table_fontcolor       = input.color(color.white, title="  |  Font Color"
 timePeriod1 = input.session("1000-1615", title="Trade Period 1", group="Trading Time (NY Time)")
 timePeriod1VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod1CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Cross")
-timePeriod1CrossMinConfluence = input(3, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Cross")
+timePeriod1CrossMinConfluence = input(3, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Cross", tooltip="This is the minimum number of confluences required to trigger a cross trade. A confluence is a bounce, ATR signal, MA crossover, or volume signal.")
 timePeriod1DirectionalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Dir")
-timePeriod1DirectionalMinConfluence = input(1, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Dir")
+timePeriod1DirectionalMinConfluence = input(1, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Dir", tooltip="This is the minimum number of confluences required to trigger a directional trade. A confluence is a bounce on the level with the trend supporting it.")
 timePeriod1ReversalTriggerEnabled = input(true, title="Reversal Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp1Rev")
-timePeriod1ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Rev")
+timePeriod1ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp1Rev", tooltip="This is the minimum number of confluences required to trigger a reversal trade. A confluence is a bounce on the level with the trend against it.")
 timePeriod2 = input.session("0600-1000", title="Trade Period 2", group="Trading Time (NY Time)")
 timePeriod2VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod2CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Cross")
-timePeriod2CrossMinConfluence = input(3, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Cross")
+timePeriod2CrossMinConfluence = input(3, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Cross", tooltip="This is the minimum number of confluences required to trigger a cross trade. A confluence is a bounce, ATR signal, MA crossover, or volume signal.")
 timePeriod2DirectionalTriggerEnabled = input(true, title="Directional Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Dir")
-timePeriod2DirectionalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Dir")
+timePeriod2DirectionalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Dir" , tooltip="This is the minimum number of confluences required to trigger a directional trade. A confluence is a bounce on the level with the trend supporting it.")
 timePeriod2ReversalTriggerEnabled = input(true, title="Reversal Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp2Rev")
-timePeriod2ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Rev")
+timePeriod2ReversalMinConfluence = input(2, title="Min Confluences", group="Trading Time (NY Time)", inline="tp2Rev", tooltip="This is the minimum number of confluences required to trigger a reversal trade. A confluence is a bounce on the level with the trend against it.")
 timePeriod3 = input.session("1700-1715", title="Trade Period 3", group="Trading Time (NY Time)")
 timePeriod3VolTriggerEnabled = input(true, title="Volume Trades Enabled", group="Trading Time (NY Time)")
 timePeriod3CrossTriggerEnabled = input(true, title="Cross Trades Enabled  |  ", group="Trading Time (NY Time)", inline="tp3Cross")
@@ -286,7 +286,7 @@ check_levels_low(levels, bounceType, symbolEnabled) =>
                 labelText = bounceType
                 if showAllConditions
                     labelText := bounceType + "(" + str.tostring(math.round_to_mintick((high - low) * (levelBounceBuffer/100))) + ")"
-                draw_label(bar_index, str.tonumber(level), labelText, xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
+                draw_label(bar_index, str.tonumber(level), labelText, xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, 'Bounce upwards off level')
     [anyBounce, limitLevel]
 
 check_levels_high(levels, bounceType, symbolEnabled) =>    
@@ -301,7 +301,7 @@ check_levels_high(levels, bounceType, symbolEnabled) =>
                 labelText = bounceType
                 if showAllConditions
                     labelText := bounceType + "(" + str.tostring(math.round_to_mintick((high - low) * (levelBounceBuffer/100))) + ")"
-                draw_label(bar_index, str.tonumber(level), labelText, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
+                draw_label(bar_index, str.tonumber(level), labelText, xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, 'Bounce downwards off level')
     [anyBounce, limitLevel]
 
 check_calclevels_low(levels, bounceType, symbolEnabled) =>    
@@ -1428,15 +1428,11 @@ sellReversal = systemState == 14 and sellReversalCount >= minReversalConfluence 
 // ********** RENDERING SYMBOLS **********
 if showAllConditions
     if fastCrossSlowDown 
-        draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.fuchsia, label.style_arrowdown, color.white, size.small, text.align_center, '')
+        draw_label(bar_index, close, 'DownCross', xloc.bar_index, yloc.abovebar,  color.fuchsia, label.style_arrowdown, color.white, size.small, text.align_center, 'Cross of Fast and Slow MA Downwards (Bearish)')
     if fastCrossSlowUp 
-        draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.aqua, label.style_arrowup, color.white, size.small, text.align_center, '')
-    if bounceUpConfirm and false
-        draw_label(bar_index, close, 'Confirm', xloc.bar_index, yloc.belowbar,  color.green, label.style_label_up, color.white, size.small, text.align_center, '')
-    if bounceDownConfirm and false
-        draw_label(bar_index, close, 'Confirm', xloc.bar_index, yloc.abovebar,  color.red, label.style_label_down, color.white, size.small, text.align_center, '')
+        draw_label(bar_index, close, 'UpCross', xloc.bar_index, yloc.belowbar,  color.aqua, label.style_arrowup, color.white, size.small, text.align_center, 'Cross of Fast and Slow MA Upwards (Bullish)')
     if chopDetect
-        box.new(bar_index, high, bar_index - 1, low, border_color=color.rgb(120, 120, 122, 35), border_width=1, bgcolor=color.rgb(120, 120, 122, 35), border_style=line.style_dashed)
+        box.new(bar_index, high, bar_index - 1, low, border_color=color.rgb(120, 120, 122, 35), border_width=1, bgcolor=color.rgb(120, 120, 122, 35), border_style=line.style_dashed, tooltip="Chop detected")
 
 TP = tpLevel * syminfo.mintick
 SL = slLevel * syminfo.mintick

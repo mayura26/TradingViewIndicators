@@ -1,5 +1,5 @@
 //@version=5
-indicator("Trend Analysis", overlay=false)
+indicator("Analysis", overlay=false)
 
 // Inputs
 shortPeriod = input(8, "Short MA Period")

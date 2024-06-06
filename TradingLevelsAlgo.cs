@@ -28,11 +28,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
 	// TODO: Design dynamic calc of TP level using ATR or similar
-    // TODO: Optimise Dyanmic Trrim
-    // BUG: Dynamic trim loses SL/TP
-    // TODO: Add shorts to dynamic trim
+    // TODO: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
     // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
-    // TODO: Big win cutoffs (if we get 3 big wins in a day, stop trading) [Gain Protection]
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
     // TODO: Look at fib levels to improve drawing of levels
 	// TODO: EMA levels to exit trades
@@ -268,6 +265,16 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(1, double.MaxValue)]
         [Display(Name = "ProtectiveLevelRangeCheck", Description = "Range to check for protective level trades", Order = 59, GroupName = "4. Protective Trades")]
         public double ProtectiveLevelRangeCheck
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableVWAPBlock", Description = "Enable VWAP block for protective trades", Order = 60, GroupName = "4. Protective Trades")]
+        public bool EnableVWAPBlock
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableChopZoneBlock", Description = "Enable chop zone block for protective trades", Order = 61, GroupName = "4. Protective Trades")]
+        public bool EnableChopZoneBlock
         { get; set; }
         #endregion
 
@@ -797,7 +804,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TimeInForce = TimeInForce.Gtc;
                 TraceOrders = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelCloseIgnoreRejects;
-                StopTargetHandling = StopTargetHandling.ByStrategyPosition;
+                StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
                 IsExitOnSessionCloseStrategy = true;
                 ExitOnSessionCloseSeconds = 30;
@@ -909,6 +916,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableProtectiveLevelTrades = true;
                 EnableSuperProtectMode = false;
                 ProtectiveLevelRangeCheck = 10;
+                EnableVWAPBlock = false;
+                EnableChopZoneBlock = false;
                 #endregion
                 #region Dynamic Entry/Exit
                 EnableDynamicEntry = true;
@@ -924,10 +933,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
                 #region Dynamic Trim
                 EnableDynamicTrim = false;
-                ExitTPLevel = 20;
-                TrimPercent = 50;
-                ExitLevelRange = 5;
-                ExitLevelOffset = 2;
+                ExitTPLevel = 10;
+                TrimPercent = 60;
+                ExitLevelRange = 3;
+                ExitLevelOffset = 1;
                 #endregion
                 #endregion
 
@@ -948,7 +957,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v1.9 ******** ");
+                Print(Time[0] + " ******** TRADING ALGO v2.0 ******** ");
                 #region Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
@@ -1003,6 +1012,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
                 SetStopLoss("LongTrim", CalculationMode.Ticks, slLevel / TickSize, false);
                 SetProfitTarget("LongTrim", CalculationMode.Ticks, ExitTPLevel / TickSize);
+                SetStopLoss("ShortTrim", CalculationMode.Ticks, slLevel / TickSize, false);
+                SetProfitTarget("ShortTrim", CalculationMode.Ticks, ExitTPLevel / TickSize);
                 #endregion
 
                 #region Delta Shading
@@ -1531,7 +1542,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProtectiveBuyLevels.Add(R6); // Bull Target
                 ProtectiveBuyLevels.Add(R4); // Bear Reversal
 
-
                 ProtectiveSellLevels.Clear();
                 ProtectiveSellLevels.Add(vwap[0]);
                 ProtectiveSellLevels.Add(lastWeekLow);
@@ -1540,7 +1550,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProtectiveSellLevels.Add(atrNeg100);
                 ProtectiveSellLevels.Add(S6); // Bear Target
                 ProtectiveSellLevels.Add(S4); // Bull Reversal
-
                 #endregion
             }
             #endregion
@@ -1860,6 +1869,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
                 SetStopLoss("LongTrim", CalculationMode.Ticks, slLevel / TickSize, false);
                 SetProfitTarget("LongTrim", CalculationMode.Ticks, ExitTPLevel / TickSize);
+                SetStopLoss("ShortTrim", CalculationMode.Ticks, slLevel / TickSize, false);
+                SetProfitTarget("ShortTrim", CalculationMode.Ticks, ExitTPLevel / TickSize);
             }
             else if (Position.MarketPosition == MarketPosition.Long)
             {
@@ -1908,6 +1919,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
                         SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
+                        SetStopLoss("ShortTrim", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
                     }
 
                 if (EnableDynamicTP)
@@ -1932,6 +1944,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
 
                     SetProfitTarget("Short", CalculationMode.Price, TPNewLevel);
+                }
+
+                if (EnableDynamicTrim)
+                {
+                    double trimLevel = UpdateTrimLevel(Position.AveragePrice - ExitTPLevel, false);
+                    SetProfitTarget("ShortTrim", CalculationMode.Price, trimLevel);
                 }
             }
             #endregion
@@ -1987,6 +2005,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     );
                     CancelOrder(entryOrderShort);
                     entryOrderShort = null; // Reset the entry order variable
+                    if (entryOrderTrimShort != null && entryOrderTrimShort.OrderState == OrderState.Working)
+                    {
+                        CancelOrder(entryOrderTrimShort);
+                        entryOrderTrimShort = null;
+                    }
                 }
             }
             #endregion
@@ -2014,6 +2037,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Position.MarketPosition == MarketPosition.Short)
                 {
                     ExitShort("Short");
+                    if (EnableDynamicTrim)
+                        ExitShort("ShortTrim");
                 }
             }
             else if (!EnableTrading)
@@ -2041,6 +2066,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if ((Close[0] < triggerPrice - tpLevel) && TPCalcFromInitTrigger)
                 {
                     ExitShort("Short");
+                    if (EnableDynamicTrim)
+                        ExitShort("ShortTrim");
                 }
             }
             #endregion
@@ -2053,167 +2080,178 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (!buyVolCloseTrigger && !sellVolCloseTrigger)
             {
-                if ((buyTrigger || reverseBuyTrade) && entryOrder == null)
-                {
-                    double dynamicOffset = GetDynamicEntryOffset(true, deltaBuyVol, deltaSellVol);
-                    double limitLevel = GetLimitLevel(
-                        smoothConfirmMA[0] + buySellBuffer + dynamicOffset,
-                        Close[0],
-                        true
-                    );
+                if (Position.MarketPosition == MarketPosition.Flat)
+                    if (buyTrigger || reverseBuyTrade)
+                    {
+                        double dynamicOffset = GetDynamicEntryOffset(true, deltaBuyVol, deltaSellVol);
+                        double limitLevel = GetLimitLevel(
+                            smoothConfirmMA[0] + buySellBuffer + dynamicOffset,
+                            Close[0],
+                            true
+                        );
 
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
-                    {
-                        Print(Time[0] + " Long triggered: " + limitLevel);
-                        entryOrder = EnterLongLimit(0, true, mainTradeQuantity, limitLevel, "Long");
-                        if (EnableDynamicTrim)
-                            entryOrderTrim = EnterLongLimit(0, true, trimTradeQuantity, limitLevel, "LongTrim");
-                        entryBar = CurrentBar; // Remember the bar at which we entered
-                        entryPrice = limitLevel; // Assuming immediate execution at the close price
-                        triggerPrice = limitLevel;
-                        Draw.Line(
-                            this,
-                            "entryLine" + CurrentBar,
-                            true,
-                            0,
-                            limitLevel,
-                            -2,
-                            limitLevel,
-                            Brushes.Green,
-                            DashStyleHelper.Solid,
-                            2
-                        );
-                    }
-                }
-                else if (
-                    buyVolSignal
-                    && entryOrder != null
-                    && entryOrder.OrderState != OrderState.Filled
-                )
-                {
-                    double dynamicOffset = GetDynamicEntryOffset(true, deltaBuyVol, deltaSellVol);
-                    double limitLevel = GetLimitLevel(
-                        smoothConfirmMA[0] + buySellBuffer + dynamicOffset,
-                        Close[0],
-                        true
-                    );
-
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
-                    {
-                        ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
-                        if (entryOrderTrim != null && entryOrderTrim.OrderState != OrderState.Filled)
-                            ChangeOrder(entryOrderTrim, entryOrderTrim.Quantity, limitLevel, 0);
-                        entryPrice = limitLevel; // Assuming immediate execution at the close price
-                        Draw.Line(
-                            this,
-                            "entryLine" + CurrentBar,
-                            true,
-                            0,
-                            limitLevel,
-                            -2,
-                            limitLevel,
-                            Brushes.Green,
-                            DashStyleHelper.Solid,
-                            2
-                        );
-                        Print(
-                            Time[0]
-                                + " Long updated: "
-                                + limitLevel
-                                + " Bars Held: "
-                                + (CurrentBar - entryBar).ToString()
-                        );
-                    }
-                    else
-                    {
-                        Print(Time[0] + " Long Order Cancelled due to protective trades at: " + Close[0]);
-                        CancelOrder(entryOrder);
-                        entryOrder = null; // Reset the entry order variable
-                        if (entryOrderTrim != null)
+                        if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
                         {
-                            CancelOrder(entryOrderTrim);
-                            entryOrderTrim = null;
+                            Print(Time[0] + " Long triggered: " + limitLevel);
+                            entryOrder = EnterLongLimit(0, true, mainTradeQuantity, limitLevel, "Long");
+                            if (EnableDynamicTrim)
+                                entryOrderTrim = EnterLongLimit(0, true, trimTradeQuantity, limitLevel, "LongTrim");
+                            entryBar = CurrentBar; // Remember the bar at which we entered
+                            entryPrice = limitLevel; // Assuming immediate execution at the close price
+                            triggerPrice = limitLevel;
+                            Draw.Line(
+                                this,
+                                "entryLine" + CurrentBar,
+                                true,
+                                0,
+                                limitLevel,
+                                -2,
+                                limitLevel,
+                                Brushes.Green,
+                                DashStyleHelper.Solid,
+                                2
+                            );
                         }
                     }
-                }
+                    else if (
+                        buyVolSignal
+                        && entryOrder != null
+                        && entryOrder.OrderState != OrderState.Filled
+                    )
+                    {
+                        double dynamicOffset = GetDynamicEntryOffset(true, deltaBuyVol, deltaSellVol);
+                        double limitLevel = GetLimitLevel(
+                            smoothConfirmMA[0] + buySellBuffer + dynamicOffset,
+                            Close[0],
+                            true
+                        );
+
+                        if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
+                        {
+                            ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
+                            if (entryOrderTrim != null && entryOrderTrim.OrderState != OrderState.Filled)
+                                ChangeOrder(entryOrderTrim, entryOrderTrim.Quantity, limitLevel, 0);
+                            entryPrice = limitLevel; // Assuming immediate execution at the close price
+                            Draw.Line(
+                                this,
+                                "entryLine" + CurrentBar,
+                                true,
+                                0,
+                                limitLevel,
+                                -2,
+                                limitLevel,
+                                Brushes.Green,
+                                DashStyleHelper.Solid,
+                                2
+                            );
+                            Print(
+                                Time[0]
+                                    + " Long updated: "
+                                    + limitLevel
+                                    + " Bars Held: "
+                                    + (CurrentBar - entryBar).ToString()
+                            );
+                        }
+                        else
+                        {
+                            Print(Time[0] + " Long Order Cancelled due to protective trades at: " + Close[0]);
+                            CancelOrder(entryOrder);
+                            entryOrder = null; // Reset the entry order variable
+                            if (entryOrderTrim != null)
+                            {
+                                CancelOrder(entryOrderTrim);
+                                entryOrderTrim = null;
+                            }
+                        }
+                    }
             }
 
             if (!sellVolCloseTrigger && !buyVolCloseTrigger)
             {
-                if ((sellTrigger || reverseSellTrade) && entryOrderShort == null)
-                {
-                    double dynamicOffset = GetDynamicEntryOffset(false, deltaBuyVol, deltaSellVol);
-                    double limitLevel = GetLimitLevel(
-                        smoothConfirmMA[0] - buySellBuffer - dynamicOffset,
-                        Close[0],
-                        false
-                    );
+                if (Position.MarketPosition == MarketPosition.Flat)
+                    if ((sellTrigger || reverseSellTrade))
+                    {
+                        double dynamicOffset = GetDynamicEntryOffset(false, deltaBuyVol, deltaSellVol);
+                        double limitLevel = GetLimitLevel(
+                            smoothConfirmMA[0] - buySellBuffer - dynamicOffset,
+                            Close[0],
+                            false
+                        );
 
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)) || !EnableProtectiveLevelTrades)
-                    {
-                        Print(Time[0] + " Short triggered: " + limitLevel);
-                        entryOrderShort = EnterShortLimit(0, true, TradeQuantity, limitLevel, "Short");
-                        entryBarShort = CurrentBar; // Remember the bar at which we entered
-                        entryPriceShort = limitLevel; // Assuming immediate execution at the close price
-                        triggerPrice = limitLevel;
-                        Draw.Line(
-                            this,
-                            "entryLineShort" + CurrentBar,
-                            true,
-                            0,
-                            limitLevel,
-                            -2,
-                            limitLevel,
-                            Brushes.Red,
-                            DashStyleHelper.Solid,
-                            2
-                        );
+                        if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)) || !EnableProtectiveLevelTrades)
+                        {
+                            Print(Time[0] + " Short triggered: " + limitLevel);
+                            entryOrderShort = EnterShortLimit(0, true, mainTradeQuantity, limitLevel, "Short");
+                            if (EnableDynamicTrim)
+                                entryOrderTrimShort = EnterShortLimit(0, true, trimTradeQuantity, limitLevel, "ShortTrim");
+                            entryBarShort = CurrentBar; // Remember the bar at which we entered
+                            entryPriceShort = limitLevel; // Assuming immediate execution at the close price
+                            triggerPrice = limitLevel;
+                            Draw.Line(
+                                this,
+                                "entryLineShort" + CurrentBar,
+                                true,
+                                0,
+                                limitLevel,
+                                -2,
+                                limitLevel,
+                                Brushes.Red,
+                                DashStyleHelper.Solid,
+                                2
+                            );
+                        }
                     }
-                }
-                else if (
-                    sellVolSignal
-                    && entryOrderShort != null
-                    && entryOrderShort.OrderState != OrderState.Filled
-                )
-                {
-                    double dynamicOffset = GetDynamicEntryOffset(false, deltaBuyVol, deltaSellVol);
-                    double limitLevel = GetLimitLevel(
-                        smoothConfirmMA[0] - buySellBuffer - dynamicOffset,
-                        Close[0],
-                        false
-                    );
+                    else if (
+                        sellVolSignal
+                        && entryOrderShort != null
+                        && entryOrderShort.OrderState != OrderState.Filled
+                    )
+                    {
+                        double dynamicOffset = GetDynamicEntryOffset(false, deltaBuyVol, deltaSellVol);
+                        double limitLevel = GetLimitLevel(
+                            smoothConfirmMA[0] - buySellBuffer - dynamicOffset,
+                            Close[0],
+                            false
+                        );
 
-                    if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)) || !EnableProtectiveLevelTrades)
-                    {
-                        ChangeOrder(entryOrderShort, entryOrderShort.Quantity, limitLevel, 0);
-                        entryPriceShort = limitLevel; // Assuming immediate execution at the close price
-                        Draw.Line(
-                            this,
-                            "entryLineShort" + CurrentBar,
-                            true,
-                            0,
-                            limitLevel,
-                            -2,
-                            limitLevel,
-                            Brushes.Red,
-                            DashStyleHelper.Solid,
-                            2
-                        );
-                        Print(
-                            Time[0]
-                                + " Short updated: "
-                                + limitLevel
-                                + " Bars Held: "
-                                + (CurrentBar - entryBarShort).ToString()
-                        );
+                        if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)) || !EnableProtectiveLevelTrades)
+                        {
+                            ChangeOrder(entryOrderShort, entryOrderShort.Quantity, limitLevel, 0);
+                            if (entryOrderTrimShort != null && entryOrderTrimShort.OrderState != OrderState.Filled)
+                                ChangeOrder(entryOrderTrimShort, entryOrderTrimShort.Quantity, limitLevel, 0);
+                            entryPriceShort = limitLevel; // Assuming immediate execution at the close price
+                            Draw.Line(
+                                this,
+                                "entryLineShort" + CurrentBar,
+                                true,
+                                0,
+                                limitLevel,
+                                -2,
+                                limitLevel,
+                                Brushes.Red,
+                                DashStyleHelper.Solid,
+                                2
+                            );
+                            Print(
+                                Time[0]
+                                    + " Short updated: "
+                                    + limitLevel
+                                    + " Bars Held: "
+                                    + (CurrentBar - entryBarShort).ToString()
+                            );
+                        }
+                        else
+                        {
+                            Print(Time[0] + " Short Order Cancelled due to protective trades at: " + Close[0]);
+                            CancelOrder(entryOrderShort);
+                            entryOrderShort = null; // Reset the entry order variable
+                            if (entryOrderTrimShort != null)
+                            {
+                                CancelOrder(entryOrderTrimShort);
+                                entryOrderTrimShort = null;
+                            }
+                        }
                     }
-                    else
-                    {
-                        Print(Time[0] + " Short Order Cancelled due to protective trades at: " + Close[0]);
-                        CancelOrder(entryOrderShort);
-                        entryOrderShort = null; // Reset the entry order variable
-                    }
-                }
             }
 
             reverseBuyTrade = sellVolCloseTrigger && buyTrigger;
@@ -2235,14 +2273,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else
             {
-                if (entryOrder != null)
+                if (entryOrder != null && entryOrder.OrderState == OrderState.Working)
                 {
                     string barHeld = "0";
                     if (entryOrder.OrderState == OrderState.Working)
                         barHeld = (CurrentBar - entryBar).ToString();
                     dashBoard += " | Bars Held: " + barHeld + " of " + barsToHoldTrade;
                 }
-                else if (entryOrderShort != null)
+                else if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Working)
                 {
                     string barHeld = "0";
                     if (entryOrderShort.OrderState == OrderState.Working)
@@ -2301,6 +2339,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (entryOrderShort != null && entryOrderShort.IsBacktestOrder && State == State.Realtime)
                 entryOrderShort = GetRealtimeOrder(entryOrderShort);
 
+            if (entryOrderTrimShort != null && entryOrderTrimShort.IsBacktestOrder && State == State.Realtime)
+                entryOrderTrimShort = GetRealtimeOrder(entryOrderTrimShort);
+
             if (order.Name == "Long")
             {
                 if (orderState == OrderState.Filled)
@@ -2331,10 +2372,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
             {
-                entryOrder = null;
-                entryOrderTrim = null;
-                entryOrderShort = null;
-
                 if (order.Name == "Stop loss" && order.OrderState == OrderState.Rejected)
                 {
                     ExitLong();
@@ -2632,6 +2669,31 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                 }
             }
+
+            if (EnableVWAPBlock)
+            {
+                if (Math.Abs(entryPrice - vwap[0]) < ProtectiveLevelRangeCheck)
+                {
+                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to VWAP protect: " + RoundToNearestTick(vwap[0]));
+                    return false;
+                }
+            }
+
+            if (EnableChopZoneBlock)
+            {
+                if (Math.Abs(entryPrice - upperChopZone) < ProtectiveLevelRangeCheck)
+                {
+                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(upperChopZone));
+                    return false;
+                }
+
+                if (Math.Abs(entryPrice - lowerChopZone) < ProtectiveLevelRangeCheck)
+                {
+                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(lowerChopZone));
+                    return false;
+                }
+            }
+
             return true;
         }
 

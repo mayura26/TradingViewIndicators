@@ -27,6 +27,12 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
+	// TOOD: Add ORB/day HL to levels
+ 	// TODO: Check both entry level and the confirn line for trades?
+    // TODO: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level?
+	// TODO: Consec losses and wins won't work with split exits
+	// TODO: Check why entered long into top. create interface forbounce off level?
+    // TOOD: Check for range of candle before entry (high - low). and if we are above  xx% we don't enter.
 	// TODO: Design dynamic calc of TP level using ATR or similar
     // TODO: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
     // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
@@ -35,6 +41,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 	// TODO: EMA levels to exit trades
 	// TODO: ATR trigger to start buy trigger again?
 	// TODO: Chopzone top for exits
+    // TODO: Review level calcs with S1/S2/S3 levels
+    // TODO: Improve picking up low/highs as TP levels when its a tigher day
     // FEATURE: Cancel order when in chopzone
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Add more levels to protective trades
@@ -247,18 +255,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         #region 4. Protective Trades
         [NinjaScriptProperty]
-        [Display(Name = "ExitOnATRReversal", Description = "Exit on ATR reversal", Order = 56, GroupName = "4. Protective Trades")]
-        public bool ExitOnATRReversal
-        { get; set; }
-
-        [NinjaScriptProperty]
         [Display(Name = "EnableProtectiveLevelTrades", Description = "Enable protective level trades", Order = 57, GroupName = "4. Protective Trades")]
         public bool EnableProtectiveLevelTrades
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EnableSuperProtectMode", Description = "Enable super protective mode", Order = 58, GroupName = "4. Protective Trades")]
-        public bool EnableSuperProtectMode
         { get; set; }
 
         [NinjaScriptProperty]
@@ -268,12 +266,47 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "EnableVWAPBlock", Description = "Enable VWAP block for protective trades", Order = 60, GroupName = "4. Protective Trades")]
+        [Display(Name = "EnableDynamicRangeProtect", Description = "Enable dynamic range protection", Order = 64, GroupName = "4. Protective Trades")]
+        public bool EnableDynamicRangeProtect
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "DynamicRangeLookback", Description = "Lookback bars for dynamic range protection", Order = 65, GroupName = "4. Protective Trades")]
+        public int DynamicRangeLookback
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "DynamicRangePosition", Description = "Position in range for dynamic range protection to enter trade", Order = 66, GroupName = "4. Protective Trades")]
+        public double DynamicRangePosition
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 10000)]
+        [Display(Name = "DynamicRangeMinRange", Description = "Minimum range for dynamic range protection", Order = 67, GroupName = "4. Protective Trades")]
+        public double DynamicRangeMinRange
+        { get; set; }
+        #endregion
+
+        #region 4a. Extra Protective Trades
+        [NinjaScriptProperty]
+        [Display(Name = "EnableSuperProtectMode", Description = "Enable super protective mode", Order = 50, GroupName = "4a. Protective Trades")]
+        public bool EnableSuperProtectMode
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ExitOnATRReversal", Description = "Exit on ATR reversal", Order = 51, GroupName = "4a. Protective Trades")]
+        public bool ExitOnATRReversal
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableVWAPBlock", Description = "Enable VWAP block for protective trades", Order = 60, GroupName = "4a. Protective Trades")]
         public bool EnableVWAPBlock
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "EnableChopZoneBlock", Description = "Enable chop zone block for protective trades", Order = 61, GroupName = "4. Protective Trades")]
+        [Display(Name = "EnableChopZoneBlock", Description = "Enable chop zone block for protective trades", Order = 61, GroupName = "4a Protective Trades")]
         public bool EnableChopZoneBlock
         { get; set; }
         #endregion
@@ -575,17 +608,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         #region 9. Trade Settings
         [NinjaScriptProperty]
-        [Display(Name = "RealTimePnlOnly", Description = "Track PnL only during realtime trading", Order = 1, GroupName = "9. Trade Settings")]
+        [Display(Name = "EnableNewFeatures", Description = "Enable new features", Order = 1, GroupName = "9. Trade Settings")]
+        public bool EnableNewFeatures
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "RealTimePnlOnly", Description = "Track PnL only during realtime trading", Order = 4, GroupName = "9. Trade Settings")]
         public bool RealTimePnlOnly
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "EnableBannedDays", Description = "Enable banned days for backtesting", Order = 2, GroupName = "9. Trade Settings")]
+        [Display(Name = "EnableBannedDays", Description = "Enable banned days for backtesting", Order = 5, GroupName = "9. Trade Settings")]
         public bool EnableBannedDays
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "DisableTradingTimes", Description = "Disable preset trading times", Order = 2, GroupName = "9. Trade Settings")]
+        [Display(Name = "DisableTradingTimes", Description = "Disable preset trading times", Order = 3, GroupName = "9. Trade Settings")]
         public bool DisableTradingTimes
         { get; set; }
 
@@ -595,13 +633,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 3, GroupName = "9. Trade Settings")]
+        [Display(Name = "ResetConsecOnTime", Description = "Reset consec. losses on time session switch", Order = 6, GroupName = "9. Trade Settings")]
         public bool ResetConsecOnTime
-        { get; set; }
-
-        [NinjaScriptProperty]
-        [Display(Name = "EnableNewFeatures", Description = "Enable new features", Order = 4, GroupName = "9. Trade Settings")]
-        public bool EnableNewFeatures
         { get; set; }
         #endregion
         #endregion
@@ -840,7 +873,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TS3End = DateTime.Parse("17:15", System.Globalization.CultureInfo.InvariantCulture);
                 #endregion
                 #region Time Session 1
-                TPLevelTS1 = 50;
+                TPLevelTS1 = 40;
                 SLLevelTS1 = 19;
                 BuySellBufferTS1 = 6;
                 BarsToHoldTradeTS1 = 5;
@@ -851,7 +884,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ResetBarsMissedOnShortTS1 = false;
                 #endregion
                 #region Time Session 2
-                TPLevelTS2 = 40;
+                TPLevelTS2 = 30;
                 SLLevelTS2 = 16;
                 BuySellBufferTS2 = 5;
                 BarsToHoldTradeTS2 = 4;
@@ -912,10 +945,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ChopZoneLookBack = 3;
                 #endregion
                 #region Protective Trades
-                ExitOnATRReversal = false;
                 EnableProtectiveLevelTrades = true;
-                EnableSuperProtectMode = false;
                 ProtectiveLevelRangeCheck = 10;
+                EnableDynamicRangeProtect = true;
+                DynamicRangeLookback = 4;
+                DynamicRangePosition = 75;
+                DynamicRangeMinRange = 25;
+                #endregion
+                #region Extra Protective Trades 
+                EnableSuperProtectMode = false;
+                ExitOnATRReversal = false;
                 EnableVWAPBlock = false;
                 EnableChopZoneBlock = false;
                 #endregion
@@ -932,7 +971,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TrailingDrawdownRatio = 100;
                 #endregion
                 #region Dynamic Trim
-                EnableDynamicTrim = false;
+                EnableDynamicTrim = true;
                 ExitTPLevel = 10;
                 TrimPercent = 60;
                 ExitLevelRange = 3;
@@ -1955,25 +1994,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Close Trades that are too far away from entry
-            if (entryOrder != null)
+            if (entryOrder != null && entryOrder.OrderState == OrderState.Working)
             {
-                // Manage open orders here, e.g., check if it's time to exit based on bar count
-                bool barTooFarFromEntry = High[0] > entryPrice + offsetFromEntryToCancel;
-                if (
-                    (
-                        (CurrentBar >= entryBar + barsToHoldTrade)
-                        || buyVolCloseTrigger
-                        || barTooFarFromEntry
-                    )
-                    && entryOrder.OrderState == OrderState.Working
-                )
+                double priceToCheck = smoothConfirmMA[0] + offsetFromEntryToCancel;
+                bool barTooFarFromEntry = High[0] > priceToCheck;
+
+                if (((CurrentBar >= entryBar + barsToHoldTrade) || buyVolCloseTrigger || barTooFarFromEntry))
                 {
-                    Print(
-                        Time[0]
-                            + " Long Order cancelled: "
-                            + Close[0]
-                            + (barTooFarFromEntry ? " - Bar too far from entry" : "")
-                    );
+                    Print(Time[0] + " Long Order cancelled: " + Close[0] + (barTooFarFromEntry ? " - Bar too far from entry" : ""));
                     CancelOrder(entryOrder);
                     entryOrder = null; // Reset the entry order variable
                     if (entryOrderTrim != null && entryOrderTrim.OrderState == OrderState.Working)
@@ -1984,25 +2012,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
-            if (entryOrderShort != null)
+            if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Working)
             {
-                // Manage open orders here, e.g., check if it's time to exit based on bar count
-                bool barTooFarFromEntry = Low[0] < entryPriceShort - offsetFromEntryToCancel;
-                if (
-                    (
-                        (CurrentBar >= entryBarShort + barsToHoldTrade)
-                        || sellVolCloseTrigger
-                        || barTooFarFromEntry
-                    )
-                    && entryOrderShort.OrderState == OrderState.Working
-                )
+                double priceToCheck = smoothConfirmMA[0] - offsetFromEntryToCancel;
+                bool barTooFarFromEntry = Low[0] < priceToCheck;
+
+                if (((CurrentBar >= entryBarShort + barsToHoldTrade) || sellVolCloseTrigger || barTooFarFromEntry))
                 {
-                    Print(
-                        Time[0]
-                            + " Short Order cancelled: "
-                            + Close[0]
-                            + (barTooFarFromEntry ? " - Bar too far from entry" : "")
-                    );
+                    Print(Time[0] + " Short Order cancelled: " + Close[0] + (barTooFarFromEntry ? " - Bar too far from entry" : ""));
                     CancelOrder(entryOrderShort);
                     entryOrderShort = null; // Reset the entry order variable
                     if (entryOrderTrimShort != null && entryOrderTrimShort.OrderState == OrderState.Working)
@@ -2090,7 +2107,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             true
                         );
 
-                        if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
+                        if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true) && IsEntryWithinDynamicRange(smoothConfirmMA[0] + buySellBuffer, true))
                         {
                             Print(Time[0] + " Long triggered: " + limitLevel);
                             entryOrder = EnterLongLimit(0, true, mainTradeQuantity, limitLevel, "Long");
@@ -2126,7 +2143,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             true
                         );
 
-                        if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)) || !EnableProtectiveLevelTrades)
+                        if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true))
                         {
                             ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
                             if (entryOrderTrim != null && entryOrderTrim.OrderState != OrderState.Filled)
@@ -2178,7 +2195,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             false
                         );
 
-                        if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)) || !EnableProtectiveLevelTrades)
+                        if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false) && IsEntryWithinDynamicRange(smoothConfirmMA[0] - buySellBuffer, false))
                         {
                             Print(Time[0] + " Short triggered: " + limitLevel);
                             entryOrderShort = EnterShortLimit(0, true, mainTradeQuantity, limitLevel, "Short");
@@ -2214,7 +2231,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             false
                         );
 
-                        if ((EnableProtectiveLevelTrades && IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)) || !EnableProtectiveLevelTrades)
+                        if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false))
                         {
                             ChangeOrder(entryOrderShort, entryOrderShort.Quantity, limitLevel, 0);
                             if (entryOrderTrimShort != null && entryOrderTrimShort.OrderState != OrderState.Filled)
@@ -2434,7 +2451,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                         lastTradeChecked = lastTrade.TradeNumber;
                         currentPnL += totalTradePnL;
 
-                        Print(Time[0] + " Trade PnL: $" + totalTradePnL + " | Current PnL: $" + currentPnL + " | Points : " + RoundToNearestTick(totalTradePnL / totalQuantity / Bars.Instrument.MasterInstrument.PointValue));
+                        Print(Time[0] + " Trade PnL: $" + totalTradePnL +
+                            " | Current PnL: $" + currentPnL +
+                            " | Points : " + RoundToNearestTick(totalTradePnL / totalQuantity / Bars.Instrument.MasterInstrument.PointValue) +
+                            " | Quantity: " + totalQuantity);
 
                         if (totalTradePnL < LossCutOff)
                         {
@@ -2647,6 +2667,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private bool IsEntrySafe(double entryPrice, bool isBuy)
         {
+            if (!EnableProtectiveLevelTrades)
+                return true;
+
             if (isBuy)
             {
                 foreach (double level in ProtectiveBuyLevels)
@@ -2694,6 +2717,49 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
+            return true;
+        }
+
+        private bool IsEntryWithinDynamicRange(double entryPrice, bool isBuy)
+        {
+            if (!EnableDynamicRangeProtect)
+                return true;
+
+            double lowestLow = double.MaxValue;
+            double highestHigh = double.MinValue;
+
+            for (int i = 1; i <= DynamicRangeLookback; i++)
+            {
+                if (Low[i] < lowestLow)
+                    lowestLow = Low[i];
+
+                if (High[i] > highestHigh)
+                    highestHigh = High[i];
+            }
+
+            double range = highestHigh - lowestLow;
+            double position = Math.Round(((entryPrice - lowestLow) / range) * 100, 0);
+
+            if (range <= DynamicRangeMinRange)
+                return true;
+
+            if (isBuy)
+            {
+                if ((100 - position) > DynamicRangePosition)
+                {
+                    Print(Time[0] + " Dynamic Range Protect: Long not safe at: " + RoundToNearestTick(entryPrice) + ". Position " + (100 - position) + " %");
+                    return false;
+                }
+            }
+            else
+            {
+                if (position > DynamicRangePosition)
+                {
+                    Print(Time[0] + " Dynamic Range Protect: Short not safe at: " + RoundToNearestTick(entryPrice) + ". Position: " + position + "%");
+                    return false;
+                }
+            }
+            Print(Time[0] + (isBuy ? " Long" : " Short") +" Dynamic Trade Position: " + position + "% Range: " + range);
             return true;
         }
 

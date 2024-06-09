@@ -27,38 +27,31 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
-	// TOOD: Add ORB/day HL to levels
- 	// TODO: Check both entry level and the confirn line for trades?
-    // TODO: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level?
-	// TODO: Consec losses and wins won't work with split exits
-	// TODO: Check why entered long into top. create interface forbounce off level?
-    // TOOD: Check for range of candle before entry (high - low). and if we are above  xx% we don't enter.
-	// TODO: Design dynamic calc of TP level using ATR or similar
-    // TODO: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
-    // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
-    // TODO: Look at fib levels to improve drawing of levels
-	// TODO: EMA levels to exit trades
-	// TODO: ATR trigger to start buy trigger again?
-	// TODO: Chopzone top for exits
-    // TODO: Review level calcs with S1/S2/S3 levels
-    // TODO: Improve picking up low/highs as TP levels when its a tigher day
+	// TODO: Add ORB/day HL to levels
+ 	// REVIEW: Check both entry level and the confirn line for trades?
+	// FEATURE: Create bounce check on previous candles
+    // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
+	// FEATURE: EMA levels to exit trades
+	// FEATURE: ATR trigger to start buy trigger again?
+    // REVIEW: Review level calcs with S1/S2/S3 levels
+    // FEATURE: Improve picking up low/highs as TP levels when its a tigher day
+    // FEATURE: Design dynamic calc of TP level using ATR or similar
+    // FEATURE: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
+    // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level?
     // FEATURE: Cancel order when in chopzone
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Add more levels to protective trades
+    // FEATURE: Look at fib levels to improve drawing of levels
     // FEATURE: Use wicksize to identify chop
     // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
+    // FEATURE: ATR in last x bars means don't take opposite trade?
     */
     public class TradingLevelsAlgo : Strategy
     {
         #region Properties
         #region 1. Main Parameters
-        [NinjaScriptProperty]
-        [Display(Name = "MiniContracts", Description = "Enable mini contracts", Order = 1, GroupName = "1. Main Parameters")]
-        public bool MiniContracts
-        { get; set; }
-
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
         [Display(Name = "TradeQuantity", Description = "Number of contracts to trade", Order = 2, GroupName = "1. Main Parameters")]
@@ -306,7 +299,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "EnableChopZoneBlock", Description = "Enable chop zone block for protective trades", Order = 61, GroupName = "4a Protective Trades")]
+        [Display(Name = "EnableChopZoneBlock", Description = "Enable chop zone block for protective trades", Order = 61, GroupName = "4a. Protective Trades")]
         public bool EnableChopZoneBlock
         { get; set; }
         #endregion
@@ -760,10 +753,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         private List<DateTime> TradingBanDays;
         public double MaxGain;
         public double MaxLoss;
-        public double LossCutOff;
-        public double BigWinCutoff;
         public double TrailingDrawdownLimit;
+        public double BigWinCutoff;
+        public double LossCutOff;
         private int lastTradeChecked = -1;
+        private double currentTradePnL = 0;
+        private bool newTradeCalculated = false;
         #endregion
 
         #region Time Specific Trade Variables
@@ -856,9 +851,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableNewFeatures = false;
                 #endregion
                 #region Main Parameters
-                TradeQuantity = 3;
-                MiniContracts = false;
-                MaxLossRatio = 150;
+                TradeQuantity = 5;
+                MaxLossRatio = 115;
                 MaxGainRatio = 300;
                 LossCutOffRatio = 25;
                 ResetConsecOnTime = true;
@@ -946,7 +940,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
                 #region Protective Trades
                 EnableProtectiveLevelTrades = true;
-                ProtectiveLevelRangeCheck = 10;
+                ProtectiveLevelRangeCheck = 12.5;
                 EnableDynamicRangeProtect = true;
                 DynamicRangeLookback = 4;
                 DynamicRangePosition = 75;
@@ -1597,16 +1591,50 @@ namespace NinjaTrader.NinjaScript.Strategies
             #region Dynamic Gain/Loss
             MaxGain = MaxGainRatio * TradeQuantity;
             MaxLoss = MaxLossRatio * TradeQuantity * -1;
-            LossCutOff = LossCutOffRatio * TradeQuantity * -1;
-            BigWinCutoff = BigWinCutoffRatio * TradeQuantity;
             TrailingDrawdownLimit = TrailingDrawdownRatio * TradeQuantity * -1;
+            BigWinCutoff = BigWinCutoffRatio * TradeQuantity;
+            LossCutOff = LossCutOffRatio * TradeQuantity * -1;
+            #endregion
 
-            if (MiniContracts)
+            #region Big Win/Consecutive Losses
+            if (Position.MarketPosition == MarketPosition.Flat && newTradeCalculated)
             {
-                MaxGain = MaxGain * 10;
-                MaxLoss = MaxLoss * 10;
-                LossCutOff = LossCutOff * 10;
-                BigWinCutoff = BigWinCutoff * 10;
+                if (currentTradePnL < LossCutOff)
+                {
+                    consecutiveLosses++;
+                    Print(Time[0] + " ******** CONSECUTIVE LOSSES: " + consecutiveLosses);
+                }
+                else if (currentTradePnL >= 0)
+                {
+                    consecutiveLosses = 0; // Reset the count on a non-loss trade
+                    Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
+                }
+
+                if (currentTradePnL > BigWinCutoff)
+                {
+                    bigWinCount++;
+                    Print(Time[0] + " ******** BIG WINS: " + bigWinCount);
+                }
+
+                // Check if there have been three consecutive losing trades
+                if (consecutiveLosses >= maxLossConsec && !DisablePNLLimits)
+                {
+                    EnableTrading = false;
+                    Print(
+                        Time[0]
+                            + $" ******** TRADING DISABLED ({consecutiveLosses} losses in a row) ******** : $"
+                            + currentPnL
+                    );
+                }
+
+                if (bigWinCount >= BigWinCutoffCount && !DisablePNLLimits)
+                {
+                    EnableTrading = false;
+                    Print(Time[0] + $" ******** TRADING DISABLED ({bigWinCount} big wins) ******** : $" + currentPnL);
+                }
+
+                currentTradePnL = 0;
+                newTradeCalculated = false;
             }
             #endregion
 
@@ -2450,45 +2478,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         lastTradeChecked = lastTrade.TradeNumber;
                         currentPnL += totalTradePnL;
+                        currentTradePnL += totalTradePnL;
+                        newTradeCalculated = true;
 
-                        Print(Time[0] + " Trade PnL: $" + totalTradePnL +
-                            " | Current PnL: $" + currentPnL +
-                            " | Points : " + RoundToNearestTick(totalTradePnL / totalQuantity / Bars.Instrument.MasterInstrument.PointValue) +
-                            " | Quantity: " + totalQuantity);
-
-                        if (totalTradePnL < LossCutOff)
-                        {
-                            consecutiveLosses++;
-                            Print(Time[0] + " ******** CONSECUTIVE LOSSES: " + consecutiveLosses);
-                        }
-                        else if (totalTradePnL >= 0)
+                        if (currentTradePnL >= 0)
                         {
                             consecutiveLosses = 0; // Reset the count on a non-loss trade
                             Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
                         }
 
-                        if (totalTradePnL > BigWinCutoff)
-                        {
-                            bigWinCount++;
-                            Print(Time[0] + " ******** BIG WINS: " + bigWinCount);
-                        }
-
-                        // Check if there have been three consecutive losing trades
-                        if (consecutiveLosses >= maxLossConsec && !DisablePNLLimits)
-                        {
-                            EnableTrading = false;
-                            Print(
-                                Time[0]
-                                    + $" ******** TRADING DISABLED ({consecutiveLosses} losses in a row) ******** : $"
-                                    + currentPnL
-                            );
-                        }
-
-                        if (bigWinCount >= BigWinCutoffCount && !DisablePNLLimits)
-                        {
-                            EnableTrading = false;
-                            Print(Time[0] + $" ******** TRADING DISABLED ({bigWinCount} big wins) ******** : $" + currentPnL);
-                        }
+                        Print(Time[0] + " Trade PnL: $" + totalTradePnL +
+                            " | Current PnL: $" + currentPnL +
+                            " | Points : " + RoundToNearestTick(totalTradePnL / totalQuantity / Bars.Instrument.MasterInstrument.PointValue) +
+                            " | Quantity: " + totalQuantity);
                     }
                 }
             }

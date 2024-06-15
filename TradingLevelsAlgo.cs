@@ -1,5 +1,6 @@
 #region Using declarations
 using System;
+using System.CodeDom.Compiler;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Drawing;
@@ -17,6 +18,7 @@ using NinjaTrader.NinjaScript.MarketAnalyzerColumns;
 using NinjaTrader.NinjaScript.SuperDomColumns;
 using SharpDX;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.Tab;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement.TaskbarClock;
 using static System.Windows.Forms.VisualStyles.VisualStyleElement.ToolTip;
 using static NinjaTrader.CQG.ProtoBuf.MarketDataSubscription.Types;
 using Brush = System.Windows.Media.Brush;
@@ -28,7 +30,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
-	// TODO: Add ORB/day HL to levels
+    // TODO: Add ORB/day HL to levels
+    // FEATURE: Show trade stats
+	// FEATURE: Show blocked trades
  	// REVIEW: Check both entry level and the confirn line for trades?
 	// FEATURE: Create bounce check on previous candles
     // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
@@ -758,7 +762,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double LossCutOff;
         private int lastTradeChecked = -1;
         private double currentTradePnL = 0;
+        private int partialTradeQty = 0;
+        private double partialTradePnl = 0;
         private bool newTradeCalculated = false;
+        private bool partialTradeCalculated = false;
+        private bool newTradeExecuted = false;
+        private string tradeExecuteType = "";
+        private double tradeExecPrice = 0;
+        private double oldDynamicTP = 0;
+        private double oldDynamicSL = 0;
         #endregion
 
         #region Time Specific Trade Variables
@@ -867,7 +879,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TS3End = DateTime.Parse("17:15", System.Globalization.CultureInfo.InvariantCulture);
                 #endregion
                 #region Time Session 1
-                TPLevelTS1 = 40;
+                TPLevelTS1 = 50;
                 SLLevelTS1 = 19;
                 BuySellBufferTS1 = 6;
                 BarsToHoldTradeTS1 = 5;
@@ -880,7 +892,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Time Session 2
                 TPLevelTS2 = 30;
                 SLLevelTS2 = 16;
-                BuySellBufferTS2 = 5;
+                BuySellBufferTS2 = 6;
                 BarsToHoldTradeTS2 = 4;
                 BarsToMissTradeTS2 = 3;
                 OffsetFromEntryToCancelTS2 = 30;
@@ -918,7 +930,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 EnableDynamicTP = true;
                 MoveLowerOnly = true;
-                LevelDetectRange = 10;
+                LevelDetectRange = 15;
                 TPOffset = 8;
 
                 EnableTPChopZone = true;
@@ -940,7 +952,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
                 #region Protective Trades
                 EnableProtectiveLevelTrades = true;
-                ProtectiveLevelRangeCheck = 12.5;
+                ProtectiveLevelRangeCheck = 12;
                 EnableDynamicRangeProtect = true;
                 DynamicRangeLookback = 4;
                 DynamicRangePosition = 75;
@@ -954,7 +966,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
                 #region Dynamic Entry/Exit
                 EnableDynamicEntry = true;
-                DynamicEntryOffsetTrend = 4;
+                DynamicEntryOffsetTrend = -3;
                 DynamicEntryOffsetPos = 0;
                 DynamicEntryOffsetNeg = -3;
                 #endregion
@@ -976,6 +988,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Banned Trading Days
                 TradingBanDays = new List<DateTime>
                 {
+                    DateTime.Parse("2024-06-12", System.Globalization.CultureInfo.InvariantCulture), // FOMC + CPI
                     DateTime.Parse("2024-05-24", System.Globalization.CultureInfo.InvariantCulture), // Friday before long weekend
                     DateTime.Parse("2024-05-22", System.Globalization.CultureInfo.InvariantCulture), // Tight range from OPEX, identified in the morning with NVDA on the bell
                     DateTime.Parse("2024-05-20", System.Globalization.CultureInfo.InvariantCulture), // Post opex monday
@@ -1596,15 +1609,33 @@ namespace NinjaTrader.NinjaScript.Strategies
             LossCutOff = LossCutOffRatio * TradeQuantity * -1;
             #endregion
 
-            #region Big Win/Consecutive Losses
+            #region Big Win/Consecutive Losses & Trade Updates
+            if (newTradeExecuted)
+            {
+                Print(Time[0] + " TRADE CLOSED: " + tradeExecuteType + " at Price: " + tradeExecPrice);
+                newTradeExecuted = false;
+            }
+
+            if (partialTradeCalculated)
+            {
+                Print(Time[0] + " CURRENT TRADE PnL: $" + partialTradePnl +
+                    " | Current PnL: $" + currentPnL +
+                    " | Points : " + RoundToNearestTick(partialTradePnl / partialTradeQty / Bars.Instrument.MasterInstrument.PointValue) +
+                    " | Quantity: " + partialTradeQty);
+                partialTradePnl = 0;
+                partialTradeQty = 0;
+                partialTradeCalculated = false;
+            }
+
             if (Position.MarketPosition == MarketPosition.Flat && newTradeCalculated)
             {
+                Print(Time[0] + " COMPLETED TRADE PnL: $" + currentTradePnL + " | Total PnL: $" + currentPnL);
                 if (currentTradePnL < LossCutOff)
                 {
                     consecutiveLosses++;
                     Print(Time[0] + " ******** CONSECUTIVE LOSSES: " + consecutiveLosses);
                 }
-                else if (currentTradePnL >= 0)
+                else if (currentTradePnL >= 0 && consecutiveLosses > 0)
                 {
                     consecutiveLosses = 0; // Reset the count on a non-loss trade
                     Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
@@ -1718,6 +1749,54 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                 }
                 else if (midVolDump[0])
+                {
+                    if (deltaSellVol >= DeltaPosCutOff / 100)
+                    {
+                        if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
+                        {
+                            localBarsToMissTrade = barsToMissTrade;
+                            if (sellVolSignal)
+                                BackBrush = DeltaVolTrendShade;
+                        }
+                        else
+                        {
+                            localBarsToMissTrade = BarsToMissPosDelta;
+                            if (sellVolSignal)
+                                BackBrush = DeltaVolSellShade;
+                        }
+                    }
+                    else
+                    {
+                        localBarsToMissTrade = BarsToMissNegDelta;
+                        if (sellVolSignal)
+                            BackBrush = DeltaVolNegShade;
+                    }
+                }
+                else if (Close[0] < smoothConfirmMA[0] && buyVolSignal)
+                {
+                    if (deltaBuyVol >= DeltaPosCutOff / 100)
+                    {
+                        if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
+                        {
+                            localBarsToMissTrade = barsToMissTrade;
+                            if (buyVolSignal)
+                                BackBrush = DeltaVolTrendShade;
+                        }
+                        else
+                        {
+                            localBarsToMissTrade = BarsToMissPosDelta;
+                            if (buyVolSignal)
+                                BackBrush = DeltaVolBuyShade;
+                        }
+                    }
+                    else
+                    {
+                        localBarsToMissTrade = BarsToMissNegDelta;
+                        if (buyVolSignal)
+                            BackBrush = DeltaVolNegShade;
+                    }
+                }
+                else if (Close[0] > smoothConfirmMA[0] && sellVolSignal)
                 {
                     if (deltaSellVol >= DeltaPosCutOff / 100)
                     {
@@ -1944,9 +2023,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicSL)
                     if (High[0] > Position.AveragePrice + ProfitToMoveSL)
                     {
-                        Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
-                        SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
-                        SetStopLoss("LongTrim", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
+                        if (oldDynamicSL != Position.AveragePrice - SLNewLevel * TickSize)
+                        {
+                            Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice - SLNewLevel * TickSize));
+                            SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
+                            SetStopLoss("LongTrim", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
+                            oldDynamicSL = Position.AveragePrice - SLNewLevel * TickSize;
+                        }
                     }
 
                 if (EnableDynamicTP)
@@ -1984,9 +2067,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicSL)
                     if (Low[0] < Position.AveragePrice - ProfitToMoveSL)
                     {
-                        Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
-                        SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
-                        SetStopLoss("ShortTrim", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
+                        if (oldDynamicSL != Position.AveragePrice + SLNewLevel * TickSize)
+                        {
+                            Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
+                            SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
+                            SetStopLoss("ShortTrim", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
+                            oldDynamicSL = Position.AveragePrice + SLNewLevel * TickSize;
+                        }
                     }
 
                 if (EnableDynamicTP)
@@ -2438,13 +2525,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 )
             )
             {
-                Print(
-                    time.ToString()
-                        + " TRADE CLOSED: "
-                        + execution.Order.Name
-                        + " at Price: "
-                        + price
-                );
+                newTradeExecuted = true;
+                tradeExecPrice = price;
+                tradeExecuteType = execution.Order.Name;
             }
             #endregion
 
@@ -2458,8 +2541,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     ];
 
                     // Sum the profits of trades with similar exit times
-                    double totalTradePnL = lastTrade.ProfitCurrency;
-                    int totalQuantity = lastTrade.Quantity;
+                    double execTradePnL = lastTrade.ProfitCurrency;
+                    int execQty = lastTrade.Quantity;
                     DateTime exitTime = lastTrade.Exit.Time;
                     if (lastTrade.TradeNumber > lastTradeChecked)
                     {
@@ -2468,8 +2551,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Cbi.Trade trade = SystemPerformance.AllTrades[i];
                             if (Math.Abs((trade.Exit.Time - exitTime).TotalSeconds) <= 10 && trade.TradeNumber > lastTradeChecked)
                             {
-                                totalTradePnL += trade.ProfitCurrency;
-                                totalQuantity += trade.Quantity;
+                                execTradePnL += trade.ProfitCurrency;
+                                execQty += trade.Quantity;
                             }
                             else
                             {
@@ -2477,20 +2560,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                             }
                         }
                         lastTradeChecked = lastTrade.TradeNumber;
-                        currentPnL += totalTradePnL;
-                        currentTradePnL += totalTradePnL;
+                        currentPnL += execTradePnL;
+                        currentTradePnL += execTradePnL;
+                        partialTradePnl += execTradePnL;
+                        partialTradeQty += execQty;
                         newTradeCalculated = true;
+                        partialTradeCalculated = true;
 
-                        if (currentTradePnL >= 0)
+                        if (currentTradePnL >= 0 && consecutiveLosses > 0)
                         {
                             consecutiveLosses = 0; // Reset the count on a non-loss trade
                             Print(Time[0] + " ******** CONSECUTIVE LOSSES RESET ********");
                         }
-
-                        Print(Time[0] + " Trade PnL: $" + totalTradePnL +
-                            " | Current PnL: $" + currentPnL +
-                            " | Points : " + RoundToNearestTick(totalTradePnL / totalQuantity / Bars.Instrument.MasterInstrument.PointValue) +
-                            " | Quantity: " + totalQuantity);
                     }
                 }
             }
@@ -2573,7 +2654,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     newTPLevel = RoundToNearestTick(closestLevel.Value + TPOffset);
                 }
-                Print(Time[0] + " Dynamic TP: TP Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
+                if (oldDynamicTP != newTPLevel)
+                {
+                    Print(Time[0] + " Dynamic TP: TP Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
+                    oldDynamicTP = newTPLevel;
+                }
                 return newTPLevel;
             }
             else
@@ -2761,7 +2846,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     return false;
                 }
             }
-            Print(Time[0] + (isBuy ? " Long" : " Short") +" Dynamic Trade Position: " + position + "% Range: " + range);
+            Print(Time[0] + (isBuy ? " Long" : " Short") + " Dynamic Trade Position: " + position + "% Range: " + range);
             return true;
         }
 

@@ -30,7 +30,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
-    // TODO: Add ORB/day HL to levels
     // FEATURE: Show trade stats
 	// FEATURE: Show blocked trades
  	// REVIEW: Check both entry level and the confirn line for trades?
@@ -742,6 +741,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double chopLimit = 1.5;
         private double deltaMomentumChopLimt = 0.5;
         private double deltaMomentumVolLimt = 2.5;
+
+        // Day Level Constants
+        private int dayBarsToUse = 10;
         #endregion
 
         #region Display Variables
@@ -817,6 +819,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         private List<double> CalculatedLevels;
         private List<double> ProtectiveBuyLevels;
         private List<double> ProtectiveSellLevels;
+
+        private double orbHigh = double.MinValue;
+        private double orbLow = double.MaxValue;
+        private double dayHigh = double.MinValue;
+        private double dayLow = double.MaxValue;
+        private int dayHighBar = -1;
+        private int dayLowBar = -1;
         #endregion
         #endregion
 
@@ -1113,6 +1122,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 consecutiveLosses = 0;
                 bigWinCount = 0;
                 TrailingDrawdownLimit = 0;
+                dayHigh = double.MinValue;
+                dayLow = double.MaxValue;
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
             }
@@ -1547,9 +1558,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double S4 = yesterdayClose - r * (1.1 / 2); //Bull Last Stand
                 double S6 = yesterdayClose - (R6 - yesterdayClose); //Bear Target 2
                 double S3 = yesterdayClose - r * (1.1 / 4); //Bull Reversal High
-
-                // TODO: Add ORB
-                // TODO: Add Day High/Low
                 #endregion
 
                 #region Calculated Levels Array
@@ -1576,6 +1584,61 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AddLevel(S4, "Bull Reversal");
                 AddLevel(S6, "Bear Target");
                 AddLevel(S3, "Ex. Range Low");
+                #endregion
+
+                #region Dynamic Levels
+                // ORB Levels
+                TimeSpan barTime = Time[0].TimeOfDay;
+                if (barTime >= ORBStart.TimeOfDay && barTime <= ORBEnd.TimeOfDay)
+                {
+                    if (High[0] > orbHigh)
+                    {
+                        orbHigh = High[0];
+                    }
+                    if (Low[0] < orbLow)
+                    {
+                        orbLow = Low[0];
+                    }
+                }
+                else if (barTime < ORBStart.TimeOfDay)
+                {
+                    orbHigh = 0;
+                    orbLow = double.MaxValue;
+                    RemoveDrawObject("TargetLevel" + "ORB High");
+                    RemoveDrawObject("TargetLevel" + "ORB Low");
+                    RemoveDrawObject("Label" + "ORB High");
+                    RemoveDrawObject("Label" + "ORB Low");
+                }
+                else if (barTime > ORBEnd.TimeOfDay)
+                {
+                    if (orbHigh > 0)
+                        AddLevel(orbHigh, "ORB High");
+                    if (orbLow < double.MaxValue)
+                        AddLevel(orbLow, "ORB Low");
+                }
+
+                // Day High/Low
+                if (High[0] > dayHigh)
+                {
+                    dayHigh = High[0];
+                    dayHighBar = CurrentBar;
+                    RemoveDrawObject("TargetLevel" + "Day High");
+                    RemoveDrawObject("Label" + "Day High");
+                }
+
+                if (Low[0] < dayLow)
+                {
+                    dayLow = Low[0];
+                    dayLowBar = CurrentBar;
+                    RemoveDrawObject("TargetLevel" + "Day Low");
+                    RemoveDrawObject("Label" + "Day Low");
+                }
+
+                if (CurrentBar - dayHighBar > dayBarsToUse && dayHigh > 0)
+                    AddLevel(dayHigh, "Day High");
+
+                if (CurrentBar - dayLowBar > dayBarsToUse && dayLow < double.MaxValue)
+                    AddLevel(dayLow, "Day Low");
                 #endregion
 
                 #region Protective Levels Array

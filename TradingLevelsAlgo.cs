@@ -30,8 +30,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
     // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
-    // FEATURE: Show trade stats
-	// FEATURE: Show blocked trades
  	// REVIEW: Check both entry level and the confirn line for trades?
 	// FEATURE: Create bounce check on previous candles
     // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
@@ -773,6 +771,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double tradeExecPrice = 0;
         private double oldDynamicTP = 0;
         private double oldDynamicSL = 0;
+
+        private int numTrades = 0;
+        private int numWins = 0;
+        private int numLosses = 0;
+        private int numBlockedProtective = 0;
+        private int numBlockedDynamicRange = 0;
         #endregion
 
         #region Time Specific Trade Variables
@@ -1124,6 +1128,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TrailingDrawdownLimit = 0;
                 dayHigh = double.MinValue;
                 dayLow = double.MaxValue;
+
+                numWins = 0;
+                numLosses = 0;
+                numTrades = 0;
+                numBlockedProtective = 0;
+                numBlockedDynamicRange = 0;
+
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
             }
@@ -1586,6 +1597,26 @@ namespace NinjaTrader.NinjaScript.Strategies
                 AddLevel(S3, "Ex. Range Low");
                 #endregion
 
+                #region Protective Levels Array
+                ProtectiveBuyLevels.Clear();
+                ProtectiveBuyLevels.Add(vwap[0]);
+                ProtectiveBuyLevels.Add(lastWeekHigh);
+                ProtectiveBuyLevels.Add(yesterdayHigh);
+                ProtectiveBuyLevels.Add(atr618);
+                ProtectiveBuyLevels.Add(atr100);
+                ProtectiveBuyLevels.Add(R6); // Bull Target
+                ProtectiveBuyLevels.Add(R4); // Bear Reversal
+
+                ProtectiveSellLevels.Clear();
+                ProtectiveSellLevels.Add(vwap[0]);
+                ProtectiveSellLevels.Add(lastWeekLow);
+                ProtectiveSellLevels.Add(yesterdayLow);
+                ProtectiveSellLevels.Add(atrNeg618);
+                ProtectiveSellLevels.Add(atrNeg100);
+                ProtectiveSellLevels.Add(S6); // Bear Target
+                ProtectiveSellLevels.Add(S4); // Bull Reversal
+                #endregion
+
                 #region Dynamic Levels
                 // ORB Levels
                 TimeSpan barTime = Time[0].TimeOfDay;
@@ -1635,30 +1666,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
 
                 if (CurrentBar - dayHighBar > dayBarsToUse && dayHigh > 0)
+                {
                     AddLevel(dayHigh, "Day High");
+                    ProtectiveBuyLevels.Add(dayHigh);
+                }
 
                 if (CurrentBar - dayLowBar > dayBarsToUse && dayLow < double.MaxValue)
+                {
                     AddLevel(dayLow, "Day Low");
-                #endregion
-
-                #region Protective Levels Array
-                ProtectiveBuyLevels.Clear();
-                ProtectiveBuyLevels.Add(vwap[0]);
-                ProtectiveBuyLevels.Add(lastWeekHigh);
-                ProtectiveBuyLevels.Add(yesterdayHigh);
-                ProtectiveBuyLevels.Add(atr618);
-                ProtectiveBuyLevels.Add(atr100);
-                ProtectiveBuyLevels.Add(R6); // Bull Target
-                ProtectiveBuyLevels.Add(R4); // Bear Reversal
-
-                ProtectiveSellLevels.Clear();
-                ProtectiveSellLevels.Add(vwap[0]);
-                ProtectiveSellLevels.Add(lastWeekLow);
-                ProtectiveSellLevels.Add(yesterdayLow);
-                ProtectiveSellLevels.Add(atrNeg618);
-                ProtectiveSellLevels.Add(atrNeg100);
-                ProtectiveSellLevels.Add(S6); // Bear Target
-                ProtectiveSellLevels.Add(S4); // Bull Reversal
+                    ProtectiveSellLevels.Add(dayLow);
+                }
                 #endregion
             }
             #endregion
@@ -1726,6 +1743,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                     EnableTrading = false;
                     Print(Time[0] + $" ******** TRADING DISABLED ({bigWinCount} big wins) ******** : $" + currentPnL);
                 }
+
+                if (currentTradePnL / TradeQuantity / Bars.Instrument.MasterInstrument.PointValue > 0.1 * tpLevel)
+                {
+                    numWins++;
+                }
+                else if (currentTradePnL / TradeQuantity / Bars.Instrument.MasterInstrument.PointValue < -0.1 * tpLevel)
+                {
+                    numLosses++;
+                }
+
+                numTrades++;
+                Print(Time[0] + " ******** TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins/numTrades,3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades,3) * 100) + "%) ********");
 
                 currentTradePnL = 0;
                 newTradeCalculated = false;
@@ -2106,13 +2135,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double TPNewLevel = UpdateTPLevel(originalTP, true);
                     if (TPNewLevel > upperChopZone && Math.Abs(TPNewLevel - upperChopZone) <= TPChopZoneSearchRange && EnableTPChopZone)
                     {
-                        Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + (upperChopZone - TPChopZoneOffset));
+                        Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(upperChopZone - TPChopZoneOffset));
                         TPNewLevel = upperChopZone - TPChopZoneOffset;
                     }
 
                     if (TPNewLevel > vwap[0] && Math.Abs(TPNewLevel - vwap[0]) <= TPVWAPSearchRange && EnableTPVWAP)
                     {
-                        Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + (vwap[0] - TPVWAPOffset));
+                        Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(vwap[0] - TPVWAPOffset));
                         TPNewLevel = vwap[0] - TPVWAPOffset;
                     }
 
@@ -2826,7 +2855,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (entryPrice >= level - ProtectiveLevelRangeCheck && entryPrice <= level + (EnableSuperProtectMode ? ProtectiveLevelRangeCheck : 0))
                     {
-                        Print(Time[0] + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level));
+                        numBlockedProtective++;
+                        Print(Time[0] + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
                         return false;
                     }
                 }
@@ -2837,7 +2867,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (entryPrice <= level + ProtectiveLevelRangeCheck && entryPrice >= level - (EnableSuperProtectMode ? ProtectiveLevelRangeCheck : 0))
                     {
-                        Print(Time[0] + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level));
+                        numBlockedProtective++;
+                        Print(Time[0] + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
                         return false;
                     }
                 }
@@ -2847,7 +2878,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (Math.Abs(entryPrice - vwap[0]) < ProtectiveLevelRangeCheck)
                 {
-                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to VWAP protect: " + RoundToNearestTick(vwap[0]));
+                    numBlockedProtective++;
+                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to VWAP protect: " + RoundToNearestTick(vwap[0]) + " | Blocked: " + numBlockedProtective);
                     return false;
                 }
             }
@@ -2856,13 +2888,15 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (Math.Abs(entryPrice - upperChopZone) < ProtectiveLevelRangeCheck)
                 {
-                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(upperChopZone));
+                    numBlockedProtective++;
+                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(upperChopZone) + " | Blocked: " + numBlockedProtective);
                     return false;
                 }
 
                 if (Math.Abs(entryPrice - lowerChopZone) < ProtectiveLevelRangeCheck)
                 {
-                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(lowerChopZone));
+                    numBlockedProtective++;
+                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(lowerChopZone) + " | Blocked: " + numBlockedProtective);
                     return false;
                 }
             }
@@ -2897,7 +2931,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if ((100 - position) > DynamicRangePosition)
                 {
-                    Print(Time[0] + " Dynamic Range Protect: Long not safe at: " + RoundToNearestTick(entryPrice) + ". Position " + (100 - position) + " %");
+                    numBlockedDynamicRange++;
+                    Print(Time[0] + " Dynamic Range Protect: Long not safe at: " + RoundToNearestTick(entryPrice) + ". Position " + (100 - position) + " %" + " | Blocked: " + numBlockedDynamicRange);
                     return false;
                 }
             }
@@ -2905,7 +2940,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (position > DynamicRangePosition)
                 {
-                    Print(Time[0] + " Dynamic Range Protect: Short not safe at: " + RoundToNearestTick(entryPrice) + ". Position: " + position + "%");
+                    Print(Time[0] + " Dynamic Range Protect: Short not safe at: " + RoundToNearestTick(entryPrice) + ". Position: " + position + "%" + " | Blocked: " + numBlockedDynamicRange);
                     return false;
                 }
             }

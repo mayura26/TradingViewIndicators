@@ -754,16 +754,18 @@ namespace NinjaTrader.NinjaScript.Strategies
         // Trading PnL
         private bool EnableTrading = true;
         private double currentPnL;
+        private double currentTrailingDrawdown;
         private List<DateTime> TradingBanDays;
         public double MaxGain;
         public double MaxLoss;
         public double TrailingDrawdownLimit;
         public double BigWinCutoff;
         public double LossCutOff;
+        private double highestDailyPnL = 0;
         private int lastTradeChecked = -1;
         private double currentTradePnL = 0;
         private int partialTradeQty = 0;
-        private double partialTradePnl = 0;
+        private double partialTradePnL = 0;
         private bool newTradeCalculated = false;
         private bool partialTradeCalculated = false;
         private bool newTradeExecuted = false;
@@ -1128,6 +1130,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TrailingDrawdownLimit = 0;
                 dayHigh = double.MinValue;
                 dayLow = double.MaxValue;
+                highestDailyPnL = 0;
 
                 numWins = 0;
                 numLosses = 0;
@@ -1698,11 +1701,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (partialTradeCalculated)
             {
-                Print(Time[0] + " CURRENT TRADE PnL: $" + partialTradePnl +
+                Print(Time[0] + " CURRENT TRADE PnL: $" + partialTradePnL +
                     " | Current PnL: $" + currentPnL +
-                    " | Points : " + RoundToNearestTick(partialTradePnl / partialTradeQty / Bars.Instrument.MasterInstrument.PointValue) +
+                    " | Points : " + RoundToNearestTick(partialTradePnL / partialTradeQty / Bars.Instrument.MasterInstrument.PointValue) +
                     " | Quantity: " + partialTradeQty);
-                partialTradePnl = 0;
+                partialTradePnL = 0;
                 partialTradeQty = 0;
                 partialTradeCalculated = false;
             }
@@ -1773,8 +1776,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             double realtimPnL = Math.Round(currentPnL + Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, Close[0]), 1);
+
+            if (realtimPnL > highestDailyPnL)
+                highestDailyPnL = realtimPnL;
+
+            currentTrailingDrawdown = realtimPnL - highestDailyPnL;
+
             // if in a position and the realized day's PnL plus the position PnL is greater than the loss limit then exit the order
-            if ((((realtimPnL) <= MaxLoss) || (realtimPnL) >= MaxGain)
+            if ((((realtimPnL) <= MaxLoss) || (realtimPnL) >= MaxGain || (EnableTrailingDrawdown && currentTrailingDrawdown < TrailingDrawdownLimit))
                 && EnableTrading
                 && !DisablePNLLimits
             )
@@ -2487,6 +2496,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             string dashBoard =
                 $"PnL ({(RealTimePnlOnly ? "RT" : "ALL")}): $"
                 + realtimPnL.ToString()
+                + " | TDD: $" + currentTrailingDrawdown
                 + " | Trading: "
                 + (EnableTrading || DisablePNLLimits ? "Active" : "Off")
                 + "\nConsec: " + consecutiveLosses + " of " + maxLossConsec;
@@ -2654,7 +2664,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         lastTradeChecked = lastTrade.TradeNumber;
                         currentPnL += execTradePnL;
                         currentTradePnL += execTradePnL;
-                        partialTradePnl += execTradePnL;
+                        partialTradePnL += execTradePnL;
                         partialTradeQty += execQty;
                         newTradeCalculated = true;
                         partialTradeCalculated = true;

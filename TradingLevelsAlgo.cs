@@ -33,7 +33,6 @@ namespace NinjaTrader.NinjaScript.Strategies
     // FEATURE: ATR trigger to start buy trigger again?
     // FEATURE: ATR in last x bars means don't take opposite trade?
     // FEATURE: Cancel order when in chopzone
-    // FEATURE: Improve picking up low/highs as TP levels when its a tigher day
     // REVIEW: Review level calcs with S1/S2/S3 levels
 	// FEATURE: EMA levels to exit trades
     // FEATURE: Design dynamic calc of TP level using ATR or similar
@@ -57,14 +56,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(1, double.MaxValue)]
-        [Display(Name = "MaxLossRatio", Description = "Maximum loss before trading stops", Order = 4, GroupName = "1. Main Parameters")]
-        public double MaxLossRatio
+        [Display(Name = "MaxGainRatio", Description = "Maximum daily gain before trading stops", Order = 3, GroupName = "1. Main Parameters")]
+        public double MaxGainRatio
         { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, double.MaxValue)]
-        [Display(Name = "MaxGainRatio", Description = "Maximum daily gain before trading stops", Order = 5, GroupName = "1. Main Parameters")]
-        public double MaxGainRatio
+        [Display(Name = "MaxLossRatio", Description = "Maximum loss before trading stops", Order = 4, GroupName = "1. Main Parameters")]
+        public double MaxLossRatio
         { get; set; }
 
         [NinjaScriptProperty]
@@ -198,6 +197,23 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0, double.MaxValue)]
         [Display(Name = "TPVWAPOffset", Description = "Offset from VWAP for TP", Order = 74, GroupName = "3. Dynamic Takeprofit")]
         public double TPVWAPOffset
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableTPDayHLPriority", Description = "Enable TP level based on day high/low", Order = 75, GroupName = "3. Dynamic Takeprofit")]
+        public bool EnableTPDayHLPriority
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "TPDayHLSearchRange", Description = "Search range for day high/low TP mode", Order = 76, GroupName = "3. Dynamic Takeprofit")]
+        public double TPDayHLSearchRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "TPDayHLOffset", Description = "Offset from day high/low for TP", Order = 77, GroupName = "3. Dynamic Takeprofit")]
+        public double TPDayHLOffset
         { get; set; }
         #endregion
 
@@ -754,6 +770,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         bool reverseBuyTrade = false;
         private int localBarsToMissTrade = 0;
         private int localBarsToMissPrev = 0;
+        private double currentTradeTP = 0;
         #endregion
 
         #region Constants
@@ -997,6 +1014,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableTPVWAP = true;
                 TPVWAPSearchRange = 10;
                 TPVWAPOffset = 1;
+
+                EnableTPDayHLPriority = true;
+                TPDayHLSearchRange = 30;
+                TPDayHLOffset = 5;
                 #endregion
                 #region Chop Zone Settings
                 EnableChopZone = true;
@@ -1594,6 +1615,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Level Management
+            bool dayHighLevelUsable = false;
+            bool dayLowLevelUsable = false;
             if (CurrentBar > 10 * 16 * 60 / BarsPeriod.Value)
             {
                 #region Level Calculation
@@ -1751,6 +1774,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     AddLevel(dayHigh, "Day High");
                     ProtectiveBuyLevels.Add(dayHigh);
                     BounceHighLevels.Add(dayHigh);
+                    dayHighLevelUsable = true;
                 }
 
                 if (CurrentBar - dayLowBar > dayBarsToUse && dayLow < double.MaxValue)
@@ -1758,6 +1782,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     AddLevel(dayLow, "Day Low");
                     ProtectiveSellLevels.Add(dayLow);
                     BounceLowLevels.Add(dayLow);
+                    dayLowLevelUsable = true;
                 }
                 #endregion
             }
@@ -2218,23 +2243,39 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double originalTP = Position.AveragePrice + tpLevel;
                     if (TPCalcFromInitTrigger)
                     {
-                        Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice + tpLevel));
+                        if (triggerPrice + tpLevel != currentTradeTP)
+                            Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice + tpLevel));
+
                         originalTP = triggerPrice + tpLevel;
                     }
+
                     double TPNewLevel = UpdateTPLevel(originalTP, true);
+                    if (TPNewLevel > dayHigh && Math.Abs(TPNewLevel - dayHigh) <= TPDayHLSearchRange && EnableTPDayHLPriority && dayHighLevelUsable)
+                    {
+                        if (dayHigh - TPOffset != currentTradeTP)
+                            Print(Time[0] + " TP Level too close to Day High: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(dayHigh - TPOffset));
+
+                        TPNewLevel = dayHigh - TPDayHLOffset;
+                    }
+
                     if (TPNewLevel > upperChopZone && Math.Abs(TPNewLevel - upperChopZone) <= TPChopZoneSearchRange && EnableTPChopZone)
                     {
-                        Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(upperChopZone - TPChopZoneOffset));
+                        if (upperChopZone - TPChopZoneOffset != currentTradeTP)
+                            Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(upperChopZone - TPChopZoneOffset));
+
                         TPNewLevel = upperChopZone - TPChopZoneOffset;
                     }
 
                     if (TPNewLevel > vwap[0] && Math.Abs(TPNewLevel - vwap[0]) <= TPVWAPSearchRange && EnableTPVWAP)
                     {
-                        Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(vwap[0] - TPVWAPOffset));
+                        if (vwap[0] - TPVWAPOffset != currentTradeTP)
+                            Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(vwap[0] - TPVWAPOffset));
+
                         TPNewLevel = vwap[0] - TPVWAPOffset;
                     }
 
                     SetProfitTarget("Long", CalculationMode.Price, TPNewLevel);
+                    currentTradeTP = TPNewLevel;
                 }
 
                 if (EnableDynamicTrim)
@@ -2262,23 +2303,38 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double originalTP = Position.AveragePrice - tpLevel;
                     if (TPCalcFromInitTrigger)
                     {
-                        Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice - tpLevel));
+                        if (triggerPrice - tpLevel != currentTradeTP)
+                            Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice - tpLevel));
                         originalTP = triggerPrice - tpLevel;
                     }
+
                     double TPNewLevel = UpdateTPLevel(originalTP, false);
+                    if (TPNewLevel < dayLow && Math.Abs(TPNewLevel - dayLow) <= TPDayHLSearchRange && EnableTPDayHLPriority && dayLowLevelUsable)
+                    {
+                        if (dayLow + TPOffset != currentTradeTP)
+                            Print(Time[0] + " TP Level too close to Day Low: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(dayLow + TPOffset));
+
+                        TPNewLevel = dayLow + TPDayHLOffset;
+                    }
+
                     if (TPNewLevel < lowerChopZone && Math.Abs(TPNewLevel - lowerChopZone) <= TPChopZoneSearchRange && EnableTPChopZone)
                     {
-                        Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + (lowerChopZone + TPChopZoneOffset));
+                        if (lowerChopZone + TPChopZoneOffset != currentTradeTP)
+                            Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + (lowerChopZone + TPChopZoneOffset));
+
                         TPNewLevel = lowerChopZone + TPChopZoneOffset;
                     }
 
                     if (TPNewLevel < vwap[0] && Math.Abs(TPNewLevel - vwap[0]) <= TPVWAPSearchRange && EnableTPVWAP)
                     {
-                        Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + (vwap[0] + TPVWAPOffset));
+                        if (vwap[0] + TPVWAPOffset != currentTradeTP)
+                            Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + (vwap[0] + TPVWAPOffset));
+
                         TPNewLevel = vwap[0] + TPVWAPOffset;
                     }
 
                     SetProfitTarget("Short", CalculationMode.Price, TPNewLevel);
+                    currentTradeTP = TPNewLevel;
                 }
 
                 if (EnableDynamicTrim)
@@ -3342,6 +3398,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 Print(Time[0] + " ******** END OF DAY STATS ********");
                 Print(Time[0] + " TOTAL TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins / numTrades, 3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades, 3) * 100) + "%) ********");
+                Print(Time[0] + " TOTAL PNL: $" + Math.Round(currentPnL, 2) + " | Trailing Drawdown: $" + currentTrailingDrawdown + " ********");
                 Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " ********");
             }
         }

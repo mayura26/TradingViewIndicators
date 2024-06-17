@@ -29,25 +29,21 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
-    // TODO: Create trailing drawdown stop. If we hit a certain drawdown, stop trading [Gain Protection]
- 	// REVIEW: Check both entry level and the confirn line for trades?
-	// FEATURE: Create bounce check on previous candles
-    // TODO: Change to process on tick and have trading on first tick ***** IMPORTANT *****
-	// FEATURE: EMA levels to exit trades
-	// FEATURE: ATR trigger to start buy trigger again?
-    // REVIEW: Review level calcs with S1/S2/S3 levels
+    // OPTIMISE: Bounce protect logic
+    // FEATURE: ATR trigger to start buy trigger again?
+    // FEATURE: ATR in last x bars means don't take opposite trade?
+    // FEATURE: Cancel order when in chopzone
     // FEATURE: Improve picking up low/highs as TP levels when its a tigher day
+    // REVIEW: Review level calcs with S1/S2/S3 levels
+	// FEATURE: EMA levels to exit trades
     // FEATURE: Design dynamic calc of TP level using ATR or similar
     // FEATURE: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
     // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level?
-    // FEATURE: Cancel order when in chopzone
     // FEATURE: Add timeout after two bad trades in succession
-    // FEATURE: Add more levels to protective trades
     // FEATURE: Look at fib levels to improve drawing of levels
-    // FEATURE: Use wicksize to identify chop
     // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
-    // FEATURE: ATR in last x bars means don't take opposite trade?
+    // FEATURE: Change to process on tick and have trading on first tick ***** IMPORTANT *****
     */
     public class TradingLevelsAlgo : Strategy
     {
@@ -290,11 +286,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "ExitOnATRReversal", Description = "Exit on ATR reversal", Order = 51, GroupName = "4a. Protective Trades")]
-        public bool ExitOnATRReversal
-        { get; set; }
-
-        [NinjaScriptProperty]
         [Display(Name = "EnableVWAPBlock", Description = "Enable VWAP block for protective trades", Order = 60, GroupName = "4a. Protective Trades")]
         public bool EnableVWAPBlock
         { get; set; }
@@ -302,6 +293,54 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "EnableChopZoneBlock", Description = "Enable chop zone block for protective trades", Order = 61, GroupName = "4a. Protective Trades")]
         public bool EnableChopZoneBlock
+        { get; set; }
+        #endregion
+
+        #region 4. Bounce Trades
+        [NinjaScriptProperty]
+        [Display(Name = "EnableBounceProtect", Description = "Enable bounce protection", Order = 62, GroupName = "4. Bounce Trades")]
+        public bool EnableBounceProtect
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "BounceLookback", Description = "Lookback bars for bounce protection", Order = 63, GroupName = "4. Bounce Trades")]
+        public int BounceLookback
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100, 100)]
+        [Display(Name = "BounceOffset", Description = "Offset for identifying bounce", Order = 64, GroupName = "4. Bounce Trades")]
+        public double BounceOffset
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, double.MaxValue)]
+        [Display(Name = "BounceCheckRange", Description = "Range to check for bounce", Order = 65, GroupName = "4. Bounce Trades")]
+        public double BounceCheckRange
+        { get; set; }
+        #endregion
+
+        #region 4. ATR Trades
+        [NinjaScriptProperty]
+        [Display(Name = "EnableRestartOnATR", Description = "Enable restart on ATR trigger", Order = 49, GroupName = "4. ATR Trades")]
+        public bool EnableRestartOnATR
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "ExitOnATRReversal", Description = "Exit on ATR reversal", Order = 51, GroupName = "4. ATR Trades")]
+        public bool ExitOnATRReversal
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableATRProtect", Description = "Enable ATR protection", Order = 52, GroupName = "4. ATR Trades")]
+        public bool EnableATRProtect
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ATRProtectLookback", Description = "Lookback bars for ATR protection", Order = 53, GroupName = "4. ATR Trades")]
+        public int ATRProtectLookback
         { get; set; }
         #endregion
 
@@ -779,6 +818,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int numLosses = 0;
         private int numBlockedProtective = 0;
         private int numBlockedDynamicRange = 0;
+        private int numBlockedBounce = 0;
         #endregion
 
         #region Time Specific Trade Variables
@@ -825,6 +865,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private List<double> CalculatedLevels;
         private List<double> ProtectiveBuyLevels;
         private List<double> ProtectiveSellLevels;
+        private List<double> BounceHighLevels;
+        private List<double> BounceLowLevels;
 
         private double orbHigh = double.MinValue;
         private double orbLow = double.MaxValue;
@@ -880,7 +922,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Main Parameters
                 TradeQuantity = 5;
                 MaxLossRatio = 115;
-                MaxGainRatio = 300;
+                MaxGainRatio = 125;
                 LossCutOffRatio = 25;
                 ResetConsecOnTime = true;
                 EnableTradingTS1 = true;
@@ -975,7 +1017,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
                 #region Extra Protective Trades 
                 EnableSuperProtectMode = false;
-                ExitOnATRReversal = false;
                 EnableVWAPBlock = false;
                 EnableChopZoneBlock = false;
                 #endregion
@@ -998,6 +1039,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ExitLevelRange = 3;
                 ExitLevelOffset = 1;
                 #endregion
+                #region Bounce Trades
+                EnableBounceProtect = false;
+                BounceLookback = 2;
+                BounceOffset = 2;
+                BounceCheckRange = 40;
+                #endregion
+                #region ATR Trades
+                EnableRestartOnATR = false;
+                ExitOnATRReversal = false;
+                EnableATRProtect = false;
+                ATRProtectLookback = 3;
+                #endregion
                 #endregion
 
                 #region Banned Trading Days
@@ -1018,7 +1071,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v2.0 ******** ");
+                Print(Time[0] + " ******** TRADING ALGO v2.1 ******** ");
                 #region Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
@@ -1052,6 +1105,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 CalculatedLevels = new List<double>();
                 ProtectiveBuyLevels = new List<double>();
                 ProtectiveSellLevels = new List<double>();
+                BounceHighLevels = new List<double>();
+                BounceLowLevels = new List<double>();
                 ORBStart = DateTime.Parse("09:30", System.Globalization.CultureInfo.InvariantCulture);
                 ORBEnd = DateTime.Parse("10:00", System.Globalization.CultureInfo.InvariantCulture);
 
@@ -1137,6 +1192,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 numTrades = 0;
                 numBlockedProtective = 0;
                 numBlockedDynamicRange = 0;
+                numBlockedBounce = 0;
 
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
@@ -1620,6 +1676,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProtectiveSellLevels.Add(S4); // Bull Reversal
                 #endregion
 
+                #region Bounce Levels Array
+                BounceHighLevels.Clear();
+                BounceHighLevels.Add(vwap[0]);
+                BounceHighLevels.Add(lastWeekHigh);
+                BounceHighLevels.Add(yesterdayHigh);
+                BounceHighLevels.Add(atr618);
+                BounceHighLevels.Add(atr100);
+                BounceHighLevels.Add(atrBull);
+                BounceHighLevels.Add(R6); // Bull Target
+                BounceHighLevels.Add(R4); // Bear Reversal
+
+                BounceLowLevels.Clear();
+                BounceLowLevels.Add(vwap[0]);
+                BounceLowLevels.Add(lastWeekLow);
+                BounceLowLevels.Add(yesterdayLow);
+                BounceLowLevels.Add(atrNeg618);
+                BounceLowLevels.Add(atrNeg100);
+                BounceLowLevels.Add(atrBear);
+                BounceLowLevels.Add(S6); // Bear Target
+                BounceLowLevels.Add(S4); // Bull Reversal
+                #endregion
+
                 #region Dynamic Levels
                 // ORB Levels
                 TimeSpan barTime = Time[0].TimeOfDay;
@@ -1672,12 +1750,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     AddLevel(dayHigh, "Day High");
                     ProtectiveBuyLevels.Add(dayHigh);
+                    BounceHighLevels.Add(dayHigh);
                 }
 
                 if (CurrentBar - dayLowBar > dayBarsToUse && dayLow < double.MaxValue)
                 {
                     AddLevel(dayLow, "Day Low");
                     ProtectiveSellLevels.Add(dayLow);
+                    BounceLowLevels.Add(dayLow);
                 }
                 #endregion
             }
@@ -2323,7 +2403,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             true
                         );
 
-                        if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true) && IsEntryWithinDynamicRange(smoothConfirmMA[0] + buySellBuffer, true))
+                        if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true) && IsEntryWithinDynamicRange(smoothConfirmMA[0] + buySellBuffer, true) && IsEntrySafeBounceProtect(smoothConfirmMA[0] + buySellBuffer, true))
                         {
                             Print(Time[0] + " Long triggered: " + limitLevel);
                             entryOrder = EnterLongLimit(0, true, mainTradeQuantity, limitLevel, "Long");
@@ -2359,7 +2439,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             true
                         );
 
-                        if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true))
+                        if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true) && IsEntrySafeBounceProtect(smoothConfirmMA[0] + buySellBuffer, true))
                         {
                             ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
                             if (entryOrderTrim != null && entryOrderTrim.OrderState != OrderState.Filled)
@@ -2411,7 +2491,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             false
                         );
 
-                        if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false) && IsEntryWithinDynamicRange(smoothConfirmMA[0] - buySellBuffer, false))
+                        if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false) && IsEntryWithinDynamicRange(smoothConfirmMA[0] - buySellBuffer, false) && IsEntrySafeBounceProtect(smoothConfirmMA[0] - buySellBuffer, false))
                         {
                             Print(Time[0] + " Short triggered: " + limitLevel);
                             entryOrderShort = EnterShortLimit(0, true, mainTradeQuantity, limitLevel, "Short");
@@ -2447,7 +2527,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             false
                         );
 
-                        if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false))
+                        if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false) && IsEntrySafeBounceProtect(smoothConfirmMA[0] - buySellBuffer, false))
                         {
                             ChangeOrder(entryOrderShort, entryOrderShort.Quantity, limitLevel, 0);
                             if (entryOrderTrimShort != null && entryOrderTrimShort.OrderState != OrderState.Filled)
@@ -2958,6 +3038,57 @@ namespace NinjaTrader.NinjaScript.Strategies
             return true;
         }
 
+        private bool IsEntrySafeBounceProtect(double entryPrice, bool isBuy)
+        {
+            if (!EnableBounceProtect)
+                return true;
+
+            for (int i = 1; i <= BounceLookback; i++)
+            {
+                if (isBuy && BounceOffHighLevel(entryPrice, i))
+                {
+                    numBlockedBounce++;
+                    Print(Time[0] + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off high level" + " | Blocked: " + numBlockedBounce);
+                    return false;
+                }
+                else if (!isBuy && BounceOffLowLevel(entryPrice, i))
+                {
+                    numBlockedBounce++;
+                    Print(Time[0] + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off low level" + " | Blocked: " + numBlockedBounce);
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private bool BounceOffHighLevel(double entryLevel,int barNumber)
+        {
+            double symbolOffset = 5;
+            foreach (double level in BounceHighLevels)
+            {
+                if (High[barNumber] > level - BounceOffset && Open[barNumber] < level && Close[barNumber] < level && Math.Abs(entryLevel - level) < BounceCheckRange && Close[barNumber] > entryLevel + BounceOffset)
+                {
+                    Draw.TriangleDown(this, "BounceProtect" + CurrentBar, true, barNumber, level + symbolOffset, Brushes.MediumVioletRed);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private bool BounceOffLowLevel(double entryLevel, int barNumber)
+        {
+            double symbolOffset = 5;
+            foreach (double level in BounceLowLevels)
+            {
+                if (Low[barNumber] < level + BounceOffset && Open[barNumber] > level && Close[barNumber] > level && Math.Abs(entryLevel - level) < BounceCheckRange && Close[barNumber] < entryLevel - BounceOffset)
+                {
+                    Draw.TriangleUp(this, "BounceProtect" + CurrentBar, true, barNumber, level - symbolOffset, Brushes.MediumSeaGreen);
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private double GetDynamicEntryOffset(bool buyDir, double deltaBuyVol, double deltaSellVol)
         {
             if (EnableDynamicEntry)
@@ -3045,7 +3176,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void GetTimeSessionVariables()
         {
-
+            TimeSpan endOfDay = new TimeSpan(16, 15, 00);
             TimeSpan barTime = Time[0].TimeOfDay;
             if (barTime >= TS1Start.TimeOfDay && barTime < TS1End.TimeOfDay)
             {
@@ -3064,7 +3195,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     lastTimeSession = 1;
                     if (EnableTradingTS1)
                     {
-                        Print(Time[0] + " ******** TRADING SESSION 1 ******** ");
+                        Print(Time[0] + " ******** TRADING SESSION 1 (Main) ******** ");
                         Draw.VerticalLine(this, "Session1", 0, Brushes.Aquamarine, DashStyleHelper.Dash, 2);
                         if (ResetConsecOnTime)
                         {
@@ -3101,7 +3232,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     lastTimeSession = 2;
                     if (EnableTradingTS2)
                     {
-                        Print(Time[0] + " ******** TRADING SESSION 2 ******** ");
+                        Print(Time[0] + " ******** TRADING SESSION 2 (Market Open) ******** ");
                         Draw.VerticalLine(this, "Session2", 0, Brushes.Aquamarine, DashStyleHelper.Dash, 2);
                         if (ResetConsecOnTime)
                         {
@@ -3193,18 +3324,25 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (EnableTradingTS1 && barTime == TS1End.TimeOfDay)
             {
-                Print(Time[0] + " ******** TRADING SESSION 1 ENDED ********");
+                Print(Time[0] + " ******** TRADING SESSION 1 (Main) ENDED ********");
                 Draw.VerticalLine(this, "Session1End", 0, Brushes.Orange, DashStyleHelper.Dot, 2);
             }
             if (EnableTradingTS2 && barTime == TS2End.TimeOfDay)
             {
-                Print(Time[0] + " ******** TRADING SESSION 2 ENDED ********");
+                Print(Time[0] + " ******** TRADING SESSION 2 (Market Open) ENDED ********");
                 Draw.VerticalLine(this, "Session2End", 0, Brushes.Orange, DashStyleHelper.Dot, 2);
             }
             if (EnableTradingTS3 && barTime == TS3End.TimeOfDay)
             {
                 Print(Time[0] + " ******** TRADING SESSION 3 ENDED ********");
                 Draw.VerticalLine(this, "Session3End", 0, Brushes.Orange, DashStyleHelper.Dot, 2);
+            }
+
+            if (barTime == endOfDay)
+            {
+                Print(Time[0] + " ******** END OF DAY STATS ********");
+                Print(Time[0] + " TOTAL TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins / numTrades, 3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades, 3) * 100) + "%) ********");
+                Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " ********");
             }
         }
         #endregion

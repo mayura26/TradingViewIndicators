@@ -32,12 +32,14 @@ namespace NinjaTrader.NinjaScript.Strategies
     // OPTIMISE: Bounce protect logic
     // FEATURE: ATR trigger to start buy trigger again?
     // FEATURE: ATR in last x bars means don't take opposite trade?
+    // FEATURE: Chase trades when volume diverges in delta.(Look at accel?)
     // FEATURE: Cancel order when in chopzone
     // REVIEW: Review level calcs with S1/S2/S3 levels
 	// FEATURE: EMA levels to exit trades
     // FEATURE: Design dynamic calc of TP level using ATR or similar
     // FEATURE: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
-    // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level?
+    // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level? If last candle is a bounce then we reduce the dynamic entry?
+    // FEATURE: Chase mode, use dynamic range and if we are in the lower element then we chase the trade.
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Look at fib levels to improve drawing of levels
     // FEATURE: Create standalone volume indicator
@@ -1043,7 +1045,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
                 #region Dynamic Entry/Exit
                 EnableDynamicEntry = true;
-                DynamicEntryOffsetTrend = -3;
+                DynamicEntryOffsetTrend = 3;
                 DynamicEntryOffsetPos = 0;
                 DynamicEntryOffsetNeg = -3;
                 #endregion
@@ -1862,7 +1864,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
 
                 numTrades++;
-                Print(Time[0] + " ******** TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins/numTrades,3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades,3) * 100) + "%) ********");
+                Print(Time[0] + " ******** TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins / numTrades, 3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades, 3) * 100) + "%) ********");
 
                 currentTradePnL = 0;
                 newTradeCalculated = false;
@@ -1932,7 +1934,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (midVolPump[0])
                 {
-                    if (deltaBuyVol >= DeltaPosCutOff / 100)
+                    if (deltaBuyVol >= DeltaPosCutOff / 100 && deltaBuyVol > deltaSellVol)
                     {
                         if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
                         {
@@ -1956,7 +1958,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (midVolDump[0])
                 {
-                    if (deltaSellVol >= DeltaPosCutOff / 100)
+                    if (deltaSellVol >= DeltaPosCutOff / 100 && deltaSellVol > deltaBuyVol)
                     {
                         if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
                         {
@@ -1980,7 +1982,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (Close[0] < smoothConfirmMA[0] && buyVolSignal)
                 {
-                    if (deltaBuyVol >= DeltaPosCutOff / 100)
+                    if (deltaBuyVol >= DeltaPosCutOff / 100 && deltaBuyVol > deltaSellVol)
                     {
                         if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
                         {
@@ -2004,7 +2006,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (Close[0] > smoothConfirmMA[0] && sellVolSignal)
                 {
-                    if (deltaSellVol >= DeltaPosCutOff / 100)
+                    if (deltaSellVol >= DeltaPosCutOff / 100 && deltaSellVol > deltaBuyVol)
                     {
                         if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
                         {
@@ -2472,9 +2474,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 this,
                                 "entryLine" + CurrentBar,
                                 true,
-                                0,
+                                1,
                                 limitLevel,
-                                -2,
+                                -1,
                                 limitLevel,
                                 Brushes.Green,
                                 DashStyleHelper.Solid,
@@ -2505,9 +2507,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 this,
                                 "entryLine" + CurrentBar,
                                 true,
-                                0,
+                                1,
                                 limitLevel,
-                                -2,
+                                -1,
                                 limitLevel,
                                 Brushes.Green,
                                 DashStyleHelper.Solid,
@@ -2560,9 +2562,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 this,
                                 "entryLineShort" + CurrentBar,
                                 true,
-                                0,
+                                1,
                                 limitLevel,
-                                -2,
+                                -1,
                                 limitLevel,
                                 Brushes.Red,
                                 DashStyleHelper.Solid,
@@ -2593,9 +2595,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 this,
                                 "entryLineShort" + CurrentBar,
                                 true,
-                                0,
+                                1,
                                 limitLevel,
-                                -2,
+                                -1,
                                 limitLevel,
                                 Brushes.Red,
                                 DashStyleHelper.Solid,
@@ -3117,7 +3119,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             return true;
         }
 
-        private bool BounceOffHighLevel(double entryLevel,int barNumber)
+        private bool BounceOffHighLevel(double entryLevel, int barNumber)
         {
             double symbolOffset = 5;
             foreach (double level in BounceHighLevels)
@@ -3153,9 +3155,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (deltaBuyVol >= DeltaPosCutOff / 100)
                     {
-                        if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
+                        if (deltaSellVol >= -1 * DeltaNegCutOff / 100 && !IsORBSession())
                         {
-                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
+                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Positive");
                             return DynamicEntryOffsetTrend;
                         }
                         else
@@ -3174,10 +3176,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (deltaSellVol >= DeltaPosCutOff / 100)
                     {
-                        if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
+                        if (deltaBuyVol >= -1 * DeltaNegCutOff / 100 && !IsORBSession())
                         {
-                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
+                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Negative");
                             return DynamicEntryOffsetTrend;
+
                         }
                         else
                         {

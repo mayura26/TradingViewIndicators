@@ -4,6 +4,7 @@ using System.CodeDom.Compiler;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Drawing;
+using System.Security.Policy;
 using System.Windows;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -29,21 +30,24 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
-    // OPTIMISE: Bounce protect logic
+    // TODO: Change delta shading to always show if trend/pos
+    // FEATURE: Look at delta difference rather than just pos and neg delta? If greater than 5% difference then same as Trend if sell isn't neg.
+    // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
+    - Create parameter for min diff
+    - Create tickbox for enable MinVolDiffMode [Volume Settings]
     // FEATURE: ATR trigger to start buy trigger again?
     // FEATURE: ATR in last x bars means don't take opposite trade?
-    // FEATURE: Chase trades when volume diverges in delta.(Look at accel?)
+    // FEATURE: Chase trades when volume diverges in delta. Create chassemode and count number of bars in chase. as long as less than max then take HC2 as entry midground as boost.
     // FEATURE: Cancel order when in chopzone
-    // REVIEW: Review level calcs with S1/S2/S3 levels
-	// FEATURE: EMA levels to exit trades
-    // FEATURE: Design dynamic calc of TP level using ATR or similar
     // FEATURE: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
     // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level? If last candle is a bounce then we reduce the dynamic entry?
-    // FEATURE: Chase mode, use dynamic range and if we are in the lower element then we chase the trade.
-    // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Look at fib levels to improve drawing of levels
     // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
+    // REVIEW: Review level calcs with S1/S2/S3 levels
+    // FEATURE: EMA levels to exit trades
+    // FEATURE: Design dynamic calc of TP level using ATR or similar
+    // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Change to process on tick and have trading on first tick ***** IMPORTANT *****
     */
     public class TradingLevelsAlgo : Strategy
@@ -258,6 +262,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(1, 100)]
         [Display(Name = "ChopZoneLookBack", Description = "Look back period for chop zone", Order = 56, GroupName = "4. Chop Zone")]
         public int ChopZoneLookBack
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ChopZoneClearOffset", Description = "Offset from chop zone for clearing zone", Order = 57, GroupName = "4. Chop Zone")]
+        public double ChopZoneClearOffset
         { get; set; }
         #endregion
 
@@ -966,8 +976,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ResetBarsMissedOnShortTS1 = false;
                 #endregion
                 #region Time Session 2
-                TPLevelTS2 = 30;
-                SLLevelTS2 = 16;
+                TPLevelTS2 = 40;
+                SLLevelTS2 = 18;
                 BuySellBufferTS2 = 6;
                 BarsToHoldTradeTS2 = 4;
                 BarsToMissTradeTS2 = 3;
@@ -1029,6 +1039,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ChopZoneTimeFrame = 10;
                 ChopZoneResetTime = 120;
                 ChopZoneLookBack = 3;
+                ChopZoneClearOffset = 5;
                 #endregion
                 #region Protective Trades
                 EnableProtectiveLevelTrades = true;
@@ -1065,7 +1076,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Bounce Trades
                 EnableBounceProtect = false;
                 BounceLookback = 2;
-                BounceOffset = 2;
+                BounceOffset = 1;
                 BounceCheckRange = 40;
                 #endregion
                 #region ATR Trades
@@ -1317,10 +1328,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Close[0] >= lowerChopZone && Close[0] <= upperChopZone && (High[0] <= upperChopZone || Low[0] >= lowerChopZone) && EnableExtendedChopZone)
                 {
                     inChopZone[0] = true;
-                    if (Close[1] < lowerChopZone)
-                        reenterChopZoneBot = true;
-                    if (Close[1] > upperChopZone)
-                        reenterChopZoneTop = true;
                 }
                 else
                 {
@@ -1333,10 +1340,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (timeSinceChopZone > 0)
             {
-                if (Close[0] < lowerChopZone)
+                if (Close[0] < lowerChopZone && (Close[1] < lowerChopZone || Close[0] < lowerChopZone - ChopZoneClearOffset))
                     reenterChopZoneBot = true;
-                if (Close[0] > upperChopZone)
+                if (Close[0] > upperChopZone && (Close[1] > upperChopZone || Close[0] > upperChopZone + ChopZoneClearOffset))
                     reenterChopZoneTop = true;
+
             }
 
             if ((timeSinceChopZone > ChopZoneResetTime) || (reenterChopZoneBot && reenterChopZoneTop))
@@ -1690,6 +1698,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProtectiveBuyLevels.Add(atr100);
                 ProtectiveBuyLevels.Add(R6); // Bull Target
                 ProtectiveBuyLevels.Add(R4); // Bear Reversal
+                if (EnableSuperProtectMode)
+                {
+                    ProtectiveBuyLevels.Add(R3);
+                }
 
                 ProtectiveSellLevels.Clear();
                 ProtectiveSellLevels.Add(vwap[0]);
@@ -1699,6 +1711,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ProtectiveSellLevels.Add(atrNeg100);
                 ProtectiveSellLevels.Add(S6); // Bear Target
                 ProtectiveSellLevels.Add(S4); // Bull Reversal
+                if (EnableSuperProtectMode)
+                {
+                    ProtectiveSellLevels.Add(S3);
+                }
                 #endregion
 
                 #region Bounce Levels Array
@@ -1711,6 +1727,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BounceHighLevels.Add(atrBull);
                 BounceHighLevels.Add(R6); // Bull Target
                 BounceHighLevels.Add(R4); // Bear Reversal
+                if (EnableSuperProtectMode)
+                {
+                    BounceHighLevels.Add(R3);
+                }
 
                 BounceLowLevels.Clear();
                 BounceLowLevels.Add(vwap[0]);
@@ -1721,6 +1741,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BounceLowLevels.Add(atrBear);
                 BounceLowLevels.Add(S6); // Bear Target
                 BounceLowLevels.Add(S4); // Bull Reversal
+                if (EnableSuperProtectMode)
+                {
+                    BounceLowLevels.Add(S3);
+                }
                 #endregion
 
                 #region Dynamic Levels
@@ -1749,9 +1773,21 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else if (barTime > ORBEnd.TimeOfDay)
                 {
                     if (orbHigh > 0)
+                    {
                         AddLevel(orbHigh, "ORB High");
+                        if (EnableSuperProtectMode)
+                        {
+                            ProtectiveBuyLevels.Add(orbHigh);
+                        }
+                    }
                     if (orbLow < double.MaxValue)
+                    {
                         AddLevel(orbLow, "ORB Low");
+                        if (EnableSuperProtectMode)
+                        {
+                            ProtectiveSellLevels.Add(orbLow);
+                        }
+                    }
                 }
 
                 // Day High/Low
@@ -3001,7 +3037,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 foreach (double level in ProtectiveBuyLevels)
                 {
-                    if (entryPrice >= level - ProtectiveLevelRangeCheck && entryPrice <= level + (EnableSuperProtectMode ? ProtectiveLevelRangeCheck : 0))
+                    if (entryPrice >= level - ProtectiveLevelRangeCheck && entryPrice <= level)
                     {
                         numBlockedProtective++;
                         Print(Time[0] + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
@@ -3013,7 +3049,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 foreach (double level in ProtectiveSellLevels)
                 {
-                    if (entryPrice <= level + ProtectiveLevelRangeCheck && entryPrice >= level - (EnableSuperProtectMode ? ProtectiveLevelRangeCheck : 0))
+                    if (entryPrice <= level + ProtectiveLevelRangeCheck && entryPrice >= level)
                     {
                         numBlockedProtective++;
                         Print(Time[0] + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
@@ -3098,21 +3134,22 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private bool IsEntrySafeBounceProtect(double entryPrice, bool isBuy)
         {
-            if (!EnableBounceProtect)
-                return true;
-
             for (int i = 1; i <= BounceLookback; i++)
             {
                 if (isBuy && BounceOffHighLevel(entryPrice, i))
                 {
                     numBlockedBounce++;
-                    Print(Time[0] + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off high level" + " | Blocked: " + numBlockedBounce);
+                    Print(Time[0] + (EnableBounceProtect ? "" : "[NOT ACTIVE]") + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off high level" + " | Blocked: " + numBlockedBounce);
+                    if (!EnableBounceProtect)
+                        return true;
                     return false;
                 }
                 else if (!isBuy && BounceOffLowLevel(entryPrice, i))
                 {
                     numBlockedBounce++;
-                    Print(Time[0] + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off low level" + " | Blocked: " + numBlockedBounce);
+                    Print(Time[0] + (EnableBounceProtect ? "" : "[NOT ACTIVE]") + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off low level" + " | Blocked: " + numBlockedBounce);
+                    if (!EnableBounceProtect)
+                        return true;
                     return false;
                 }
             }

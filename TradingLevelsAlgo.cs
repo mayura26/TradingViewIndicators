@@ -1209,7 +1209,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar < BarsRequiredToTrade || BarsInProgress != 0)
                 return;
 
-            #region Time Session Functions
+            #region Time Session Functions/Initailization
             // Reset PnL at the start of the session
             if (Bars.IsFirstBarOfSession)
             {
@@ -1219,6 +1219,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 TrailingDrawdownLimit = 0;
                 dayHigh = double.MinValue;
                 dayLow = double.MaxValue;
+                orbHigh = 0;
+                orbLow = double.MaxValue;
                 highestDailyPnL = 0;
 
                 numWins = 0;
@@ -1227,6 +1229,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 numBlockedProtective = 0;
                 numBlockedDynamicRange = 0;
                 numBlockedBounce = 0;
+
+                RemoveDrawObject("TargetLevel" + "ORB High");
+                RemoveDrawObject("TargetLevel" + "ORB Low");
+                RemoveDrawObject("Label" + "ORB High");
+                RemoveDrawObject("Label" + "ORB Low");
 
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
@@ -1746,8 +1753,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     BounceLowLevels.Add(S3);
                 }
                 #endregion
-
+                
                 #region Dynamic Levels
+                
                 // ORB Levels
                 TimeSpan barTime = Time[0].TimeOfDay;
                 if (barTime >= ORBStart.TimeOfDay && barTime <= ORBEnd.TimeOfDay)
@@ -1760,15 +1768,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         orbLow = Low[0];
                     }
-                }
-                else if (barTime < ORBStart.TimeOfDay)
-                {
-                    orbHigh = 0;
-                    orbLow = double.MaxValue;
-                    RemoveDrawObject("TargetLevel" + "ORB High");
-                    RemoveDrawObject("TargetLevel" + "ORB Low");
-                    RemoveDrawObject("Label" + "ORB High");
-                    RemoveDrawObject("Label" + "ORB Low");
                 }
                 else if (barTime > ORBEnd.TimeOfDay)
                 {
@@ -1789,7 +1788,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                     }
                 }
-
+                
                 // Day High/Low
                 if (High[0] > dayHigh)
                 {
@@ -1822,6 +1821,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     BounceLowLevels.Add(dayLow);
                     dayLowLevelUsable = true;
                 }
+                
                 #endregion
             }
             #endregion

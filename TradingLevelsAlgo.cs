@@ -1209,7 +1209,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar < BarsRequiredToTrade || BarsInProgress != 0)
                 return;
 
-            #region Time Session Functions/Initailization
+            #region Time Session Functions/Initialisation
             // Reset PnL at the start of the session
             if (Bars.IsFirstBarOfSession)
             {
@@ -1753,10 +1753,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     BounceLowLevels.Add(S3);
                 }
                 #endregion
-                
+
                 #region Dynamic Levels
-                
-                // ORB Levels
+                #region ORB Levels
                 TimeSpan barTime = Time[0].TimeOfDay;
                 if (barTime >= ORBStart.TimeOfDay && barTime <= ORBEnd.TimeOfDay)
                 {
@@ -1788,8 +1787,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                     }
                 }
-                
-                // Day High/Low
+                #endregion
+
+                #region Day High/Low
                 if (High[0] > dayHigh)
                 {
                     dayHigh = High[0];
@@ -1821,7 +1821,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     BounceLowLevels.Add(dayLow);
                     dayLowLevelUsable = true;
                 }
-                
+                #endregion
                 #endregion
             }
             #endregion

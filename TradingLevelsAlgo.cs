@@ -30,13 +30,12 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
-    // TODO: Change delta shading to always show if trend/pos
     // FEATURE: Look at delta difference rather than just pos and neg delta? If greater than 5% difference then same as Trend if sell isn't neg.
     // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
     - Create parameter for min diff
     - Create tickbox for enable MinVolDiffMode [Volume Settings]
-    // FEATURE: ATR trigger to start buy trigger again?
     // FEATURE: ATR in last x bars means don't take opposite trade?
+    // FEATURE: If px comes back through VWAP then we shouldn't consider it a proetctive level
     // FEATURE: Chase trades when volume diverges in delta. Create chassemode and count number of bars in chase. as long as less than max then take HC2 as entry midground as boost.
     // FEATURE: Cancel order when in chopzone
     // FEATURE: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
@@ -848,6 +847,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int numBlockedProtective = 0;
         private int numBlockedDynamicRange = 0;
         private int numBlockedBounce = 0;
+        private int numATRRestart = 0;
         #endregion
 
         #region Time Specific Trade Variables
@@ -871,6 +871,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         public Brush DeltaVolSellShade = Brushes.Salmon;
         public Brush DeltaVolTrendShade = Brushes.SkyBlue;
         public Brush ChopShade = Brushes.Silver;
+        public Brush ChaseShadeTrend = Brushes.Fuchsia;
+        public Brush ChaseShadePos = Brushes.Cyan;
         public int DeltaShadeOpacity = 25;
         #endregion
 
@@ -1191,6 +1193,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 chopShade.Opacity = DeltaShadeOpacity / 100.0; // set the opacity
                 chopShade.Freeze(); // freeze the temp brush
                 ChopShade = chopShade; // assign the temp brush value to ChopShade.
+
+                Brush chaseShadeTrend = ChaseShadeTrend.Clone(); //Copy the brush into a temporary brush
+                chaseShadeTrend.Opacity = DeltaShadeOpacity / 100.0; // set the opacity
+                chaseShadeTrend.Freeze(); // freeze the temp brush
+                ChaseShadeTrend = chaseShadeTrend; // assign the temp brush value to ChaseShadeTrend.
+
+                Brush chaseShadePos = ChaseShadePos.Clone(); //Copy the brush into a temporary brush
+                chaseShadePos.Opacity = DeltaShadeOpacity / 100.0; // set the opacity
+                ChaseShadePos.Freeze();
+                ChaseShadePos = chaseShadePos; // assign the temp brush value to ChaseShadePos.
                 #endregion
 
             }
@@ -1409,7 +1421,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Math.Abs(trendDirection[0]) < chopLimit
                     && deltaMomentum[0] < deltaMomentumChopLimt
                 ) || chopIndexDetect[0] || chopZoneTrade;
-
+            bool protectiveChopZone = !(Math.Abs(trendDirection[0]) < chopLimit && deltaMomentum[0] < deltaMomentumChopLimt)
+                                        && !chopIndexDetect[0]
+                                        && !inChopZone[0];
             volatileMove[0] =
                 Math.Abs(trendDirection[0]) > volatileLimit
                 || deltaMomentum[0] > deltaMomentumVolLimt;
@@ -1937,7 +1951,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
             #endregion
 
-            #region Trading Logic
+            #region Trading Logic/Delta Code
             #region Buy/Sell Triggers
             if (!chopDetect[0])
             {
@@ -1975,21 +1989,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
                         {
                             localBarsToMissTrade = barsToMissTrade;
-                            if (buyVolSignal)
-                                BackBrush = DeltaVolTrendShade;
                         }
                         else
                         {
                             localBarsToMissTrade = BarsToMissPosDelta;
-                            if (buyVolSignal)
-                                BackBrush = DeltaVolBuyShade;
                         }
                     }
                     else
                     {
                         localBarsToMissTrade = BarsToMissNegDelta;
-                        if (buyVolSignal)
-                            BackBrush = DeltaVolNegShade;
                     }
                 }
                 else if (midVolDump[0])
@@ -1999,21 +2007,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
                         {
                             localBarsToMissTrade = barsToMissTrade;
-                            if (sellVolSignal)
-                                BackBrush = DeltaVolTrendShade;
                         }
                         else
                         {
                             localBarsToMissTrade = BarsToMissPosDelta;
-                            if (sellVolSignal)
-                                BackBrush = DeltaVolSellShade;
                         }
                     }
                     else
                     {
                         localBarsToMissTrade = BarsToMissNegDelta;
-                        if (sellVolSignal)
-                            BackBrush = DeltaVolNegShade;
                     }
                 }
                 else if (Close[0] < smoothConfirmMA[0] && buyVolSignal)
@@ -2023,21 +2025,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
                         {
                             localBarsToMissTrade = barsToMissTrade;
-                            if (buyVolSignal)
-                                BackBrush = DeltaVolTrendShade;
                         }
                         else
                         {
                             localBarsToMissTrade = BarsToMissPosDelta;
-                            if (buyVolSignal)
-                                BackBrush = DeltaVolBuyShade;
                         }
                     }
                     else
                     {
                         localBarsToMissTrade = BarsToMissNegDelta;
-                        if (buyVolSignal)
-                            BackBrush = DeltaVolNegShade;
                     }
                 }
                 else if (Close[0] > smoothConfirmMA[0] && sellVolSignal)
@@ -2047,21 +2043,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
                         {
                             localBarsToMissTrade = barsToMissTrade;
-                            if (sellVolSignal)
-                                BackBrush = DeltaVolTrendShade;
                         }
                         else
                         {
                             localBarsToMissTrade = BarsToMissPosDelta;
-                            if (sellVolSignal)
-                                BackBrush = DeltaVolSellShade;
                         }
                     }
                     else
                     {
                         localBarsToMissTrade = BarsToMissNegDelta;
-                        if (sellVolSignal)
-                            BackBrush = DeltaVolNegShade;
                     }
                 }
             }
@@ -2119,6 +2109,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         barsMissed = 0;
                     }
                 }
+
+                if (buyVolSignal && EnableRestartOnATR && buyATRSignal[0] && !buyTrigger)
+                {
+                    numATRRestart++;
+                    buyTrigger = true;
+                    Print(Time[0] + " ATR Restart: Long Trade triggered again | Restarts: " + numATRRestart);
+                }
             }
 
             if (sellTrigger || sellVolSignal)
@@ -2161,6 +2158,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         barsMissed = 0;
                     }
                 }
+
+                if (sellVolSignal && EnableRestartOnATR && sellATRSignal[0] && !sellTrigger)
+                {
+                    numATRRestart++;
+                    Print(Time[0] + " ATR Restart: Short Trade triggered again | Restarts: " + numATRRestart);
+                    sellTrigger = true;
+                }
             }
             #endregion
 
@@ -2170,27 +2174,67 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (localBarsToMissTrade == barsToMissTrade)
                     {
-                        BackBrush = DeltaVolTrendShade;
+                        if (Math.Abs(deltaBuyVol - deltaSellVol) > 0.08)
+                        {
+                            BackBrush = ChaseShadeTrend;
+                        }
+                        else
+                        {
+                            BackBrush = DeltaVolTrendShade;
+                        }
                     }
                     else if (localBarsToMissTrade == BarsToMissPosDelta)
                     {
-                        if (buyVolSignal)
+                        if (Math.Abs(deltaBuyVol - deltaSellVol) > 0.04)
+                        {
+                            BackBrush = ChaseShadePos;
+                        }
+                        else if (buyVolSignal)
+                        {
                             BackBrush = DeltaVolBuyShade;
+                        }
                         else if (sellVolSignal)
+                        {
                             BackBrush = DeltaVolSellShade;
+                        }
                     }
                     else if (localBarsToMissTrade == BarsToMissNegDelta)
                     {
                         BackBrush = DeltaVolNegShade;
                     }
                 }
-                else if (chopDetect[0])
+                else if (chopDetect[0] && !protectiveChopZone)
                 {
                     BackBrush = ChopShade;
                 }
                 else
                 {
-                    BackBrush = null;
+                    if (deltaBuyVol >= DeltaPosCutOff / 100 && deltaBuyVol > deltaSellVol)
+                    {
+                        if (deltaSellVol >= -1 * DeltaNegCutOff / 100)
+                        {
+                            BackBrush = DeltaVolTrendShade;
+                        }
+                        else
+                        {
+                            BackBrush = DeltaVolBuyShade;
+                        }
+                    }
+                    else if (deltaSellVol >= DeltaPosCutOff / 100 && deltaSellVol > deltaBuyVol)
+                    {
+                        if (deltaBuyVol >= -1 * DeltaNegCutOff / 100)
+                        {
+                            BackBrush = DeltaVolTrendShade;
+                        }
+                        else
+                        {
+                            BackBrush = DeltaVolSellShade;
+                        }
+                    }
+                    else
+                    {
+                        BackBrush = null;
+                    }
                 }
             #endregion
 
@@ -3440,6 +3484,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(Time[0] + " TOTAL TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins / numTrades, 3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades, 3) * 100) + "%) ********");
                 Print(Time[0] + " TOTAL PNL: $" + Math.Round(currentPnL, 2) + " | Trailing Drawdown: $" + currentTrailingDrawdown + " ********");
                 Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " ********");
+                Print(Time[0] + " ATR Restarts: " + numATRRestart + " ********");
             }
         }
         #endregion

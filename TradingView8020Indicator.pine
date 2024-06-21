@@ -1,0 +1,58 @@
+//@version=5
+indicator("Horizontal Lines at 80 and 20", overlay=true)
+coreLevels = input("20-80", title="Core Numbers", group="Level Numbers", tooltip="Enter the core numbers separated by a hyphen")
+secondaryLevels = input("33.5-46-66-93-3.5", title="Secondary Numbers", group="Level Numbers", tooltip="Enter the secondary numbers separated by a hyphen")
+labelOffset = input(10, title="Label Offset", group="Level Numbers", tooltip="Enter the offset for the label (TradingView sometimes mvoes this around as you zoom in/out)")
+priceLowerOffset = input(100, title="Price Lower Offset", group="Level Numbers", tooltip="Lower start price for drawing. Must be rounded to 100. You always get the main 100")
+priceUpperOffset = input(100, title="Price Upper Offset", group="Level Numbers", tooltip="Upper start price for drawing levels. Must be rounded to 100. You always get the main 100")
+
+coreColor = input.color(color.fuchsia, title="Main Levels Color", group="Main Level Settings", inline = "core")
+coreLabel = input("[Main]", title="Main Levels Label", group="Main Level Settings", inline = "core", tooltip="Label appended to level. Set to dash to remove number as well")
+coreWidth = input(2, title="    └ Main Levels Width", group="Main Level Settings", inline = "cwidth")
+coreStyle = input.string("solid", title="Main Levels Style", options=["solid", "dotted", "dashed"], group="Main Level Settings")
+
+secondaryColor = input.color(color.aqua, title="Extra Levels Color", group="Extra Level Settings", inline = "secondary")
+secondaryLabel = input("[Extra]", title="Extra Levels Label", group="Extra Level Settings", inline = "secondary", tooltip="Label appended to level. Set to dash to remove number as well")
+secondaryWidth = input(1, title="    └ Extra Levels Width", group="Extra Level Settings", inline = "swidth")
+secondaryStyle = input.string("dotted", title="Extra Levels Style", options=["solid", "dotted", "dashed"], group="Extra Level Settings")
+
+var line [] lineArray = array.new_line()
+var label [] labelArray = array.new_label()
+for line in lineArray
+    line.delete(line)
+for label in labelArray
+    label.delete(label)
+array.clear(lineArray)    
+array.clear(labelArray)
+
+draw_line(_x1, _y1, _x2, _y2, _xloc, _extend, _color, _style, _width) =>
+    dline = line.new(x1=_x1, y1=_y1, x2=_x2, y2=_y2, xloc=_xloc, extend=_extend, color=_color, style=_style, width=_width)
+    array.push(lineArray,dline)
+
+draw_level(level, color, width, label, labeloffset, linestyle) =>
+    if barstate.islast
+        lineStyle = linestyle == "solid" ? line.style_solid : linestyle == "dotted" ? line.style_dotted : line.style_dashed
+        draw_line(bar_index, level, bar_index + labeloffset + 15, level,  xloc.bar_index, extend.left, color, lineStyle, width)
+        plot_label = label.new(bar_index + labeloffset + 10, level)
+        label.set_text(plot_label, label)
+        label.set_style(plot_label, label.style_none)
+        label.set_textcolor(plot_label, color)
+        label.set_textalign(plot_label, text.align_right)
+        array.push(labelArray, plot_label)
+
+startPrice = math.round(close/100,0)*100 - priceLowerOffset
+endPrice = startPrice + priceUpperOffset
+
+coreNumbers = str.split(coreLevels, "-")
+secondaryNumbers = str.split(secondaryLevels, "-")
+
+for coreNum in coreNumbers
+    for price = startPrice to endPrice by 100
+        log.info(str.tostring(price))
+        labelText = coreLabel == "-" ? "" : coreNum + coreLabel
+        draw_level(str.tonumber(coreNum) + price, coreColor, 1, labelText, labelOffset, coreStyle)
+
+for secondaryNum in secondaryNumbers
+    for price = startPrice to endPrice by 100
+        labelText = secondaryLabel == "-" ? "" : secondaryNum + secondaryLabel
+        draw_level(str.tonumber(secondaryNum) + price, secondaryColor, 1, labelText, labelOffset, secondaryStyle)

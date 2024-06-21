@@ -30,6 +30,8 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
+    // FEATURE: Use 8020 numbers for TP and entry levels.
+    // TODO: Reoptimse delta volume settings
     // FEATURE: Look at delta difference rather than just pos and neg delta? If greater than 5% difference then same as Trend if sell isn't neg.
     // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
     - Create parameter for min diff
@@ -947,7 +949,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RealTimePnlOnly = false;
                 DisableTradingTimes = false;
                 DisablePNLLimits = false;
-                EnableBannedDays = false;
+                EnableBannedDays = true;
                 EnableNewFeatures = false;
                 #endregion
                 #region Main Parameters
@@ -1007,8 +1009,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableDynamicSettings = true;
                 BarsToMissNegDelta = 2;
                 BarsToMissPosDelta = 3;
-                DeltaPosCutOff = 2.5;
-                DeltaNegCutOff = 1.0;
+                DeltaPosCutOff = 3;
+                DeltaNegCutOff = -1.5;
                 #endregion
                 #region Dyanmic SL/TP Settings
                 EnableDynamicSL = true;
@@ -1082,7 +1084,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BounceCheckRange = 40;
                 #endregion
                 #region ATR Trades
-                EnableRestartOnATR = false;
+                EnableRestartOnATR = true;
                 ExitOnATRReversal = false;
                 EnableATRProtect = false;
                 ATRProtectLookback = 3;
@@ -1241,6 +1243,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 numBlockedProtective = 0;
                 numBlockedDynamicRange = 0;
                 numBlockedBounce = 0;
+                numATRRestart = 0;
 
                 RemoveDrawObject("TargetLevel" + "ORB High");
                 RemoveDrawObject("TargetLevel" + "ORB Low");
@@ -3134,9 +3137,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private bool IsEntryWithinDynamicRange(double entryPrice, bool isBuy)
         {
-            if (!EnableDynamicRangeProtect)
-                return true;
-
             double lowestLow = double.MaxValue;
             double highestHigh = double.MinValue;
 
@@ -3160,7 +3160,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if ((100 - position) > DynamicRangePosition)
                 {
                     numBlockedDynamicRange++;
-                    Print(Time[0] + " Dynamic Range Protect: Long not safe at: " + RoundToNearestTick(entryPrice) + ". Position " + (100 - position) + " %" + " | Blocked: " + numBlockedDynamicRange);
+                    Print(Time[0] + (EnableDynamicRangeProtect ? "" : " [NOT ACTIVE]") + " Dynamic Range Protect: Long not safe at: " + RoundToNearestTick(entryPrice) + ". Position " + (100 - position) + " %" + " | Blocked: " + numBlockedDynamicRange);
+                    if (!EnableDynamicRangeProtect)
+                        return true;
                     return false;
                 }
             }
@@ -3168,7 +3170,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (position > DynamicRangePosition)
                 {
-                    Print(Time[0] + " Dynamic Range Protect: Short not safe at: " + RoundToNearestTick(entryPrice) + ". Position: " + position + "%" + " | Blocked: " + numBlockedDynamicRange);
+                    numBlockedDynamicRange++;
+                    Print(Time[0] + (EnableDynamicRangeProtect ? "" : " [NOT ACTIVE]") + " Dynamic Range Protect: Short not safe at: " + RoundToNearestTick(entryPrice) + ". Position: " + position + "%" + " | Blocked: " + numBlockedDynamicRange);
+                    if (!EnableDynamicRangeProtect)
+                        return true;
                     return false;
                 }
             }
@@ -3183,7 +3188,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (isBuy && BounceOffHighLevel(entryPrice, i))
                 {
                     numBlockedBounce++;
-                    Print(Time[0] + (EnableBounceProtect ? "" : "[NOT ACTIVE]") + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off high level" + " | Blocked: " + numBlockedBounce);
+                    Print(Time[0] + (EnableBounceProtect ? "" : " [NOT ACTIVE]") + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off high level" + " | Blocked: " + numBlockedBounce);
                     if (!EnableBounceProtect)
                         return true;
                     return false;
@@ -3191,7 +3196,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else if (!isBuy && BounceOffLowLevel(entryPrice, i))
                 {
                     numBlockedBounce++;
-                    Print(Time[0] + (EnableBounceProtect ? "" : "[NOT ACTIVE]") + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off low level" + " | Blocked: " + numBlockedBounce);
+                    Print(Time[0] + (EnableBounceProtect ? "" : " [NOT ACTIVE]") + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off low level" + " | Blocked: " + numBlockedBounce);
                     if (!EnableBounceProtect)
                         return true;
                     return false;
@@ -3238,7 +3243,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (deltaSellVol >= -1 * DeltaNegCutOff / 100 && !IsORBSession())
                         {
-                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Positive");
+                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
                             return DynamicEntryOffsetTrend;
                         }
                         else
@@ -3259,7 +3264,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (deltaBuyVol >= -1 * DeltaNegCutOff / 100 && !IsORBSession())
                         {
-                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Negative");
+                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
                             return DynamicEntryOffsetTrend;
 
                         }

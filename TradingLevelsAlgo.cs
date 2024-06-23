@@ -29,27 +29,28 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    /* TODO LIST
-    // FEATURE: Use 8020 numbers for TP and entry levels.
-    // TODO: Reoptimse delta volume settings
-    // FEATURE: Look at delta difference rather than just pos and neg delta? If greater than 5% difference then same as Trend if sell isn't neg.
+    /* TODO LIST    
+    // FEATURE: ATR in last x bars means don't take opposite trade?
+    // FEATURE: Create standalone volume indicator
+    // FEATURE: Look at delta difference rather than just pos and neg delta? If greater than 5% difference then same as Trend if sell isn't neg. if dif >5% then pos if it is neg
     // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
     - Create parameter for min diff
     - Create tickbox for enable MinVolDiffMode [Volume Settings]
-    // FEATURE: ATR in last x bars means don't take opposite trade?
+	// FEATURE: Look at  parabolic stop and reverse (PSAR)  and supertrend as trailing stop
     // FEATURE: If px comes back through VWAP then we shouldn't consider it a proetctive level
-    // FEATURE: Chase trades when volume diverges in delta. Create chassemode and count number of bars in chase. as long as less than max then take HC2 as entry midground as boost.
+    // FEATURE: Chase trades when volume diverges in delta. Create chassemode and count number of bars in chase. as long as less than max then take HC2 as entry midground as boost. (2024-06-13 10:12:00 AM Short triggered: 19629)
     // FEATURE: Cancel order when in chopzone
+    // FEATURE: POwer hour protect (don't trade in first and last 30 mins of the day if its a Monday or a Friday)
     // FEATURE: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
     // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level? If last candle is a bounce then we reduce the dynamic entry?
-    // FEATURE: Look at fib levels to improve drawing of levels
-    // FEATURE: Create standalone volume indicator
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
     // REVIEW: Review level calcs with S1/S2/S3 levels
+    // TODO: ATR Exit to be base on trade being held for x bars
     // FEATURE: EMA levels to exit trades
     // FEATURE: Design dynamic calc of TP level using ATR or similar
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Change to process on tick and have trading on first tick ***** IMPORTANT *****
+    // FEATURE: Look at fib levels to improve drawing of levels
     */
     public class TradingLevelsAlgo : Strategy
     {
@@ -221,6 +222,48 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0, double.MaxValue)]
         [Display(Name = "TPDayHLOffset", Description = "Offset from day high/low for TP", Order = 77, GroupName = "3. Dynamic Takeprofit")]
         public double TPDayHLOffset
+        { get; set; }
+        #endregion
+
+        #region 3. Liquidity Levels 
+        [NinjaScriptProperty]
+        [Display(Name = "EnableLiquidityFills", Description = "Enable liquidity level fills", Order = 60, GroupName = "3. Liquidity Levels")]
+        public bool EnableLiquidityFills
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "LiquidityFillSearchRange", Description = "Search range for liquidity fills", Order = 61, GroupName = "3. Liquidity Levels")]
+        public double LiquidityFillSearchRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableLiquidityTP", Description = "Enable liquidity level TP", Order = 62, GroupName = "3. Liquidity Levels")]
+        public bool EnableLiquidityTP
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "LiquidityTPUpperRange", Description = "Upper range for liquidity TP", Order = 63, GroupName = "3. Liquidity Levels")]
+        public double LiquidityTPUpperRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "LiquidityTPLowerRange", Description = "Lower range for liquidity TP", Order = 64, GroupName = "3. Liquidity Levels")]
+        public double LiquidityTPLowerRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "LiquidityTrimRange", Description = "Trim range for liquidity TP", Order = 65, GroupName = "3. Liquidity Levels")]
+        public double LiquidityTrimRange
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, double.MaxValue)]
+        [Display(Name = "LiquidityTPOffset", Description = "Offset from liquidity level for TP", Order = 66, GroupName = "3. Liquidity Levels")]
+        public double LiquidityTPOffset
         { get; set; }
         #endregion
 
@@ -784,6 +827,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int localBarsToMissTrade = 0;
         private int localBarsToMissPrev = 0;
         private double currentTradeTP = 0;
+        private double limitLevelPrev = 0;
         #endregion
 
         #region Constants
@@ -841,6 +885,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private string tradeExecuteType = "";
         private double tradeExecPrice = 0;
         private double oldDynamicTP = 0;
+        private double oldLiquidityTP = 0;
+        private double oldTrimTP = 0;
+        private double oldLiquidityTrim = 0;
         private double oldDynamicSL = 0;
 
         private int numTrades = 0;
@@ -850,6 +897,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int numBlockedDynamicRange = 0;
         private int numBlockedBounce = 0;
         private int numATRRestart = 0;
+        private int numATRProtect = 0;
         #endregion
 
         #region Time Specific Trade Variables
@@ -900,6 +948,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private List<double> ProtectiveSellLevels;
         private List<double> BounceHighLevels;
         private List<double> BounceLowLevels;
+        private List<double> LiquidityLevels;
 
         private double orbHigh = double.MinValue;
         private double orbLow = double.MaxValue;
@@ -1048,7 +1097,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Protective Trades
                 EnableProtectiveLevelTrades = true;
                 ProtectiveLevelRangeCheck = 12;
-                EnableDynamicRangeProtect = true;
+                EnableDynamicRangeProtect = false;
                 DynamicRangeLookback = 4;
                 DynamicRangePosition = 75;
                 DynamicRangeMinRange = 25;
@@ -1078,7 +1127,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ExitLevelOffset = 1;
                 #endregion
                 #region Bounce Trades
-                EnableBounceProtect = false;
+                EnableBounceProtect = true;
                 BounceLookback = 2;
                 BounceOffset = 1;
                 BounceCheckRange = 40;
@@ -1089,11 +1138,21 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableATRProtect = false;
                 ATRProtectLookback = 3;
                 #endregion
+                #region Liquidity Levels
+                EnableLiquidityFills = true;
+                LiquidityFillSearchRange = 3.5;
+                EnableLiquidityTP = true;
+                LiquidityTPUpperRange = 3.5;
+                LiquidityTPLowerRange = 9;
+                LiquidityTrimRange = 2;
+                LiquidityTPOffset = 1;
+                #endregion
                 #endregion
 
                 #region Banned Trading Days
                 TradingBanDays = new List<DateTime>
                 {
+                    DateTime.Parse("2024-06-19", System.Globalization.CultureInfo.InvariantCulture), // Halfday
                     DateTime.Parse("2024-06-12", System.Globalization.CultureInfo.InvariantCulture), // FOMC + CPI
                     DateTime.Parse("2024-05-24", System.Globalization.CultureInfo.InvariantCulture), // Friday before long weekend
                     DateTime.Parse("2024-05-22", System.Globalization.CultureInfo.InvariantCulture), // Tight range from OPEX, identified in the morning with NVDA on the bell
@@ -1109,7 +1168,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (State == State.DataLoaded)
             {
                 ClearOutputWindow();
-                Print(Time[0] + " ******** TRADING ALGO v2.1 ******** ");
+                Print(Time[0] + " ******** TRADING ALGO v2.2 ******** ");
                 #region Initialise all variables
                 momentum = new Series<double>(this);
                 chopIndexDetect = new Series<bool>(this);
@@ -1153,6 +1212,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 vwap = VWAP();
                 currentDayOHL = CurrentDayOHL();
                 atrHMA = HMA(atrTR, numATR);
+
+                // Liquidity Levels
+                LiquidityLevels = new List<double>
+                {
+                    20,
+                    33.5,
+                    46,
+                    66,
+                    80,
+                    93,
+                    3.5
+                };
 
                 // Add our EMAs to the chart for visualization
                 AddChartIndicator(smoothConfirmMA);
@@ -1244,6 +1315,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 numBlockedDynamicRange = 0;
                 numBlockedBounce = 0;
                 numATRRestart = 0;
+                numATRProtect = 0;
 
                 RemoveDrawObject("TargetLevel" + "ORB High");
                 RemoveDrawObject("TargetLevel" + "ORB Low");
@@ -1455,23 +1527,21 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (buyATRSignal[0])
             {
-                if (validTriggerPeriod)
-                    Print(Time[0] + " Buy ATR Signal");
-                if (ExitOnATRReversal && Position.MarketPosition == MarketPosition.Short && Close[0] <= Position.AveragePrice - 5)
+                if (Position.MarketPosition == MarketPosition.Short && Close[0] <= Position.AveragePrice - 5)
                 {
-                    Print(Time[0] + " Protective Trades: Close Sell Trade due to ATR Signal");
-                    closeShortOnATRReversal = true;
+                    Print(Time[0] + (ExitOnATRReversal ? "" : " [NOT ACTIVE]") + " [Protective Trades]: Close Sell Trade due to ATR Signal");
+                    if (ExitOnATRReversal)
+                        closeShortOnATRReversal = true;
                 }
                 Draw.TriangleUp(this, "BuyATRSignal" + CurrentBar, true, 0, Low[0] - TickSize * 110, Brushes.Navy);
             }
             else if (sellATRSignal[0])
             {
-                if (validTriggerPeriod)
-                    Print(Time[0] + " Sell ATR Signal");
                 if (ExitOnATRReversal && Position.MarketPosition == MarketPosition.Long && Close[0] >= Position.AveragePrice + 5)
                 {
-                    Print(Time[0] + " Protective Trades: Close Buy Trade due to ATR Signal");
-                    closeLongOnATRReversal = true;
+                    Print(Time[0] + (ExitOnATRReversal ? "" : " [NOT ACTIVE]") + " [Protective Trades]: Close Buy Trade due to ATR Signal");
+                    if (ExitOnATRReversal)
+                        closeLongOnATRReversal = true;
                 }
                 Draw.TriangleDown(this, "SellATRSignal" + CurrentBar, true, 0, High[0] + TickSize * 110, Brushes.Gold);
             }
@@ -2117,7 +2187,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     numATRRestart++;
                     buyTrigger = true;
-                    Print(Time[0] + " ATR Restart: Long Trade triggered again | Restarts: " + numATRRestart);
+                    Print(Time[0] + " [ATR Restart]: Long Trade triggered again | Restarts: " + numATRRestart);
                 }
             }
 
@@ -2165,7 +2235,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (sellVolSignal && EnableRestartOnATR && sellATRSignal[0] && !sellTrigger)
                 {
                     numATRRestart++;
-                    Print(Time[0] + " ATR Restart: Short Trade triggered again | Restarts: " + numATRRestart);
+                    Print(Time[0] + " [ATR Restart]: Short Trade triggered again | Restarts: " + numATRRestart);
                     sellTrigger = true;
                 }
             }
@@ -2316,7 +2386,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (oldDynamicSL != Position.AveragePrice - SLNewLevel * TickSize)
                         {
-                            Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice - SLNewLevel * TickSize));
+                            Print(Time[0] + " [Dynamic SL]: SL Level Updated to: " + (Position.AveragePrice - SLNewLevel * TickSize));
                             SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
                             SetStopLoss("LongTrim", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
                             oldDynamicSL = Position.AveragePrice - SLNewLevel * TickSize;
@@ -2329,16 +2399,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (TPCalcFromInitTrigger)
                     {
                         if (triggerPrice + tpLevel != currentTradeTP)
-                            Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice + tpLevel));
+                            Print(Time[0] + " [Dynamic Exit - Init Calc]: TP Level Updated from: " + originalTP + " to: " + (triggerPrice + tpLevel));
 
                         originalTP = triggerPrice + tpLevel;
                     }
 
                     double TPNewLevel = UpdateTPLevel(originalTP, true);
+                    TPNewLevel = GetLiquidityTPLevel(TPNewLevel, true);
                     if (TPNewLevel > dayHigh && Math.Abs(TPNewLevel - dayHigh) <= TPDayHLSearchRange && EnableTPDayHLPriority && dayHighLevelUsable)
                     {
                         if (dayHigh - TPOffset != currentTradeTP)
-                            Print(Time[0] + " TP Level too close to Day High: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(dayHigh - TPOffset));
+                            Print(Time[0] + " [Dynamic Exit - Day High]: TP Level too close to Day High: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(dayHigh - TPOffset));
 
                         TPNewLevel = dayHigh - TPDayHLOffset;
                     }
@@ -2346,7 +2417,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (TPNewLevel > upperChopZone && Math.Abs(TPNewLevel - upperChopZone) <= TPChopZoneSearchRange && EnableTPChopZone)
                     {
                         if (upperChopZone - TPChopZoneOffset != currentTradeTP)
-                            Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(upperChopZone - TPChopZoneOffset));
+                            Print(Time[0] + " [Dynamic Exit - Chop Zone]: TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(upperChopZone - TPChopZoneOffset));
 
                         TPNewLevel = upperChopZone - TPChopZoneOffset;
                     }
@@ -2354,7 +2425,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (TPNewLevel > vwap[0] && Math.Abs(TPNewLevel - vwap[0]) <= TPVWAPSearchRange && EnableTPVWAP)
                     {
                         if (vwap[0] - TPVWAPOffset != currentTradeTP)
-                            Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(vwap[0] - TPVWAPOffset));
+                            Print(Time[0] + " [Dynamic Exit - VWAP]: TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(vwap[0] - TPVWAPOffset));
 
                         TPNewLevel = vwap[0] - TPVWAPOffset;
                     }
@@ -2366,6 +2437,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicTrim)
                 {
                     double trimLevel = UpdateTrimLevel(Position.AveragePrice + ExitTPLevel, true);
+                    trimLevel = GetLiquidityTrimLevel(trimLevel, true);
                     SetProfitTarget("LongTrim", CalculationMode.Price, trimLevel);
                 }
             }
@@ -2376,7 +2448,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (oldDynamicSL != Position.AveragePrice + SLNewLevel * TickSize)
                         {
-                            Print(Time[0] + " Dynamic SL: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
+                            Print(Time[0] + " [Dynamic SL]: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
                             SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
                             SetStopLoss("ShortTrim", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
                             oldDynamicSL = Position.AveragePrice + SLNewLevel * TickSize;
@@ -2389,15 +2461,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (TPCalcFromInitTrigger)
                     {
                         if (triggerPrice - tpLevel != currentTradeTP)
-                            Print(Time[0] + " Dynamic Exit: TP Level Updated from: " + originalTP + " to: " + (triggerPrice - tpLevel));
+                            Print(Time[0] + " [Dynamic Exit - TP Init]: TP Level Updated from: " + originalTP + " to: " + (triggerPrice - tpLevel));
                         originalTP = triggerPrice - tpLevel;
                     }
 
                     double TPNewLevel = UpdateTPLevel(originalTP, false);
+                    TPNewLevel = GetLiquidityTPLevel(TPNewLevel, false);
                     if (TPNewLevel < dayLow && Math.Abs(TPNewLevel - dayLow) <= TPDayHLSearchRange && EnableTPDayHLPriority && dayLowLevelUsable)
                     {
                         if (dayLow + TPOffset != currentTradeTP)
-                            Print(Time[0] + " TP Level too close to Day Low: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(dayLow + TPOffset));
+                            Print(Time[0] + " [Dynamic Exit - Day Low]: TP Level too close to Day Low: " + TPNewLevel + " - Adjusting to: " + RoundToNearestTick(dayLow + TPOffset));
 
                         TPNewLevel = dayLow + TPDayHLOffset;
                     }
@@ -2405,7 +2478,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (TPNewLevel < lowerChopZone && Math.Abs(TPNewLevel - lowerChopZone) <= TPChopZoneSearchRange && EnableTPChopZone)
                     {
                         if (lowerChopZone + TPChopZoneOffset != currentTradeTP)
-                            Print(Time[0] + " TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + (lowerChopZone + TPChopZoneOffset));
+                            Print(Time[0] + " [Dynamic Exit - Chop Zone]: TP Level too close to Chop Zone: " + TPNewLevel + " - Adjusting to: " + (lowerChopZone + TPChopZoneOffset));
 
                         TPNewLevel = lowerChopZone + TPChopZoneOffset;
                     }
@@ -2413,7 +2486,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (TPNewLevel < vwap[0] && Math.Abs(TPNewLevel - vwap[0]) <= TPVWAPSearchRange && EnableTPVWAP)
                     {
                         if (vwap[0] + TPVWAPOffset != currentTradeTP)
-                            Print(Time[0] + " TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + (vwap[0] + TPVWAPOffset));
+                            Print(Time[0] + " [Dynamic Exit - VWAP]: TP Level too close to VWAP: " + TPNewLevel + " - Adjusting to: " + (vwap[0] + TPVWAPOffset));
 
                         TPNewLevel = vwap[0] + TPVWAPOffset;
                     }
@@ -2425,6 +2498,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (EnableDynamicTrim)
                 {
                     double trimLevel = UpdateTrimLevel(Position.AveragePrice - ExitTPLevel, false);
+                    trimLevel = GetLiquidityTrimLevel(trimLevel, false);
                     SetProfitTarget("ShortTrim", CalculationMode.Price, trimLevel);
                 }
             }
@@ -2544,8 +2618,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                             true
                         );
 
-                        if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true) && IsEntryWithinDynamicRange(smoothConfirmMA[0] + buySellBuffer, true) && IsEntrySafeBounceProtect(smoothConfirmMA[0] + buySellBuffer, true))
+                        if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true)
+                            && IsEntryWithinDynamicRange(smoothConfirmMA[0] + buySellBuffer, true)
+                            && IsEntrySafeBounceProtect(smoothConfirmMA[0] + buySellBuffer, true)
+                            && IsEntrySafeATRProtect(true))
                         {
+                            limitLevel = GetLiquidityFillLevel(limitLevel);
                             Print(Time[0] + " Long triggered: " + limitLevel);
                             entryOrder = EnterLongLimit(0, true, mainTradeQuantity, limitLevel, "Long");
                             if (EnableDynamicTrim)
@@ -2553,6 +2631,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             entryBar = CurrentBar; // Remember the bar at which we entered
                             entryPrice = limitLevel; // Assuming immediate execution at the close price
                             triggerPrice = limitLevel;
+                            limitLevelPrev = limitLevel;
                             Draw.Line(
                                 this,
                                 "entryLine" + CurrentBar,
@@ -2582,6 +2661,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                         if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true) && IsEntrySafeBounceProtect(smoothConfirmMA[0] + buySellBuffer, true))
                         {
+                            limitLevel = GetLiquidityFillLevel(limitLevel);
                             ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
                             if (entryOrderTrim != null && entryOrderTrim.OrderState != OrderState.Filled)
                                 ChangeOrder(entryOrderTrim, entryOrderTrim.Quantity, limitLevel, 0);
@@ -2598,17 +2678,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 DashStyleHelper.Solid,
                                 2
                             );
-                            Print(
-                                Time[0]
-                                    + " Long updated: "
-                                    + limitLevel
-                                    + " Bars Held: "
-                                    + (CurrentBar - entryBar).ToString()
-                            );
+                            Print(Time[0] + " Long updated: " + limitLevel + " | Bars Held: " + (CurrentBar - entryBar).ToString() + " | Previous Low: " + Low[0] + " (" + (Low[0] - limitLevelPrev) + ") | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%");
+                            limitLevelPrev = limitLevel;
                         }
                         else
                         {
-                            Print(Time[0] + " Long Order Cancelled due to protective trades at: " + Close[0]);
+                            Print(Time[0] + " [Protective Trades]: Long Order Cancelled due to protective trades at: " + Close[0]);
                             CancelOrder(entryOrder);
                             entryOrder = null; // Reset the entry order variable
                             if (entryOrderTrim != null)
@@ -2632,8 +2707,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                             false
                         );
 
-                        if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false) && IsEntryWithinDynamicRange(smoothConfirmMA[0] - buySellBuffer, false) && IsEntrySafeBounceProtect(smoothConfirmMA[0] - buySellBuffer, false))
+                        if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false)
+                            && IsEntryWithinDynamicRange(smoothConfirmMA[0] - buySellBuffer, false)
+                            && IsEntrySafeBounceProtect(smoothConfirmMA[0] - buySellBuffer, false)
+                            && IsEntrySafeATRProtect(false))
                         {
+                            limitLevel = GetLiquidityFillLevel(limitLevel);
                             Print(Time[0] + " Short triggered: " + limitLevel);
                             entryOrderShort = EnterShortLimit(0, true, mainTradeQuantity, limitLevel, "Short");
                             if (EnableDynamicTrim)
@@ -2641,6 +2720,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             entryBarShort = CurrentBar; // Remember the bar at which we entered
                             entryPriceShort = limitLevel; // Assuming immediate execution at the close price
                             triggerPrice = limitLevel;
+                            limitLevelPrev = limitLevel;
                             Draw.Line(
                                 this,
                                 "entryLineShort" + CurrentBar,
@@ -2670,6 +2750,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                         if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false) && IsEntrySafeBounceProtect(smoothConfirmMA[0] - buySellBuffer, false))
                         {
+                            limitLevel = GetLiquidityFillLevel(limitLevel);
                             ChangeOrder(entryOrderShort, entryOrderShort.Quantity, limitLevel, 0);
                             if (entryOrderTrimShort != null && entryOrderTrimShort.OrderState != OrderState.Filled)
                                 ChangeOrder(entryOrderTrimShort, entryOrderTrimShort.Quantity, limitLevel, 0);
@@ -2686,17 +2767,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 DashStyleHelper.Solid,
                                 2
                             );
-                            Print(
-                                Time[0]
-                                    + " Short updated: "
-                                    + limitLevel
-                                    + " Bars Held: "
-                                    + (CurrentBar - entryBarShort).ToString()
-                            );
+                            Print(Time[0] + " Short updated: " + limitLevel + " | Bars Held: " + (CurrentBar - entryBarShort).ToString() + " | Previous High: " + High[0] + " (" + (limitLevelPrev - High[0]) + ") | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%");
+                            limitLevelPrev = limitLevel;
                         }
                         else
                         {
-                            Print(Time[0] + " Short Order Cancelled due to protective trades at: " + Close[0]);
+                            Print(Time[0] + " [Protective Trades]: Short Order Cancelled due to protective trades at: " + Close[0]);
                             CancelOrder(entryOrderShort);
                             entryOrderShort = null; // Reset the entry order variable
                             if (entryOrderTrimShort != null)
@@ -2914,6 +2990,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         #endregion
 
         #region Helper Functions
+        #region Levels Mgmt/Updates
         private double UpdateTPLevel(double targetTP, bool isBuy)
         {
             // Sort the list of target prices
@@ -2979,7 +3056,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 if (oldDynamicTP != newTPLevel)
                 {
-                    Print(Time[0] + " Dynamic TP: TP Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
+                    Print(Time[0] + " [Dynamic TP]: TP Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
                     oldDynamicTP = newTPLevel;
                 }
                 return newTPLevel;
@@ -3053,7 +3130,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     newTPLevel = RoundToNearestTick(closestLevel.Value + ExitLevelOffset);
                 }
-                Print(Time[0] + " Dynamic Trim: Trim Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
+                if (oldTrimTP != newTPLevel)
+                {
+                    Print(Time[0] + " [Dynamic Trim]: Trim Level Updated to: " + newTPLevel + " from previous TP of: " + targetTP);
+                    oldTrimTP = newTPLevel;
+                }
                 return newTPLevel;
             }
             else
@@ -3074,7 +3155,180 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Draw text on the rightmost side of the horizontal line
             Draw.Text(this, "Label" + levelName, levelName, -10, level + textOffset, Brushes.Aqua);
         }
+        #endregion
 
+        #region Liquidity Levels
+        private double GetLiquidityFillLevel(double entryPrice)
+        {
+            if (!EnableLiquidityFills)
+                return entryPrice;
+
+            // Extract the last two digits of the entry price
+            double entryPriceEnd = entryPrice % 100;
+
+            // Initialize the closest level and the smallest difference
+            double closestLevel = entryPriceEnd;
+            double minDifference = double.MaxValue;
+
+            foreach (double level in LiquidityLevels)
+            {
+                // Calculate the difference between the entry price ending and the liquidity level
+                double difference = Math.Abs(entryPriceEnd - level);
+
+                // Check if the liquidity level is within the search range
+                if (difference <= LiquidityFillSearchRange)
+                {
+                    // Update the closest level if the current difference is smaller
+                    if (difference < minDifference)
+                    {
+                        minDifference = difference;
+                        closestLevel = level;
+                    }
+                }
+            }
+
+            // If a closest level was found within the search range, update the entry price
+            if (minDifference != double.MaxValue)
+            {
+                Print(Time[0] + " [Liquidity Fill]: Entry Price Updated to: " + (entryPrice - entryPriceEnd + closestLevel) + " from previous entry price: " + entryPrice);
+                return entryPrice - entryPriceEnd + closestLevel;
+            }
+            else
+            {
+                // If no level was found within the search range, return the original entry price
+                return entryPrice;
+            }
+        }
+
+        private double GetLiquidityTPLevel(double tpLevel, bool buyDir)
+        {
+            if (!EnableLiquidityTP)
+                return tpLevel;
+
+            // Extract the last two digits of the entry price
+            double priceEnd = tpLevel % 100;
+
+            // Initialize the closest level and the smallest difference
+            double closestLevel = priceEnd;
+            double minDifference = double.MaxValue;
+
+            foreach (double level in LiquidityLevels)
+            {
+                if (buyDir)
+                {
+                    if ((level >= priceEnd && level <= priceEnd + LiquidityTPUpperRange) ||
+                        (level <= priceEnd && level >= priceEnd - LiquidityTPLowerRange))
+                    {
+                        double difference = Math.Abs(priceEnd - level);
+                        {
+                            // Update the closest level if the current difference is smaller
+                            if (difference < minDifference)
+                            {
+                                minDifference = difference;
+                                closestLevel = level;
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    if ((level >= priceEnd && level <= priceEnd + LiquidityTPLowerRange) ||
+                                               (level <= priceEnd && level >= priceEnd - LiquidityTPUpperRange))
+                    {
+                        double difference = Math.Abs(priceEnd - level);
+                        {
+                            // Update the closest level if the current difference is smaller
+                            if (difference < minDifference)
+                            {
+                                minDifference = difference;
+                                closestLevel = level;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (minDifference != double.MaxValue)
+            {
+                double newTPLevel = tpLevel - priceEnd + closestLevel;
+                if (buyDir)
+                {
+                    newTPLevel -= LiquidityTPOffset;
+                }
+                else
+                {
+                    newTPLevel += LiquidityTPOffset;
+                }
+
+                if (oldLiquidityTP != newTPLevel)
+                {
+                    Print(Time[0] + " [Liquidity TP]: TP Level Updated to: " + (newTPLevel) + " from previous TP price: " + tpLevel);
+                    oldLiquidityTP = newTPLevel;
+                }
+                return newTPLevel;
+            }
+            else
+            {
+                return tpLevel;
+            }
+        }
+
+        private double GetLiquidityTrimLevel(double tpLevel, bool buyDir)
+        {
+            if (!EnableLiquidityTP)
+                return tpLevel;
+
+            // Extract the last two digits of the entry price
+            double priceEnd = tpLevel % 100;
+
+            // Initialize the closest level and the smallest difference
+            double closestLevel = priceEnd;
+            double minDifference = double.MaxValue;
+
+            foreach (double level in LiquidityLevels)
+            {
+                // Calculate the difference between the entry price ending and the liquidity level
+                double difference = Math.Abs(priceEnd - level);
+
+                // Check if the liquidity level is within the search range
+                if (difference <= LiquidityTrimRange)
+                {
+                    // Update the closest level if the current difference is smaller
+                    if (difference < minDifference)
+                    {
+                        minDifference = difference;
+                        closestLevel = level;
+                    }
+                }
+            }
+
+            if (minDifference != double.MaxValue)
+            {
+                double newTPLevel = tpLevel - priceEnd + closestLevel;
+                if (buyDir)
+                {
+                    newTPLevel -= LiquidityTPOffset;
+                }
+                else
+                {
+                    newTPLevel += LiquidityTPOffset;
+                }
+
+                if (oldLiquidityTrim != newTPLevel)
+                {
+                    Print(Time[0] + " [Liquidity TP]: Trim Level Updated to: " + (newTPLevel) + " from trim price: " + tpLevel);
+                    oldLiquidityTrim = newTPLevel;
+                }
+                return newTPLevel;
+            }
+            else
+            {
+                return tpLevel;
+            }
+        }
+        #endregion
+
+        #region Entry Protection
         private bool IsEntrySafe(double entryPrice, bool isBuy)
         {
             if (!EnableProtectiveLevelTrades)
@@ -3087,7 +3341,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (entryPrice >= level - ProtectiveLevelRangeCheck && entryPrice <= level)
                     {
                         numBlockedProtective++;
-                        Print(Time[0] + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
+                        Print(Time[0] + " [Protective Trades]: Long not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
                         return false;
                     }
                 }
@@ -3099,7 +3353,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (entryPrice <= level + ProtectiveLevelRangeCheck && entryPrice >= level)
                     {
                         numBlockedProtective++;
-                        Print(Time[0] + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
+                        Print(Time[0] + " [Protective Trades]: Short not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
                         return false;
                     }
                 }
@@ -3110,7 +3364,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Math.Abs(entryPrice - vwap[0]) < ProtectiveLevelRangeCheck)
                 {
                     numBlockedProtective++;
-                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to VWAP protect: " + RoundToNearestTick(vwap[0]) + " | Blocked: " + numBlockedProtective);
+                    Print(Time[0] + " [Protective Trades]: Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to VWAP protect: " + RoundToNearestTick(vwap[0]) + " | Blocked: " + numBlockedProtective);
                     return false;
                 }
             }
@@ -3120,14 +3374,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Math.Abs(entryPrice - upperChopZone) < ProtectiveLevelRangeCheck)
                 {
                     numBlockedProtective++;
-                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(upperChopZone) + " | Blocked: " + numBlockedProtective);
+                    Print(Time[0] + " [Protective Trades]: Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(upperChopZone) + " | Blocked: " + numBlockedProtective);
                     return false;
                 }
 
                 if (Math.Abs(entryPrice - lowerChopZone) < ProtectiveLevelRangeCheck)
                 {
                     numBlockedProtective++;
-                    Print(Time[0] + " Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(lowerChopZone) + " | Blocked: " + numBlockedProtective);
+                    Print(Time[0] + " [Protective Trades]: Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(lowerChopZone) + " | Blocked: " + numBlockedProtective);
                     return false;
                 }
             }
@@ -3160,7 +3414,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if ((100 - position) > DynamicRangePosition)
                 {
                     numBlockedDynamicRange++;
-                    Print(Time[0] + (EnableDynamicRangeProtect ? "" : " [NOT ACTIVE]") + " Dynamic Range Protect: Long not safe at: " + RoundToNearestTick(entryPrice) + ". Position " + (100 - position) + " %" + " | Blocked: " + numBlockedDynamicRange);
+                    Print(Time[0] + (EnableDynamicRangeProtect ? "" : " [NOT ACTIVE]") + " [Dynamic Range Protect]: Long not safe at: " + RoundToNearestTick(entryPrice) + ". Position " + (100 - position) + " %" + " | Blocked: " + numBlockedDynamicRange);
                     if (!EnableDynamicRangeProtect)
                         return true;
                     return false;
@@ -3171,13 +3425,43 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (position > DynamicRangePosition)
                 {
                     numBlockedDynamicRange++;
-                    Print(Time[0] + (EnableDynamicRangeProtect ? "" : " [NOT ACTIVE]") + " Dynamic Range Protect: Short not safe at: " + RoundToNearestTick(entryPrice) + ". Position: " + position + "%" + " | Blocked: " + numBlockedDynamicRange);
+                    Print(Time[0] + (EnableDynamicRangeProtect ? "" : " [NOT ACTIVE]") + " [Dynamic Range Protect]: Short not safe at: " + RoundToNearestTick(entryPrice) + ". Position: " + position + "%" + " | Blocked: " + numBlockedDynamicRange);
                     if (!EnableDynamicRangeProtect)
                         return true;
                     return false;
                 }
             }
             Print(Time[0] + (isBuy ? " Long" : " Short") + " Dynamic Trade Position: " + position + "% Range: " + range);
+            return true;
+        }
+
+        private bool IsEntrySafeATRProtect(bool isBuy)
+        {
+            for (int i = 1; i <= ATRProtectLookback; i++)
+            {
+                if (isBuy)
+                {
+                    if (sellATRSignal[i])
+                    {
+                        numATRProtect++;
+                        Print(Time[0] + (EnableATRProtect ? "" : " [NOT ACTIVE]") + " [ATR Protect]: Long not safe at: " + RoundToNearestTick(entryPrice) + " due to ATR signal" + " | Blocked: " + numATRProtect);
+                        if (!EnableATRProtect)
+                            return true;
+                        return false;
+                    }
+                }
+                else
+                {
+                    if (buyATRSignal[i])
+                    {
+                        numATRProtect++;
+                        Print(Time[0] + (EnableATRProtect ? "" : " [NOT ACTIVE]") + " [ATR Protect]: Short not safe at: " + RoundToNearestTick(entryPrice) + " due to ATR signal" + " | Blocked: " + numATRProtect);
+                        if (!EnableATRProtect)
+                            return true;
+                        return false;
+                    }
+                }
+            }
             return true;
         }
 
@@ -3188,7 +3472,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (isBuy && BounceOffHighLevel(entryPrice, i))
                 {
                     numBlockedBounce++;
-                    Print(Time[0] + (EnableBounceProtect ? "" : " [NOT ACTIVE]") + " Long not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off high level" + " | Blocked: " + numBlockedBounce);
+                    Print(Time[0] + (EnableBounceProtect ? "" : " [NOT ACTIVE]") + " [Bounce Protect]: Long not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off high level" + " | Blocked: " + numBlockedBounce);
                     if (!EnableBounceProtect)
                         return true;
                     return false;
@@ -3196,7 +3480,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else if (!isBuy && BounceOffLowLevel(entryPrice, i))
                 {
                     numBlockedBounce++;
-                    Print(Time[0] + (EnableBounceProtect ? "" : " [NOT ACTIVE]") + " Short not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off low level" + " | Blocked: " + numBlockedBounce);
+                    Print(Time[0] + (EnableBounceProtect ? "" : " [NOT ACTIVE]") + " [Bounce Protect]: Short not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off low level" + " | Blocked: " + numBlockedBounce);
                     if (!EnableBounceProtect)
                         return true;
                     return false;
@@ -3232,7 +3516,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             return false;
         }
+        #endregion
 
+        #region Entry Functions
         private double GetDynamicEntryOffset(bool buyDir, double deltaBuyVol, double deltaSellVol)
         {
             if (EnableDynamicEntry)
@@ -3243,18 +3529,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (deltaSellVol >= -1 * DeltaNegCutOff / 100 && !IsORBSession())
                         {
-                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
+                            Print(Time[0] + " [Dynamic Entry]: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
                             return DynamicEntryOffsetTrend;
                         }
                         else
                         {
-                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
+                            Print(Time[0] + " [Dynamic Entry]: Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
                             return DynamicEntryOffsetPos;
                         }
                     }
                     else
                     {
-                        Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
+                        Print(Time[0] + " [Dynamic Entry]: Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
                         return DynamicEntryOffsetNeg;
                     }
                 }
@@ -3264,19 +3550,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (deltaBuyVol >= -1 * DeltaNegCutOff / 100 && !IsORBSession())
                         {
-                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
+                            Print(Time[0] + " [Dynamic Entry]: Price Offset by: " + DynamicEntryOffsetTrend + " for Dynamic Delta Trend");
                             return DynamicEntryOffsetTrend;
 
                         }
                         else
                         {
-                            Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
+                            Print(Time[0] + " [Dynamic Entry]: Price Offset by: " + DynamicEntryOffsetPos + " for Dynamic Delta Positive");
                             return DynamicEntryOffsetPos;
                         }
                     }
                     else
                     {
-                        Print(Time[0] + " Dynamic Entry: Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
+                        Print(Time[0] + " [Dynamic Entry]: Price Offset by: " + DynamicEntryOffsetNeg + " for Dynamic Delta Negative");
                         return DynamicEntryOffsetNeg;
                     }
                 }
@@ -3308,7 +3594,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             double tickSize = Instrument.MasterInstrument.TickSize;
             return Math.Round(price / tickSize) * tickSize;
         }
+        #endregion
 
+        #region Time Session Functions
         private bool IsORBSession()
         {
             TimeSpan barTime = Time[0].TimeOfDay;
@@ -3488,10 +3776,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(Time[0] + " ******** END OF DAY STATS ********");
                 Print(Time[0] + " TOTAL TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins / numTrades, 3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades, 3) * 100) + "%) ********");
                 Print(Time[0] + " TOTAL PNL: $" + Math.Round(currentPnL, 2) + " | Trailing Drawdown: $" + currentTrailingDrawdown + " ********");
-                Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " ********");
+                Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " | ATR Protect: " + numATRProtect + " ********");
                 Print(Time[0] + " ATR Restarts: " + numATRRestart + " ********");
             }
         }
+        #endregion
         #endregion
     }
 }

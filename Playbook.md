@@ -2,3 +2,5 @@
 - Use dynamic range/bounce protect when its unlikely to be a trend day
 - Use super protect when its likely to be a range day
 - Use high VWAP search when days are likely to trade near to VWAP (no sharp moves)
+- Take it easy on friday close (stop early?)
+- Take it easy on monday open

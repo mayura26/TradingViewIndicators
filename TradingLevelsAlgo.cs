@@ -30,19 +30,15 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST    
-    // FEATURE: ATR in last x bars means don't take opposite trade?
-    // FEATURE: Create standalone volume indicator
     // FEATURE: Look at delta difference rather than just pos and neg delta? If greater than 5% difference then same as Trend if sell isn't neg. if dif >5% then pos if it is neg
     // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
     - Create parameter for min diff
     - Create tickbox for enable MinVolDiffMode [Volume Settings]
 	// FEATURE: Look at  parabolic stop and reverse (PSAR)  and supertrend as trailing stop
     // FEATURE: If px comes back through VWAP then we shouldn't consider it a proetctive level
-    // FEATURE: Chase trades when volume diverges in delta. Create chassemode and count number of bars in chase. as long as less than max then take HC2 as entry midground as boost. (2024-06-13 10:12:00 AM Short triggered: 19629)
     // FEATURE: Cancel order when in chopzone
     // FEATURE: POwer hour protect (don't trade in first and last 30 mins of the day if its a Monday or a Friday)
     // FEATURE: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
-    // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level? If last candle is a bounce then we reduce the dynamic entry?
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
     // REVIEW: Review level calcs with S1/S2/S3 levels
     // TODO: ATR Exit to be base on trade being held for x bars
@@ -51,6 +47,7 @@ namespace NinjaTrader.NinjaScript.Strategies
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Change to process on tick and have trading on first tick ***** IMPORTANT *****
     // FEATURE: Look at fib levels to improve drawing of levels
+    // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level? If last candle is a bounce then we reduce the dynamic entry?
     */
     public class TradingLevelsAlgo : Strategy
     {
@@ -95,6 +92,42 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
         #endregion
 
+        #region 2. Chase Mode
+        [NinjaScriptProperty]
+        [Display(Name = "EnableChaseMode", Description = "Enable chase mode", Order = 43, GroupName = "2. Chase Mode")]
+        public bool EnableChaseMode
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableChaseModeRestart", Description = "Enable chase mode restart", Order = 44, GroupName = "2. Chase Mode")]
+        public bool EnableChaseModeRestart
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "ChaseMaxBars", Description = "Max bars to chase", Order = 45, GroupName = "2. Chase Mode")]
+        public int ChaseMaxBars
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "ChaseDeltaMinDiff", Description = "Min delta difference to chase", Order = 46, GroupName = "2. Chase Mode")]
+        public double ChaseDeltaMinDiff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "ChaseDeltaBigDiff", Description = "Big delta difference to chase", Order = 47, GroupName = "2. Chase Mode")]
+        public double ChaseDeltaBigDiff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "ChaseNewTPLevel", Description = "New TP level for chase", Order = 48, GroupName = "2. Chase Mode")]
+        public double ChaseNewTPLevel
+        { get; set; }
+        #endregion
+
         #region 3. Dynamic Trades
         [NinjaScriptProperty]
         [Display(Name = "EnableDynamicSettings", Description = "Use Dynamic Parameters based on delta volume", Order = 44, GroupName = "3. Dynamic Trades")]
@@ -123,6 +156,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(-100, 100)]
         [Display(Name = "DeltaNegCutOff", Description = "Delta volume cutoff for negative delta trades (%)", Order = 48, GroupName = "3. Dynamic Trades")]
         public double DeltaNegCutOff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "DeltaDiffCutOff", Description = "Delta volume cutoff for difference between pos and neg delta trades (%)", Order = 49, GroupName = "3. Dynamic Trades")]
+        public double DeltaDiffCutOff
         { get; set; }
         #endregion
 
@@ -759,6 +798,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         int consecutiveLosses = 0;
         int bigWinCount = 0;
         private double triggerPrice = 0.0;
+
+        int chaseBars = 0;
         #endregion
 
         #region Trend/Momentum Variables
@@ -889,6 +930,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double oldTrimTP = 0;
         private double oldLiquidityTrim = 0;
         private double oldDynamicSL = 0;
+        private bool chaseModePrev = false;
 
         private int numTrades = 0;
         private int numWins = 0;
@@ -898,6 +940,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int numBlockedBounce = 0;
         private int numATRRestart = 0;
         private int numATRProtect = 0;
+        private int numChaseModeTrades = 0;
+        private int numChaseModeRestarts = 0;
         #endregion
 
         #region Time Specific Trade Variables
@@ -1060,6 +1104,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BarsToMissPosDelta = 3;
                 DeltaPosCutOff = 3;
                 DeltaNegCutOff = -1.5;
+                DeltaDiffCutOff = 5;
                 #endregion
                 #region Dyanmic SL/TP Settings
                 EnableDynamicSL = true;
@@ -1146,6 +1191,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LiquidityTPLowerRange = 9;
                 LiquidityTrimRange = 2;
                 LiquidityTPOffset = 1;
+                #endregion
+                #region Chase Mode
+                EnableChaseMode = false;
+                EnableChaseModeRestart = false;
+                ChaseMaxBars = 4;
+                ChaseDeltaMinDiff = 5;
+                ChaseDeltaBigDiff = 30;
+                ChaseNewTPLevel = 75;
                 #endregion
                 #endregion
 
@@ -1316,6 +1369,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 numBlockedBounce = 0;
                 numATRRestart = 0;
                 numATRProtect = 0;
+                numChaseModeTrades = 0;
+                numChaseModeRestarts = 0;
 
                 RemoveDrawObject("TargetLevel" + "ORB High");
                 RemoveDrawObject("TargetLevel" + "ORB Low");
@@ -1603,6 +1658,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             double deltaBuyVol = (smoothBuy[0] - smoothBuy[1]) / smoothBuy[1];
             double deltaSellVol = (smoothSell[0] - smoothSell[1]) / smoothSell[1];
+            double deltaDiffVol = Math.Abs(deltaBuyVol - deltaSellVol);
+            double volDelta = 0;
+            if (smoothBuy[0] > smoothSell[0])
+            {
+                volDelta = smoothNetVol[0] / smoothSell[0] * 100;
+            }
+            else
+            {
+                volDelta = smoothNetVol[0] / smoothBuy[0] * 100;
+            }
             #endregion
 
             #region Volume Chart Display
@@ -1716,6 +1781,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Draw.Diamond(this, "irregVol" + CurrentBar, true, 0, symbolLocation, volColor);
             }
             #endregion
+
             #endregion
 
             #region Level Management
@@ -2189,6 +2255,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     buyTrigger = true;
                     Print(Time[0] + " [ATR Restart]: Long Trade triggered again | Restarts: " + numATRRestart);
                 }
+
+                if (buyVolSignal && chaseBars > 0 && chaseBars <= ChaseMaxBars && !buyTrigger)
+                {
+                    if (EnableChaseModeRestart && EnableChaseMode)
+                        buyTrigger = true;
+                    numChaseModeRestarts++;
+                    Print(Time[0] + (EnableChaseModeRestart ? "" : " [NOT ACTIVE]") + " [Chase Mode - Restarts]: Long Trade Triggered | Restarts: " + numChaseModeRestarts);
+                }
             }
 
             if (sellTrigger || sellVolSignal)
@@ -2237,6 +2311,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     numATRRestart++;
                     Print(Time[0] + " [ATR Restart]: Short Trade triggered again | Restarts: " + numATRRestart);
                     sellTrigger = true;
+                }
+
+                if (sellVolSignal && chaseBars > 0 && chaseBars <= ChaseMaxBars && !sellTrigger)
+                {
+                    if (EnableChaseModeRestart && EnableChaseMode)
+                        sellTrigger = true;
+                    numChaseModeRestarts++;
+                    Print(Time[0] + (EnableChaseModeRestart ? "" : " [NOT ACTIVE]") + " [Chase Mode - Restarts]: Short Trade Triggered | Restarts: " + numChaseModeRestarts);
                 }
             }
             #endregion
@@ -2309,6 +2391,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                         BackBrush = null;
                     }
                 }
+            #endregion
+
+            #region Count Chase Bars
+            if (buyVolSignal && IsChaseBar(true, deltaBuyVol, deltaSellVol, deltaDiffVol) && Time[0].TimeOfDay > ORBEnd.TimeOfDay)
+            {
+                chaseBars++;
+                Print(Time[0] + " Chase Buy Bar Detected | Bars: " + chaseBars + " | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%" + " | Delta Diff: " + Math.Round(deltaDiffVol, 3) * 100 + "%");
+            }
+            else if (sellVolSignal && IsChaseBar(false, deltaBuyVol, deltaSellVol, deltaDiffVol) && Time[0].TimeOfDay > ORBEnd.TimeOfDay)
+            {
+                chaseBars++;
+                Print(Time[0] + " Chase Sell Bar Detected | Bars: " + chaseBars + " | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%" + " | Delta Diff: " + Math.Round(deltaDiffVol, 3) * 100 + "%");
+            }
+            else
+            {
+                chaseBars = 0;
+            }
             #endregion
 
             #region Trigger Display
@@ -2404,6 +2503,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         originalTP = triggerPrice + tpLevel;
                     }
 
+                    if (chaseBars > 0 && EnableChaseMode)
+                    {
+                        if (Position.AveragePrice + ChaseNewTPLevel != currentTradeTP)
+                            Print(Time[0] + " [Dynamic Exit - Chase]: TP Level Updated from: " + originalTP + " to: " + (Position.AveragePrice + ChaseNewTPLevel));
+                        originalTP = Position.AveragePrice + ChaseNewTPLevel;
+                    }
+
                     double TPNewLevel = UpdateTPLevel(originalTP, true);
                     TPNewLevel = GetLiquidityTPLevel(TPNewLevel, true);
                     if (TPNewLevel > dayHigh && Math.Abs(TPNewLevel - dayHigh) <= TPDayHLSearchRange && EnableTPDayHLPriority && dayHighLevelUsable)
@@ -2465,6 +2571,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         originalTP = triggerPrice - tpLevel;
                     }
 
+                    if (chaseBars > 0 && EnableChaseMode)
+                    {
+                        if (Position.AveragePrice - ChaseNewTPLevel != currentTradeTP)
+                            Print(Time[0] + " [Dynamic Exit - Chase]: TP Level Updated from: " + originalTP + " to: " + (Position.AveragePrice - ChaseNewTPLevel));
+                        originalTP = Position.AveragePrice - ChaseNewTPLevel;
+                    }
+
                     double TPNewLevel = UpdateTPLevel(originalTP, false);
                     TPNewLevel = GetLiquidityTPLevel(TPNewLevel, false);
                     if (TPNewLevel < dayLow && Math.Abs(TPNewLevel - dayLow) <= TPDayHLSearchRange && EnableTPDayHLPriority && dayLowLevelUsable)
@@ -2505,7 +2618,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Close Trades that are too far away from entry
-            if (entryOrder != null && entryOrder.OrderState == OrderState.Working)
+            if (entryOrder != null && entryOrder.OrderState == OrderState.Working && (chaseBars == 0 || !EnableChaseMode))
             {
                 double priceToCheck = smoothConfirmMA[0] + offsetFromEntryToCancel;
                 bool barTooFarFromEntry = High[0] > priceToCheck;
@@ -2523,7 +2636,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
-            if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Working)
+            if (entryOrderShort != null && entryOrderShort.OrderState == OrderState.Working && (chaseBars == 0 || !EnableChaseMode))
             {
                 double priceToCheck = smoothConfirmMA[0] - offsetFromEntryToCancel;
                 bool barTooFarFromEntry = Low[0] < priceToCheck;
@@ -2624,6 +2737,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             && IsEntrySafeATRProtect(true))
                         {
                             limitLevel = GetLiquidityFillLevel(limitLevel);
+                            limitLevel = GetChasePrice(limitLevel, true, chaseBars);
                             Print(Time[0] + " Long triggered: " + limitLevel);
                             entryOrder = EnterLongLimit(0, true, mainTradeQuantity, limitLevel, "Long");
                             if (EnableDynamicTrim)
@@ -2662,6 +2776,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (IsEntrySafe(smoothConfirmMA[0] + buySellBuffer, true) && IsEntrySafeBounceProtect(smoothConfirmMA[0] + buySellBuffer, true))
                         {
                             limitLevel = GetLiquidityFillLevel(limitLevel);
+                            limitLevel = GetChasePrice(limitLevel, true, chaseBars);
                             ChangeOrder(entryOrder, entryOrder.Quantity, limitLevel, 0);
                             if (entryOrderTrim != null && entryOrderTrim.OrderState != OrderState.Filled)
                                 ChangeOrder(entryOrderTrim, entryOrderTrim.Quantity, limitLevel, 0);
@@ -2713,6 +2828,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             && IsEntrySafeATRProtect(false))
                         {
                             limitLevel = GetLiquidityFillLevel(limitLevel);
+                            limitLevel = GetChasePrice(limitLevel, false, chaseBars);
                             Print(Time[0] + " Short triggered: " + limitLevel);
                             entryOrderShort = EnterShortLimit(0, true, mainTradeQuantity, limitLevel, "Short");
                             if (EnableDynamicTrim)
@@ -2751,6 +2867,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (IsEntrySafe(smoothConfirmMA[0] - buySellBuffer, false) && IsEntrySafeBounceProtect(smoothConfirmMA[0] - buySellBuffer, false))
                         {
                             limitLevel = GetLiquidityFillLevel(limitLevel);
+                            limitLevel = GetChasePrice(limitLevel, false, chaseBars);
                             ChangeOrder(entryOrderShort, entryOrderShort.Quantity, limitLevel, 0);
                             if (entryOrderTrimShort != null && entryOrderTrimShort.OrderState != OrderState.Filled)
                                 ChangeOrder(entryOrderTrimShort, entryOrderTrimShort.Quantity, limitLevel, 0);
@@ -2849,6 +2966,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
+            if (chaseBars > 0)
+                tradeStatus += ((tradeStatus != "" ? " | " : "") + "Chase: " + chaseBars);
+
             if (tradeStatus != "")
                 dashBoard += "\nTriggers: " + tradeStatus;
 
@@ -2877,13 +2997,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (orderState == OrderState.Filled)
                 {
-                    Print(
-                        Time[0]
-                            + " LONG FILLED: "
-                            + averageFillPrice
-                            + " Vol Trade Length: "
-                            + volTradeLength
-                    );
+                    Print(Time[0] + " LONG FILLED: " + averageFillPrice + " | Bar Low: " + Low[0] + "(" + (averageFillPrice - Low[0]) + ") | Vol Trade Length: " + volTradeLength);
                 }
             }
 
@@ -2891,13 +3005,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (orderState == OrderState.Filled)
                 {
-                    Print(
-                        Time[0]
-                            + " SHORT FILLED: "
-                            + averageFillPrice
-                            + " Vol Trade Length: "
-                            + volTradeLength
-                    );
+                    Print(Time[0] + " SHORT FILLED: " + averageFillPrice + " | Bar High: " + High[0] + "(" + (High[0] - averageFillPrice) + ") | Vol Trade Length: " + volTradeLength);
                 }
             }
 
@@ -3596,6 +3704,70 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
         #endregion
 
+        #region Chase Mode
+        private double GetChasePrice(double entryPrice, bool isBuy, int chaseBars)
+        {
+            if (chaseBars == 0)
+            {
+                chaseModePrev = false;
+                return entryPrice;
+            }
+
+            if (chaseBars <= ChaseMaxBars)
+            {
+                if (isBuy)
+                {
+                    double chasePrice = (Close[0] * 3 + High[0] + Low[0]) / 5;
+                    if (!chaseModePrev)
+                        numChaseModeTrades++;
+                    Print(Time[0] + (EnableChaseMode ? "" : " [NOT ACTIVE]") + " [Chase Mode]: Chase Price Set to " + chasePrice + " from previous price: " + entryPrice + " | Chase Mode Trades: " + numChaseModeTrades);
+                    chaseModePrev = true;
+                    if (!EnableChaseMode)
+                        return entryPrice;
+                    return chasePrice;
+                }
+                else
+                {
+                    double chasePrice = (Close[0] * 3 + High[0] + Low[0]) / 5;
+                    if (!chaseModePrev)
+                        numChaseModeTrades++;
+                    Print(Time[0] + (EnableChaseMode ? "" : " [NOT ACTIVE]") + " [Chase Mode]: Chase Price Set to " + chasePrice + " from previous price: " + entryPrice + " | Chase Mode Trades: " + numChaseModeTrades);
+                    chaseModePrev = true;
+                    if (!EnableChaseMode)
+                        return entryPrice;
+                    return chasePrice;
+                }
+            }
+            else
+            {
+                chaseModePrev = false;
+                return entryPrice;
+            }
+        }
+
+        private bool IsChaseBar(bool isBuy, double deltaBuyVol, double deltaSellVol, double deltaDiffVol)
+        {
+            if (isBuy)
+            {
+                if (deltaBuyVol > deltaSellVol && deltaDiffVol > ChaseDeltaMinDiff / 100)
+                {
+                    if ((deltaBuyVol >= DeltaPosCutOff / 100 && deltaSellVol < -DeltaNegCutOff / 100) || deltaDiffVol > ChaseDeltaBigDiff / 100)
+                        return true;
+                }
+
+            }
+            else
+            {
+                if (deltaSellVol > deltaBuyVol && deltaDiffVol > ChaseDeltaMinDiff / 100)
+                {
+                    if ((deltaSellVol >= DeltaPosCutOff / 100 && deltaBuyVol < -DeltaNegCutOff / 100) || deltaDiffVol > ChaseDeltaBigDiff / 100)
+                        return true;
+                }
+            }
+            return false;
+        }
+        #endregion
+
         #region Time Session Functions
         private bool IsORBSession()
         {
@@ -3777,7 +3949,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(Time[0] + " TOTAL TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins / numTrades, 3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades, 3) * 100) + "%) ********");
                 Print(Time[0] + " TOTAL PNL: $" + Math.Round(currentPnL, 2) + " | Trailing Drawdown: $" + currentTrailingDrawdown + " ********");
                 Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " | ATR Protect: " + numATRProtect + " ********");
-                Print(Time[0] + " ATR Restarts: " + numATRRestart + " ********");
+                Print(Time[0] + " ATR Restarts: " + numATRRestart + " | Chase Mode Trades: " + numChaseModeTrades + " | Chase Mode Restarts: " + numChaseModeRestarts + " ********");
             }
         }
         #endregion

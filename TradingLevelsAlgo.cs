@@ -30,14 +30,13 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST    
-    // FEATURE: Look at delta difference rather than just pos and neg delta? If greater than 5% difference then same as Trend if sell isn't neg. if dif >5% then pos if it is neg
+    // FEATURE: Rework delta volume code to allow for delta diff
+    // FEATURE: Change color of background when in chase mode
     // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
-    - Create parameter for min diff
-    - Create tickbox for enable MinVolDiffMode [Volume Settings]
 	// FEATURE: Look at  parabolic stop and reverse (PSAR)  and supertrend as trailing stop
     // FEATURE: If px comes back through VWAP then we shouldn't consider it a proetctive level
     // FEATURE: Cancel order when in chopzone
-    // FEATURE: POwer hour protect (don't trade in first and last 30 mins of the day if its a Monday or a Friday)
+    // FEATURE: Power hour protect (don't trade in first and last 30 mins of the day if its a Monday or a Friday)
     // FEATURE: LOok at height of wicks and candle size combined with direction change to create a protective no trades mode.
     // FEATURE: Create chop indicator with trend chop detection and momentum and delta momentum
     // REVIEW: Review level calcs with S1/S2/S3 levels
@@ -162,6 +161,17 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0, 100)]
         [Display(Name = "DeltaDiffCutOff", Description = "Delta volume cutoff for difference between pos and neg delta trades (%)", Order = 49, GroupName = "3. Dynamic Trades")]
         public double DeltaDiffCutOff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableMinDiffMode", Description = "Enable minimum difference mode", Order = 50, GroupName = "3. Dynamic Trades")]
+        public bool EnableMinDiffMode
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "MinDiffCutOff", Description = "Minimum difference between pos and neg delta trades (%)", Order = 51, GroupName = "3. Dynamic Trades")]
+        public double MinDiffCutOff
         { get; set; }
         #endregion
 
@@ -1105,6 +1115,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DeltaPosCutOff = 3;
                 DeltaNegCutOff = -1.5;
                 DeltaDiffCutOff = 5;
+                EnableMinDiffMode = false;
+                MinDiffCutOff = 2.5;
                 #endregion
                 #region Dyanmic SL/TP Settings
                 EnableDynamicSL = true;

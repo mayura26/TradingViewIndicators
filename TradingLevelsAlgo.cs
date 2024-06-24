@@ -30,6 +30,7 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST    
+	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced
     // FEATURE: Rework delta volume code to allow for delta diff
     // FEATURE: Change color of background when in chase mode
     // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
@@ -933,6 +934,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool newTradeCalculated = false;
         private bool partialTradeCalculated = false;
         private bool newTradeExecuted = false;
+        private int barsInTrade = 0;
         private string tradeExecuteType = "";
         private double tradeExecPrice = 0;
         private double oldDynamicTP = 0;
@@ -2069,6 +2071,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 currentTradePnL = 0;
                 newTradeCalculated = false;
+                barsInTrade = 0;
+            }
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                barsInTrade++;
             }
             #endregion
 
@@ -2219,6 +2227,22 @@ namespace NinjaTrader.NinjaScript.Strategies
             #endregion
 
             #region Buy/Sell Signals
+            #region Count Chase Bars
+            if (buyVolSignal && IsChaseBar(true, deltaBuyVol, deltaSellVol, deltaDiffVol) && Time[0].TimeOfDay > ORBEnd.TimeOfDay)
+            {
+                chaseBars++;
+                Print(Time[0] + " Chase Buy Bar Detected | Bars: " + chaseBars + " | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%" + " | Delta Diff: " + Math.Round(deltaDiffVol, 3) * 100 + "%");
+            }
+            else if (sellVolSignal && IsChaseBar(false, deltaBuyVol, deltaSellVol, deltaDiffVol) && Time[0].TimeOfDay > ORBEnd.TimeOfDay)
+            {
+                chaseBars++;
+                Print(Time[0] + " Chase Sell Bar Detected | Bars: " + chaseBars + " | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%" + " | Delta Diff: " + Math.Round(deltaDiffVol, 3) * 100 + "%");
+            }
+            else
+            {
+                chaseBars = 0;
+            }
+            #endregion
             #region Trigger Logic
             if (buyTrigger || buyVolSignal)
             {
@@ -2405,23 +2429,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             #endregion
 
-            #region Count Chase Bars
-            if (buyVolSignal && IsChaseBar(true, deltaBuyVol, deltaSellVol, deltaDiffVol) && Time[0].TimeOfDay > ORBEnd.TimeOfDay)
-            {
-                chaseBars++;
-                Print(Time[0] + " Chase Buy Bar Detected | Bars: " + chaseBars + " | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%" + " | Delta Diff: " + Math.Round(deltaDiffVol, 3) * 100 + "%");
-            }
-            else if (sellVolSignal && IsChaseBar(false, deltaBuyVol, deltaSellVol, deltaDiffVol) && Time[0].TimeOfDay > ORBEnd.TimeOfDay)
-            {
-                chaseBars++;
-                Print(Time[0] + " Chase Sell Bar Detected | Bars: " + chaseBars + " | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%" + " | Delta Diff: " + Math.Round(deltaDiffVol, 3) * 100 + "%");
-            }
-            else
-            {
-                chaseBars = 0;
-            }
-            #endregion
-
             #region Trigger Display
             if (buyTrigger && showVolTrade)
             {
@@ -2493,7 +2500,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (Position.MarketPosition == MarketPosition.Long)
             {
                 if (EnableDynamicSL)
-                    if (High[0] > Position.AveragePrice + ProfitToMoveSL)
+                    if (High[0] > Position.AveragePrice + ProfitToMoveSL && barsInTrade > 1)
                     {
                         if (oldDynamicSL != Position.AveragePrice - SLNewLevel * TickSize)
                         {
@@ -2562,7 +2569,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (Position.MarketPosition == MarketPosition.Short)
             {
                 if (EnableDynamicSL)
-                    if (Low[0] < Position.AveragePrice - ProfitToMoveSL)
+                    if (Low[0] < Position.AveragePrice - ProfitToMoveSL && barsInTrade > 1)
                     {
                         if (oldDynamicSL != Position.AveragePrice + SLNewLevel * TickSize)
                         {
@@ -2930,6 +2937,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (Position.MarketPosition != MarketPosition.Flat)
             {
                 dashBoard += " | Bars Missed: " + barsMissed + " of " + localBarsToMissTrade;
+                dashBoard += " | Bars Held: " + barsInTrade;
             }
             else
             {

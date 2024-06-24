@@ -1207,8 +1207,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #region Chase Mode
                 EnableChaseMode = false;
                 EnableChaseModeRestart = false;
-                ChaseMaxBars = 4;
-                ChaseDeltaMinDiff = 5;
+                ChaseMaxBars = 3;
+                ChaseDeltaMinDiff = 4;
                 ChaseDeltaBigDiff = 30;
                 ChaseNewTPLevel = 75;
                 #endregion
@@ -3729,7 +3729,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (isBuy)
                 {
-                    double chasePrice = (Close[0] * 3 + High[0] + Low[0]) / 5;
+                    double chasePrice = (Close[0] * 2 + High[0] + Low[0]) / 4;
                     if (!chaseModePrev)
                         numChaseModeTrades++;
                     Print(Time[0] + (EnableChaseMode ? "" : " [NOT ACTIVE]") + " [Chase Mode]: Chase Price Set to " + chasePrice + " from previous price: " + entryPrice + " | Chase Mode Trades: " + numChaseModeTrades);
@@ -3740,7 +3740,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else
                 {
-                    double chasePrice = (Close[0] * 3 + High[0] + Low[0]) / 5;
+                    double chasePrice = (Close[0] * 2 + High[0] + Low[0]) / 4;
                     if (!chaseModePrev)
                         numChaseModeTrades++;
                     Print(Time[0] + (EnableChaseMode ? "" : " [NOT ACTIVE]") + " [Chase Mode]: Chase Price Set to " + chasePrice + " from previous price: " + entryPrice + " | Chase Mode Trades: " + numChaseModeTrades);

@@ -29,7 +29,7 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    /* TODO LIST    
+    /* TODO LIST  / bug liquidity level offset right? 
 	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced
     // FEATURE: Rework delta volume code to allow for delta diff
     // FEATURE: Change color of background when in chase mode

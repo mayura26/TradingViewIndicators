@@ -30,6 +30,7 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST  / bug liquidity level offset right? 
+chas mode only within day range?
 	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced
     // FEATURE: Rework delta volume code to allow for delta diff
     // FEATURE: Change color of background when in chase mode

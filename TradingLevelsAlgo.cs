@@ -29,9 +29,11 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    /* TODO LIST  / bug liquidity level offset right? 
-chas mode only within day range?
+    /* TODO LIST   
 	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced
+    // TODO: Do we check distance away from fill to confirm we didn't take a fill from long away?
+    // TODO: Symbol for blocked trades
+    // FEATURE: CHase mode only active when not going into tops??
     // FEATURE: Rework delta volume code to allow for delta diff
     // FEATURE: Change color of background when in chase mode
     // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
@@ -3623,7 +3625,9 @@ chas mode only within day range?
             double symbolOffset = 5;
             foreach (double level in BounceHighLevels)
             {
-                if (High[barNumber] > level - BounceOffset && Open[barNumber] < level && Close[barNumber] < level && Math.Abs(entryLevel - level) < BounceCheckRange && Close[barNumber] > entryLevel + BounceOffset)
+                if (High[barNumber] > level - BounceOffset && Open[barNumber] < level && Close[barNumber] < level
+                    && Math.Abs(entryLevel - level) < BounceCheckRange && Close[barNumber] > entryLevel + BounceOffset
+                    && Close[0] < level)
                 {
                     Draw.TriangleDown(this, "BounceProtect" + CurrentBar, true, barNumber, level + symbolOffset, Brushes.MediumVioletRed);
                     return true;
@@ -3637,7 +3641,9 @@ chas mode only within day range?
             double symbolOffset = 5;
             foreach (double level in BounceLowLevels)
             {
-                if (Low[barNumber] < level + BounceOffset && Open[barNumber] > level && Close[barNumber] > level && Math.Abs(entryLevel - level) < BounceCheckRange && Close[barNumber] < entryLevel - BounceOffset)
+                if (Low[barNumber] < level + BounceOffset && Open[barNumber] > level && Close[barNumber] > level
+                    && Math.Abs(entryLevel - level) < BounceCheckRange && Close[barNumber] < entryLevel - BounceOffset
+                    && Close[0] > level)
                 {
                     Draw.TriangleUp(this, "BounceProtect" + CurrentBar, true, barNumber, level - symbolOffset, Brushes.MediumSeaGreen);
                     return true;
@@ -3802,6 +3808,7 @@ chas mode only within day range?
 
         private void GetTimeSessionVariables()
         {
+            #region Load Time Session Variables
             TimeSpan endOfDay = new TimeSpan(16, 15, 00);
             TimeSpan barTime = Time[0].TimeOfDay;
             if (barTime >= TS1Start.TimeOfDay && barTime < TS1End.TimeOfDay)
@@ -3946,8 +3953,8 @@ chas mode only within day range?
             {
                 EnableTrading = false;
             }
-
-
+            #endregion
+            #region End of day messages
             if (EnableTradingTS1 && barTime == TS1End.TimeOfDay)
             {
                 Print(Time[0] + " ******** TRADING SESSION 1 (Main) ENDED ********");
@@ -3966,12 +3973,18 @@ chas mode only within day range?
 
             if (barTime == endOfDay)
             {
+                double tradeValue = Bars.Instrument.MasterInstrument.PointValue * TradeQuantity;
                 Print(Time[0] + " ******** END OF DAY STATS ********");
                 Print(Time[0] + " TOTAL TRADES: " + numTrades + " | WINS: " + numWins + " (" + (Math.Round((double)numWins / numTrades, 3) * 100) + "%) | LOSSES: " + numLosses + " (" + (Math.Round((double)numLosses / numTrades, 3) * 100) + "%) ********");
-                Print(Time[0] + " TOTAL PNL: $" + Math.Round(currentPnL, 2) + " | Trailing Drawdown: $" + currentTrailingDrawdown + " ********");
+                Print(Time[0] + " TOTAL PNL: $" + Math.Round(currentPnL, 2) + " | Trailing Drawdown: $" + currentTrailingDrawdown + " | Contracts: " + TradeQuantity + " ********");
+                Print(Time[0] + " *** PnL per Trade: $" + Math.Round(currentPnL / numTrades, 2)
+                    + " | Max Profit: $" + (EnableDynamicTrim ? (TrimPercent / 100) * tradeValue * ExitTPLevel + (1 - TrimPercent / 100) * tradeValue * tpLevel : tpLevel * tradeValue)
+                    + " | Max Risk: $" + slLevel * tradeValue + " ***");
+                Print(Time[0] + " *** Max Daily Gain: $" + MaxGain + " | Max Daily Loss: $" + MaxLoss + " ***");
                 Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " | ATR Protect: " + numATRProtect + " ********");
                 Print(Time[0] + " ATR Restarts: " + numATRRestart + " | Chase Mode Trades: " + numChaseModeTrades + " | Chase Mode Restarts: " + numChaseModeRestarts + " ********");
             }
+            #endregion
         }
         #endregion
         #endregion

@@ -33,7 +33,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced
     // TODO: Do we check distance away from fill to confirm we didn't take a fill from long away?
     // TODO: Symbol for blocked trades
-    // FEATURE: CHase mode only active when not going into tops??
     // FEATURE: Rework delta volume code to allow for delta diff
     // FEATURE: Change color of background when in chase mode
     // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
@@ -3740,10 +3739,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return entryPrice;
             }
 
+            if (!IsEntrySafe(Close[0], isBuy))
+            {
+                Print(Time[0] + " [Chase Mode]: Entry Price Not Safe, Chase Mode Skipped");
+                chaseModePrev = false;
+                return entryPrice;
+            }               
+
             if (chaseBars <= ChaseMaxBars)
             {
                 if (isBuy)
-                {
+                { 
                     double chasePrice = (Close[0] * 2 + High[0] + Low[0]) / 4;
                     if (!chaseModePrev)
                         numChaseModeTrades++;

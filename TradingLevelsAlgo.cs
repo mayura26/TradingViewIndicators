@@ -30,8 +30,7 @@ using Brushes = System.Windows.Media.Brushes;
 namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST 
-	// TODO: No chase mode on end of day?
-	// BUG: Chase bar at 12:45pm not filled? Maybe don't check the entry conditions on other stuff if chase mode is about to be used?
+    // TODO: Chase mode have own array with atr bear and bull
 	// TODO: Backtest 200s vs 3min
 	// TODO: Chase mode look at bounce?
 	// TODO: Chase mode max candle range to chase?

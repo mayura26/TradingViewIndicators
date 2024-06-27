@@ -29,13 +29,19 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    /* TODO LIST   
+    /* TODO LIST 
+	// TODO: No chase mode on end of day?
+	// BUG: Chase bar at 12:45pm not filled? Maybe don't check the entry conditions on other stuff if chase mode is about to be used?
+	// TODO: Backtest 200s vs 3min
+	// TODO: Chase mode look at bounce?
+	// TODO: Chase mode max candle range to chase?
 	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced
     // TODO: Do we check distance away from fill to confirm we didn't take a fill from long away?
     // TODO: Symbol for blocked trades
+    // TODO: Optimise min diff mode
     // FEATURE: Rework delta volume code to allow for delta diff
+	// FEATURE: Add VAH/VAL for pd and pw into charts?
     // FEATURE: Change color of background when in chase mode
-    // FEATURE: Look at differntial difference between buy and sell as a percentage and if its too small then don't trade
 	// FEATURE: Look at  parabolic stop and reverse (PSAR)  and supertrend as trailing stop
     // FEATURE: If px comes back through VWAP then we shouldn't consider it a proetctive level
     // FEATURE: Cancel order when in chopzone
@@ -956,6 +962,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int numATRProtect = 0;
         private int numChaseModeTrades = 0;
         private int numChaseModeRestarts = 0;
+        private int numBlockedVolDelta = 0;
         #endregion
 
         #region Time Specific Trade Variables
@@ -1119,8 +1126,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 DeltaPosCutOff = 3;
                 DeltaNegCutOff = -1.5;
                 DeltaDiffCutOff = 5;
-                EnableMinDiffMode = false;
-                MinDiffCutOff = 2.5;
+                EnableMinDiffMode = true;
+                MinDiffCutOff = 2;
                 #endregion
                 #region Dyanmic SL/TP Settings
                 EnableDynamicSL = true;
@@ -1387,6 +1394,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 numATRProtect = 0;
                 numChaseModeTrades = 0;
                 numChaseModeRestarts = 0;
+                numBlockedVolDelta = 0;
 
                 RemoveDrawObject("TargetLevel" + "ORB High");
                 RemoveDrawObject("TargetLevel" + "ORB Low");
@@ -2114,7 +2122,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             #region Trading Logic/Delta Code
             #region Buy/Sell Triggers
-            if (!chopDetect[0])
+            if (!chopDetect[0] && IsVolDeltaSafe(volDelta, validTriggerPeriod))
             {
                 buyVolTrigger[0] = (midVolPump[0] || bullVolPump[0]) && !sellVolTrigger[1];
                 sellVolTrigger[0] = (midVolDump[0] || bullVolDump[0]) && !buyVolTrigger[1];
@@ -3650,6 +3658,19 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             return false;
         }
+
+        private bool IsVolDeltaSafe(double volDelta, bool validTriggerPeriod)
+        {
+            if (Math.Abs(volDelta) < MinDiffCutOff && validTriggerPeriod)
+            {
+                numBlockedVolDelta++;
+                Print(Time[0] + (EnableMinDiffMode ? "" : " [NOT ACTIVE]") + " [Vol Delta Protect]: Trade not safe due to delta of: " + Math.Round(Math.Abs(volDelta),2) + "% | Blocked: " + numBlockedVolDelta);
+                if (!EnableMinDiffMode)
+                    return true;
+                return false;
+            }
+            return true;
+        }
         #endregion
 
         #region Entry Functions
@@ -3987,7 +4008,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     + " | Max Profit: $" + (EnableDynamicTrim ? (TrimPercent / 100) * tradeValue * ExitTPLevel + (1 - TrimPercent / 100) * tradeValue * tpLevel : tpLevel * tradeValue)
                     + " | Max Risk: $" + slLevel * tradeValue + " ***");
                 Print(Time[0] + " *** Max Daily Gain: $" + MaxGain + " | Max Daily Loss: $" + MaxLoss + " ***");
-                Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " | ATR Protect: " + numATRProtect + " ********");
+                Print(Time[0] + " BLOCKED TRADES: Protective: " + numBlockedProtective + " | Dynamic Range: " + numBlockedDynamicRange + " | Bounce Protect: " + numBlockedBounce + " | ATR Protect: " + numATRProtect + " | Vol Delta Protect: " + numBlockedVolDelta + " ********");
                 Print(Time[0] + " ATR Restarts: " + numATRRestart + " | Chase Mode Trades: " + numChaseModeTrades + " | Chase Mode Restarts: " + numChaseModeRestarts + " ********");
             }
             #endregion

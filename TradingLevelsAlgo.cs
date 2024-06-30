@@ -29,18 +29,16 @@ using Brushes = System.Windows.Media.Brushes;
 //This namespace holds Strategies in this folder and is required. Do not change it.
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    /* TODO LIST 
-    // TODO: Chase mode have own array with atr bear and bull
-	// TODO: Backtest 200s vs 3min
+    /* TODO LIST
+	// FEATURE: Add VAH/VAL for pd and pw into charts?
+    // TODO: Reoptimise SL dynamic
+        // FEATURE: Change color of background when in chase mode
+	// TODO: Limit number of chase per trade to 1?
+	// TOOD: Review chase mode not checking protective trades? (2024-06-10 2:24:00 PM)
 	// TODO: Chase mode look at bounce?
 	// TODO: Chase mode max candle range to chase?
 	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced
     // TODO: Do we check distance away from fill to confirm we didn't take a fill from long away?
-    // TODO: Symbol for blocked trades
-    // TODO: Optimise min diff mode
-    // FEATURE: Rework delta volume code to allow for delta diff
-	// FEATURE: Add VAH/VAL for pd and pw into charts?
-    // FEATURE: Change color of background when in chase mode
 	// FEATURE: Look at  parabolic stop and reverse (PSAR)  and supertrend as trailing stop
     // FEATURE: If px comes back through VWAP then we shouldn't consider it a proetctive level
     // FEATURE: Cancel order when in chopzone
@@ -166,19 +164,42 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(0, 100)]
-        [Display(Name = "DeltaDiffCutOff", Description = "Delta volume cutoff for difference between pos and neg delta trades (%)", Order = 49, GroupName = "3. Dynamic Trades")]
-        public double DeltaDiffCutOff
+        [Display(Name = "EnableDeltaDiffCutOff", Description = "Enable delta difference cutoff", Order = 49, GroupName = "3. Dynamic Trades")]
+        public bool EnableDeltaDiffCutOff
         { get; set; }
 
         [NinjaScriptProperty]
-        [Display(Name = "EnableMinDiffMode", Description = "Enable minimum difference mode", Order = 50, GroupName = "3. Dynamic Trades")]
+        [Range(0, 100)]
+        [Display(Name = "DeltaDiffTrendOverride", Description = "Delta volume cutoff for overriding to trend mode (%)", Order = 50, GroupName = "3. Dynamic Trades")]
+        public double DeltaDiffTrendOverride
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100, 100)]
+        [Display(Name = "DeltaDiffTrendMainCutOff", Description = "Delta volume cutoff for using delta diff trend", Order = 51, GroupName = "3. Dynamic Trades")]
+        public double DeltaDiffTrendMainCutOff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "DeltaDiffPosOverride", Description = "Delta volume cutoff for difference between pos and neg delta trades (%)", Order = 52, GroupName = "3. Dynamic Trades")]
+        public double DeltaDiffPosOverride
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(-100, 100)]
+        [Display(Name = "DeltaDiffPosCutOff", Description = "Delta volume cutoff for trend mode (%)", Order = 53, GroupName = "3. Dynamic Trades")]
+        public double DeltaDiffPosCutOff
+        { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableMinDiffMode", Description = "Enable minimum difference mode", Order = 54, GroupName = "3. Dynamic Trades")]
         public bool EnableMinDiffMode
         { get; set; }
 
         [NinjaScriptProperty]
         [Range(1, 100)]
-        [Display(Name = "MinDiffCutOff", Description = "Minimum difference between pos and neg delta trades (%)", Order = 51, GroupName = "3. Dynamic Trades")]
+        [Display(Name = "MinDiffCutOff", Description = "Minimum difference between pos and neg delta trades (%)", Order = 55, GroupName = "3. Dynamic Trades")]
         public double MinDiffCutOff
         { get; set; }
         #endregion
@@ -1124,9 +1145,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 BarsToMissPosDelta = 3;
                 DeltaPosCutOff = 3;
                 DeltaNegCutOff = -1.5;
-                DeltaDiffCutOff = 5;
+                EnableDeltaDiffCutOff = true;
+                DeltaDiffTrendOverride = 4;
+                DeltaDiffTrendMainCutOff = 0;
+                DeltaDiffPosOverride = 4;
+                DeltaDiffPosCutOff = -2;
                 EnableMinDiffMode = true;
-                MinDiffCutOff = 2;
+                MinDiffCutOff = 2.5;
                 #endregion
                 #region Dyanmic SL/TP Settings
                 EnableDynamicSL = true;
@@ -1215,12 +1240,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LiquidityTPOffset = 1;
                 #endregion
                 #region Chase Mode
-                EnableChaseMode = false;
+                EnableChaseMode = true;
                 EnableChaseModeRestart = false;
                 ChaseMaxBars = 3;
                 ChaseDeltaMinDiff = 4;
                 ChaseDeltaBigDiff = 30;
-                ChaseNewTPLevel = 75;
+                ChaseNewTPLevel = 50;
                 #endregion
                 #endregion
 
@@ -1402,12 +1427,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 EnableTrading = true;
                 Print(Time[0] + " ******** TRADING ENABLED ******** ");
-            }
-
-            if (TradingBanDays.Contains(Time[0].Date) && EnableBannedDays)
-            {
-                EnableTrading = false;
-                Print(Time[0] + " ******** TRADING DISABLED ******** : Banned Trading Day");
             }
 
             // Load variables
@@ -2241,11 +2260,13 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 chaseBars++;
                 Print(Time[0] + " Chase Buy Bar Detected | Bars: " + chaseBars + " | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%" + " | Delta Diff: " + Math.Round(deltaDiffVol, 3) * 100 + "%");
+                Draw.ArrowUp(this, "ChaseBuy" + CurrentBar, true, 0, High[0] + TickSize * 40, Brushes.MediumTurquoise);
             }
             else if (sellVolSignal && IsChaseBar(false, deltaBuyVol, deltaSellVol, deltaDiffVol) && Time[0].TimeOfDay > ORBEnd.TimeOfDay)
             {
                 chaseBars++;
                 Print(Time[0] + " Chase Sell Bar Detected | Bars: " + chaseBars + " | Delta Buy: " + Math.Round(deltaBuyVol, 3) * 100 + "% | Delta Sell: " + Math.Round(deltaSellVol, 3) * 100 + "%" + " | Delta Diff: " + Math.Round(deltaDiffVol, 3) * 100 + "%");
+                Draw.ArrowDown(this, "ChaseSell" + CurrentBar, true, 0, Low[0] - TickSize * 40, Brushes.DeepPink);
             }
             else
             {
@@ -2753,6 +2774,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (buyTrigger || reverseBuyTrade)
                     {
                         double dynamicOffset = GetDynamicEntryOffset(true, deltaBuyVol, deltaSellVol);
+                        dynamicOffset = GetDynamicDeltaDiffOffset(true, deltaBuyVol, deltaSellVol, deltaDiffVol, dynamicOffset);
                         double limitLevel = GetLimitLevel(
                             smoothConfirmMA[0] + buySellBuffer + dynamicOffset,
                             Close[0],
@@ -2795,6 +2817,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     )
                     {
                         double dynamicOffset = GetDynamicEntryOffset(true, deltaBuyVol, deltaSellVol);
+                        dynamicOffset = GetDynamicDeltaDiffOffset(true, deltaBuyVol, deltaSellVol, deltaDiffVol, dynamicOffset);
                         double limitLevel = GetLimitLevel(
                             smoothConfirmMA[0] + buySellBuffer + dynamicOffset,
                             Close[0],
@@ -2844,6 +2867,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if ((sellTrigger || reverseSellTrade))
                     {
                         double dynamicOffset = GetDynamicEntryOffset(false, deltaBuyVol, deltaSellVol);
+                        dynamicOffset = GetDynamicDeltaDiffOffset(true, deltaBuyVol, deltaSellVol, deltaDiffVol, dynamicOffset);
                         double limitLevel = GetLimitLevel(
                             smoothConfirmMA[0] - buySellBuffer - dynamicOffset,
                             Close[0],
@@ -2886,6 +2910,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     )
                     {
                         double dynamicOffset = GetDynamicEntryOffset(false, deltaBuyVol, deltaSellVol);
+                        dynamicOffset = GetDynamicDeltaDiffOffset(true, deltaBuyVol, deltaSellVol, deltaDiffVol, dynamicOffset);
                         double limitLevel = GetLimitLevel(
                             smoothConfirmMA[0] - buySellBuffer - dynamicOffset,
                             Close[0],
@@ -3479,6 +3504,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         numBlockedProtective++;
                         Print(Time[0] + " [Protective Trades]: Long not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
+                        Draw.Dot(this, "ProtectiveLevel" + level, true, 0, High[0] + TickSize * 60, Brushes.Snow);
                         return false;
                     }
                 }
@@ -3491,6 +3517,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         numBlockedProtective++;
                         Print(Time[0] + " [Protective Trades]: Short not safe at: " + RoundToNearestTick(entryPrice) + " due to level: " + RoundToNearestTick(level) + " | Blocked: " + numBlockedProtective);
+                        Draw.Dot(this, "ProtectiveLevel" + level, true, 0, Low[0] - TickSize * 60, Brushes.Snow);
                         return false;
                     }
                 }
@@ -3502,6 +3529,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     numBlockedProtective++;
                     Print(Time[0] + " [Protective Trades]: Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to VWAP protect: " + RoundToNearestTick(vwap[0]) + " | Blocked: " + numBlockedProtective);
+                    Draw.Dot(this, "VWAPLevel", true, 0, isBuy ? High[0] + TickSize * 60 : Low[0] - TickSize * 60, Brushes.Snow);
                     return false;
                 }
             }
@@ -3512,6 +3540,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     numBlockedProtective++;
                     Print(Time[0] + " [Protective Trades]: Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(upperChopZone) + " | Blocked: " + numBlockedProtective);
+                    Draw.Dot(this, "ChopZoneLevel", true, 0, isBuy ? High[0] + TickSize * 60 : Low[0] - TickSize * 60, Brushes.Snow);
                     return false;
                 }
 
@@ -3519,6 +3548,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     numBlockedProtective++;
                     Print(Time[0] + " [Protective Trades]: Trade not safe at: " + RoundToNearestTick(entryPrice) + " due to Chop Zone protect: " + RoundToNearestTick(lowerChopZone) + " | Blocked: " + numBlockedProtective);
+                    Draw.Dot(this, "ChopZoneLevel", true, 0, isBuy ? High[0] + TickSize * 60 : Low[0] - TickSize * 60, Brushes.Snow);
                     return false;
                 }
             }
@@ -3554,6 +3584,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print(Time[0] + (EnableDynamicRangeProtect ? "" : " [NOT ACTIVE]") + " [Dynamic Range Protect]: Long not safe at: " + RoundToNearestTick(entryPrice) + ". Position " + (100 - position) + " %" + " | Blocked: " + numBlockedDynamicRange);
                     if (!EnableDynamicRangeProtect)
                         return true;
+                    Draw.Dot(this, "DynamicRangeLevel", true, 0, High[0] + TickSize * 60, Brushes.Snow);
                     return false;
                 }
             }
@@ -3565,6 +3596,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print(Time[0] + (EnableDynamicRangeProtect ? "" : " [NOT ACTIVE]") + " [Dynamic Range Protect]: Short not safe at: " + RoundToNearestTick(entryPrice) + ". Position: " + position + "%" + " | Blocked: " + numBlockedDynamicRange);
                     if (!EnableDynamicRangeProtect)
                         return true;
+                    Draw.Dot(this, "DynamicRangeLevel", true, 0, Low[0] - TickSize * 60, Brushes.Snow);
                     return false;
                 }
             }
@@ -3584,6 +3616,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print(Time[0] + (EnableATRProtect ? "" : " [NOT ACTIVE]") + " [ATR Protect]: Long not safe at: " + RoundToNearestTick(entryPrice) + " due to ATR signal" + " | Blocked: " + numATRProtect);
                         if (!EnableATRProtect)
                             return true;
+                        Draw.Dot(this, "ATRProtect" + CurrentBar, true, i, High[i] + TickSize * 60, Brushes.Snow);
                         return false;
                     }
                 }
@@ -3595,6 +3628,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print(Time[0] + (EnableATRProtect ? "" : " [NOT ACTIVE]") + " [ATR Protect]: Short not safe at: " + RoundToNearestTick(entryPrice) + " due to ATR signal" + " | Blocked: " + numATRProtect);
                         if (!EnableATRProtect)
                             return true;
+                        Draw.Dot(this, "ATRProtect" + CurrentBar, true, i, Low[i] - TickSize * 60, Brushes.Snow);
                         return false;
                     }
                 }
@@ -3612,6 +3646,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print(Time[0] + (EnableBounceProtect ? "" : " [NOT ACTIVE]") + " [Bounce Protect]: Long not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off high level" + " | Blocked: " + numBlockedBounce);
                     if (!EnableBounceProtect)
                         return true;
+                    Draw.Dot(this, "BounceProtect" + CurrentBar, true, i, High[i] + TickSize * 60, Brushes.Snow);
                     return false;
                 }
                 else if (!isBuy && BounceOffLowLevel(entryPrice, i))
@@ -3620,6 +3655,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print(Time[0] + (EnableBounceProtect ? "" : " [NOT ACTIVE]") + " [Bounce Protect]: Short not safe at: " + RoundToNearestTick(entryPrice) + " due to bounce off low level" + " | Blocked: " + numBlockedBounce);
                     if (!EnableBounceProtect)
                         return true;
+                    Draw.Dot(this, "BounceProtect" + CurrentBar, true, i, Low[i] - TickSize * 60, Brushes.Snow);
                     return false;
                 }
             }
@@ -3666,6 +3702,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(Time[0] + (EnableMinDiffMode ? "" : " [NOT ACTIVE]") + " [Vol Delta Protect]: Trade not safe due to delta of: " + Math.Round(Math.Abs(volDelta),2) + "% | Blocked: " + numBlockedVolDelta);
                 if (!EnableMinDiffMode)
                     return true;
+                Draw.Dot(this, "VolDeltaProtect" + CurrentBar, true, 0, volDelta > 0 ? High[0] + TickSize * 60 : Low[0] - TickSize * 60, Brushes.Snow);
                 return false;
             }
             return true;
@@ -3727,6 +3764,68 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
 
+        private double GetDynamicDeltaDiffOffset(bool buyDir, double deltaBuyVol, double deltaSellVol, double deltaDiffVol, double currentOffset)
+        {
+            if (EnableDeltaDiffCutOff)
+            {
+                if (buyDir)
+                {
+                    if (deltaDiffVol >= DeltaDiffTrendOverride / 100 && deltaBuyVol > deltaSellVol && deltaBuyVol > DeltaDiffTrendMainCutOff)
+                    {
+                        if (currentOffset < DynamicEntryOffsetTrend)
+                        {
+                            Print(Time[0] + " [Dynamic Entry - Delta Diff]: Price Offset Increased to Trend Offset of: " + DynamicEntryOffsetTrend + " from previous offset: " + currentOffset);
+                            return DynamicEntryOffsetTrend;
+                        }
+                        return currentOffset;
+                    }
+                    else if (deltaDiffVol >= DeltaDiffPosOverride / 100 && deltaBuyVol > deltaSellVol && deltaBuyVol > DeltaDiffPosCutOff)
+                    {
+                        if (currentOffset < DynamicEntryOffsetPos)
+                        {
+                            Print(Time[0] + " [Dynamic Entry - Delta Diff]: Price Offset Increased to Positive Offset of: " + DynamicEntryOffsetPos + " from previous offset: " + currentOffset);
+                            return DynamicEntryOffsetPos;
+                        }
+                        return currentOffset;
+                    }
+                    else
+                    {
+                        return currentOffset;
+                    }
+
+                }
+                else
+                {
+                    if (deltaDiffVol >= DeltaDiffTrendOverride / 100 && deltaSellVol > deltaBuyVol && deltaSellVol > DeltaDiffTrendMainCutOff)
+                    {
+                        if (currentOffset < DynamicEntryOffsetTrend)
+                        {
+                            Print(Time[0] + " [Dynamic Entry - Delta Diff]: Price Offset Increased to Trend Offset of: " + DynamicEntryOffsetTrend + " from previous offset: " + currentOffset);
+                            return DynamicEntryOffsetTrend;
+                        }
+                        return currentOffset;
+                    }
+                    else if (deltaDiffVol >= DeltaDiffPosOverride / 100 && deltaSellVol > deltaBuyVol && deltaSellVol > DeltaDiffPosCutOff)
+                    {
+                        if (currentOffset < DynamicEntryOffsetPos)
+                        {
+                            Print(Time[0] + " [Dynamic Entry - Delta Diff]: Price Offset Increased to Positive Offset of: " + DynamicEntryOffsetPos + " from previous offset: " + currentOffset);
+                            return DynamicEntryOffsetPos;
+                        }
+                        return currentOffset;
+                    }
+                    else
+                    {
+                        return currentOffset;
+                    }
+                }
+            }
+            else
+            {
+                return currentOffset;
+            }
+        }
+
         private double GetLimitLevel(double priceTarget, double close, bool buyDir)
         {
             // Calculate limit level based on direction
@@ -3777,6 +3876,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     chaseModePrev = true;
                     if (!EnableChaseMode)
                         return entryPrice;
+                    Draw.ArrowUp(this, "ChaseMode" + CurrentBar, true, 0, High[0] + TickSize * 80, Brushes.Aqua);
                     return chasePrice;
                 }
                 else
@@ -3788,6 +3888,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     chaseModePrev = true;
                     if (!EnableChaseMode)
                         return entryPrice;
+                    Draw.ArrowDown(this, "ChaseMode" + CurrentBar, true, 0, Low[0] - TickSize * 80, Brushes.Orchid);
                     return chasePrice;
                 }
             }
@@ -3866,6 +3967,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                         SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
                         SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
                         SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
+
+                        if (TradingBanDays.Contains(Time[0].Date) && EnableBannedDays)
+                        {
+                            EnableTrading = false;
+                            Print(Time[0] + " ******** TRADING DISABLED ******** : Banned Trading Day");
+                        }
                     }
                 }
                 if (!EnableTradingTS1)
@@ -3903,6 +4010,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                         SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
                         SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
                         SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
+
+                        if (TradingBanDays.Contains(Time[0].Date) && EnableBannedDays)
+                        {
+                            EnableTrading = false;
+                            Print(Time[0] + " ******** TRADING DISABLED ******** : Banned Trading Day");
+                        }
                     }
                 }
                 if (!EnableTradingTS2)
@@ -3939,6 +4052,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                         SetProfitTarget("Long", CalculationMode.Ticks, tpLevel / TickSize);
                         SetStopLoss("Short", CalculationMode.Ticks, slLevel / TickSize, false);
                         SetProfitTarget("Short", CalculationMode.Ticks, tpLevel / TickSize);
+
+                        if (TradingBanDays.Contains(Time[0].Date) && EnableBannedDays)
+                        {
+                            EnableTrading = false;
+                            Print(Time[0] + " ******** TRADING DISABLED ******** : Banned Trading Day");
+                        }
                     }
                 }
                 if (!EnableTradingTS3)

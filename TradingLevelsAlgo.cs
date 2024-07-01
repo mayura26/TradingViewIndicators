@@ -31,13 +31,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
     /* TODO LIST
 	// FEATURE: Add VAH/VAL for pd and pw into charts?
-    // TODO: Reoptimise SL dynamic
-        // FEATURE: Change color of background when in chase mode
+    // TOOD: Review chase mode not checking protective trades? (2024-06-10 2:24:00 PM)
+
 	// TODO: Limit number of chase per trade to 1?
-	// TOOD: Review chase mode not checking protective trades? (2024-06-10 2:24:00 PM)
-	// TODO: Chase mode look at bounce?
+    // TODO: CHase mode don't need to check negative delta on otherside?
 	// TODO: Chase mode max candle range to chase?
-	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced
+	// TODO: On fill, if bounce protect do we still check and close trade? need to check close is less than level bounced. On order filled first scan check everything?
     // TODO: Do we check distance away from fill to confirm we didn't take a fill from long away?
 	// FEATURE: Look at  parabolic stop and reverse (PSAR)  and supertrend as trailing stop
     // FEATURE: If px comes back through VWAP then we shouldn't consider it a proetctive level
@@ -52,6 +51,7 @@ namespace NinjaTrader.NinjaScript.Strategies
     // FEATURE: Add timeout after two bad trades in succession
     // FEATURE: Change to process on tick and have trading on first tick ***** IMPORTANT *****
     // FEATURE: Look at fib levels to improve drawing of levels
+    // FEATURE: Rework all delta colouring
     // FEATURE: Dynamic entry for blue volume is high and maybe needs to adjust if trade goes into key level? If last candle is a bounce then we reduce the dynamic entry?
     */
     public class TradingLevelsAlgo : Strategy
@@ -217,7 +217,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         { get; set; }
 
         [NinjaScriptProperty]
-        [Range(-10, double.MaxValue)]
+        [Range(-100, double.MaxValue)]
         [Display(Name = "SLNewLevel", Description = "New SL level after profit", Order = 50, GroupName = "3. Dynamic Stoploss")]
         public double SLNewLevel
         { get; set; }
@@ -1006,8 +1006,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         public Brush DeltaVolSellShade = Brushes.Salmon;
         public Brush DeltaVolTrendShade = Brushes.SkyBlue;
         public Brush ChopShade = Brushes.Silver;
-        public Brush ChaseShadeTrend = Brushes.Fuchsia;
-        public Brush ChaseShadePos = Brushes.Cyan;
+        public Brush ChaseShadeTrend = Brushes.Cyan;
+        public Brush ChaseShadePos = Brushes.Fuchsia;
         public int DeltaShadeOpacity = 25;
         #endregion
 
@@ -1155,8 +1155,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 #endregion
                 #region Dyanmic SL/TP Settings
                 EnableDynamicSL = true;
-                ProfitToMoveSL = 32;
-                SLNewLevel = -2;
+                ProfitToMoveSL = 15;
+                SLNewLevel = -5;
                 TPCalcFromInitTrigger = false;
 
                 EnableDynamicTP = true;
@@ -1593,9 +1593,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Math.Abs(trendDirection[0]) < chopLimit
                     && deltaMomentum[0] < deltaMomentumChopLimt
                 ) || chopIndexDetect[0] || chopZoneTrade;
-            bool protectiveChopZone = !(Math.Abs(trendDirection[0]) < chopLimit && deltaMomentum[0] < deltaMomentumChopLimt)
-                                        && !chopIndexDetect[0]
-                                        && !inChopZone[0];
+
             volatileMove[0] =
                 Math.Abs(trendDirection[0]) > volatileLimit
                 || deltaMomentum[0] > deltaMomentumVolLimt;
@@ -2395,7 +2393,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (localBarsToMissTrade == barsToMissTrade)
                     {
-                        if (Math.Abs(deltaBuyVol - deltaSellVol) > 0.08)
+                        if (Math.Abs(deltaBuyVol - deltaSellVol) > ChaseDeltaMinDiff / 100)
                         {
                             BackBrush = ChaseShadeTrend;
                         }
@@ -2406,7 +2404,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else if (localBarsToMissTrade == BarsToMissPosDelta)
                     {
-                        if (Math.Abs(deltaBuyVol - deltaSellVol) > 0.04)
+                        if (Math.Abs(deltaBuyVol - deltaSellVol) > ChaseDeltaMinDiff / 100)
+                        {
+                            BackBrush = ChaseShadeTrend;
+                        }
+                        else if (deltaDiffVol >= DeltaDiffTrendOverride / 100 && deltaBuyVol > deltaSellVol && deltaBuyVol > DeltaDiffTrendMainCutOff)
+                        {
+                            BackBrush = ChaseShadePos;
+                        }
+                        else if (deltaDiffVol >= DeltaDiffTrendOverride / 100 && deltaSellVol > deltaBuyVol && deltaSellVol > DeltaDiffTrendMainCutOff)
                         {
                             BackBrush = ChaseShadePos;
                         }
@@ -2421,10 +2427,25 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else if (localBarsToMissTrade == BarsToMissNegDelta)
                     {
-                        BackBrush = DeltaVolNegShade;
+                        if (Math.Abs(deltaBuyVol - deltaSellVol) > ChaseDeltaMinDiff / 100)
+                        {
+                            BackBrush = ChaseShadeTrend;
+                        }
+                        else if (deltaDiffVol >= DeltaDiffTrendOverride / 100 && deltaBuyVol > deltaSellVol && deltaBuyVol > DeltaDiffTrendMainCutOff)
+                        {
+                            BackBrush = ChaseShadePos;
+                        }
+                        else if (deltaDiffVol >= DeltaDiffTrendOverride / 100 && deltaSellVol > deltaBuyVol && deltaSellVol > DeltaDiffTrendMainCutOff)
+                        {
+                            BackBrush = ChaseShadePos;
+                        }
+                        else
+                        {
+                            BackBrush = DeltaVolNegShade;
+                        }
                     }
                 }
-                else if (chopDetect[0] && !protectiveChopZone)
+                else if (chopDetect[0])
                 {
                     BackBrush = ChopShade;
                 }
@@ -2530,14 +2551,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (Position.MarketPosition == MarketPosition.Long)
             {
                 if (EnableDynamicSL)
-                    if (High[0] > Position.AveragePrice + ProfitToMoveSL && barsInTrade > 1)
+                    if (High[0] > Position.AveragePrice + ProfitToMoveSL && barsInTrade > 1 && Close[0] > Position.AveragePrice - SLNewLevel)
                     {
-                        if (oldDynamicSL != Position.AveragePrice - SLNewLevel * TickSize)
+                        if (oldDynamicSL != Position.AveragePrice - SLNewLevel)
                         {
-                            Print(Time[0] + " [Dynamic SL]: SL Level Updated to: " + (Position.AveragePrice - SLNewLevel * TickSize));
-                            SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
-                            SetStopLoss("LongTrim", CalculationMode.Price, Position.AveragePrice - SLNewLevel * TickSize, false);
-                            oldDynamicSL = Position.AveragePrice - SLNewLevel * TickSize;
+                            Print(Time[0] + " [Dynamic SL]: SL Level Updated to: " + (Position.AveragePrice - SLNewLevel));
+                            SetStopLoss("Long", CalculationMode.Price, Position.AveragePrice - SLNewLevel, false);
+                            SetStopLoss("LongTrim", CalculationMode.Price, Position.AveragePrice - SLNewLevel, false);
+                            oldDynamicSL = Position.AveragePrice - SLNewLevel;
                         }
                     }
 
@@ -2599,14 +2620,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (Position.MarketPosition == MarketPosition.Short)
             {
                 if (EnableDynamicSL)
-                    if (Low[0] < Position.AveragePrice - ProfitToMoveSL && barsInTrade > 1)
+                    if (Low[0] < Position.AveragePrice - ProfitToMoveSL && barsInTrade > 1 && Close[0] < Position.AveragePrice + SLNewLevel)
                     {
-                        if (oldDynamicSL != Position.AveragePrice + SLNewLevel * TickSize)
+                        if (oldDynamicSL != Position.AveragePrice + SLNewLevel)
                         {
-                            Print(Time[0] + " [Dynamic SL]: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel * TickSize));
-                            SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
-                            SetStopLoss("ShortTrim", CalculationMode.Price, Position.AveragePrice + SLNewLevel * TickSize, false);
-                            oldDynamicSL = Position.AveragePrice + SLNewLevel * TickSize;
+                            Print(Time[0] + " [Dynamic SL]: SL Level Updated to: " + (Position.AveragePrice + SLNewLevel));
+                            SetStopLoss("Short", CalculationMode.Price, Position.AveragePrice + SLNewLevel, false);
+                            SetStopLoss("ShortTrim", CalculationMode.Price, Position.AveragePrice + SLNewLevel, false);
+                            oldDynamicSL = Position.AveragePrice + SLNewLevel;
                         }
                     }
 
@@ -3702,7 +3723,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Print(Time[0] + (EnableMinDiffMode ? "" : " [NOT ACTIVE]") + " [Vol Delta Protect]: Trade not safe due to delta of: " + Math.Round(Math.Abs(volDelta),2) + "% | Blocked: " + numBlockedVolDelta);
                 if (!EnableMinDiffMode)
                     return true;
-                Draw.Dot(this, "VolDeltaProtect" + CurrentBar, true, 0, volDelta > 0 ? High[0] + TickSize * 60 : Low[0] - TickSize * 60, Brushes.Snow);
+                Draw.Dot(this, "VolDeltaProtect" + CurrentBar, true, 0, volDelta > 0 ? High[0] + TickSize * 60 : Low[0] - TickSize * 60, Brushes.BlueViolet);
                 return false;
             }
             return true;
